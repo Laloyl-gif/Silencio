@@ -1,0 +1,69 @@
+"""Wikidata : les prix d'une personne, et les palmarès (Palme d'or, Oscars…) reliés aux identifiants TMDB."""
+import hashlib
+import os
+import time
+
+import config
+from reseau import HorsLigne, requete
+from stockage import ecrire_json, lire_json
+
+DOSSIER = os.path.join(config.CACHE, "wikidata")
+
+
+def _sparql(requete_sparql, ttl=30 * 86400):
+    cle = hashlib.sha1(requete_sparql.encode()).hexdigest()
+    f = os.path.join(DOSSIER, cle + ".json")
+    cache = lire_json(f)
+    if cache and time.time() - cache["t"] < ttl:
+        return cache["d"]
+    try:
+        d = requete(config.WIKIDATA, params={"query": requete_sparql, "format": "json"},
+                    entetes={"Accept": "application/sparql-results+json"}, delai=40)
+    except HorsLigne:
+        if cache:
+            return cache["d"]
+        raise
+    lignes = [{k: v.get("value") for k, v in b.items()} for b in d.get("results", {}).get("bindings", [])]
+    ecrire_json(f, {"t": time.time(), "d": lignes})
+    return lignes
+
+
+def prix_personne(tmdb_id):
+    """[{prix, annee, oeuvre, cle}] : les prix reçus (P166) par la personne de cet identifiant TMDB (P4985)."""
+    q = f"""SELECT ?prixLabel ?annee ?oeuvreLabel ?tmdbFilm ?tmdbSerie WHERE {{
+  ?p wdt:P4985 "{int(tmdb_id)}" .
+  ?p p:P166 ?st . ?st ps:P166 ?prix .
+  OPTIONAL {{ ?st pq:P585 ?date . BIND(YEAR(?date) AS ?annee) }}
+  OPTIONAL {{ ?st pq:P1686 ?oeuvre . OPTIONAL {{ ?oeuvre wdt:P4947 ?tmdbFilm }} OPTIONAL {{ ?oeuvre wdt:P4983 ?tmdbSerie }} }}
+  SERVICE wikibase:label {{ bd:serviceParam wikibase:language "fr,en" . }}
+}} ORDER BY ?annee"""
+    vus, res = set(), []
+    for l in _sparql(q):
+        cle = ("m:" + l["tmdbFilm"]) if l.get("tmdbFilm") else ("t:" + l["tmdbSerie"]) if l.get("tmdbSerie") else None
+        k = (l.get("prixLabel"), l.get("annee"), cle)
+        if k in vus:
+            continue
+        vus.add(k)
+        res.append({"prix": l.get("prixLabel", ""), "annee": int(l["annee"]) if l.get("annee") else None,
+                    "oeuvre": l.get("oeuvreLabel", ""), "cle": cle})
+    return res
+
+
+def palmares(code):
+    """[{cle, annee, titre}] : les films qui ont reçu ce prix (config.PRIX), avec leur identifiant TMDB."""
+    libelle, nom_en = config.PRIX[code]
+    nom = nom_en.replace('"', '\\"')
+    q = f"""SELECT DISTINCT ?tmdb ?annee ?filmLabel WHERE {{
+  ?prix rdfs:label "{nom}"@en .
+  ?film p:P166 ?st . ?st ps:P166 ?prix .
+  ?film wdt:P4947 ?tmdb .
+  OPTIONAL {{ ?st pq:P585 ?date . BIND(YEAR(?date) AS ?annee) }}
+  SERVICE wikibase:label {{ bd:serviceParam wikibase:language "fr,en" . }}
+}}"""
+    res = {}
+    for l in _sparql(q):
+        cle = "m:" + l["tmdb"]
+        a = int(l["annee"]) if l.get("annee") else None
+        if cle not in res or (a and (res[cle]["annee"] or 9999) > a):
+            res[cle] = {"cle": cle, "annee": a, "titre": l.get("filmLabel", "")}
+    return {"code": code, "nom": libelle, "films": sorted(res.values(), key=lambda x: x["annee"] or 0)}

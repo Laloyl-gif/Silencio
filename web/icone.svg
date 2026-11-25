@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="nuit" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#14163a"/><stop offset="1" stop-color="#0b0b14"/></linearGradient>
+    <linearGradient id="velours" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c12443"/><stop offset="1" stop-color="#6e0d22"/></linearGradient>
+    <linearGradient id="face" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f6bff"/><stop offset="1" stop-color="#2335b8"/></linearGradient>
+    <radialGradient id="lumiere" cx=".5" cy=".62" r=".5"><stop offset="0" stop-color="#5d6cf5" stop-opacity=".45"/><stop offset="1" stop-color="#5d6cf5" stop-opacity="0"/></radialGradient>
+  </defs>
+  <clipPath id="coins"><rect width="512" height="512" rx="112"/></clipPath>
+  <g clip-path="url(#coins)">
+  <rect width="512" height="512" fill="url(#nuit)"/>
+  <circle cx="256" cy="318" r="190" fill="url(#lumiere)"/>
+  <!-- rideaux -->
+  <path d="M0 0h170c-10 90-60 190-170 250z" fill="url(#velours)"/>
+  <path d="M512 0H342c10 90 60 190 170 250z" fill="url(#velours)"/>
+  <g stroke="#5a0a1b" stroke-width="7" stroke-linecap="round" opacity=".55" fill="none"><path d="M40 0c4 60-6 140-26 214M92 0c0 66-22 140-58 196M136 0c-6 70-34 128-72 168"/><path d="M472 0c-4 60 6 140 26 214M420 0c0 66 22 140 58 196M376 0c6 70 34 128 72 168"/></g>
+  <path d="M120 0h272c-34 40-78 58-136 58S154 40 120 0z" fill="#8f1530"/>
+  <!-- la boîte bleue -->
+  <g transform="translate(256 316)">
+    <path d="M0-118 102-62 0-6-102-62z" fill="#7d93ff"/>
+    <path d="M-102-62 0-6v118l-102-56z" fill="url(#face)"/>
+    <path d="M102-62 0-6v118l102-56z" fill="#1a2690"/>
+    <path d="M0-66 14-58 0-50-14-58z" fill="#f2c14e"/>
+  </g>
+  </g>
+</svg>
