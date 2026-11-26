@@ -107,7 +107,7 @@ def souhaite(doc, plateforme):
                 r[f"ep|{c}|{ep}"] = 1
         for c, t in titres.items():
             if c not in caches and t.get("note") is not None:
-                r[f"note|{c}"] = t["note"]               # partira dès que Refract acceptera les notes
+                r[f"note|{c}"] = note_imdb(t["note"])    # Refract : entier de 1 à 10
         return r
     # listes (Letterboxd : films seulement)
     for lid, l in listes.items():

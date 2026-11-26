@@ -283,6 +283,12 @@ B.runtime.onMessage.addListener(async m => {
   }
   if (m?.type === "effacer-journal") { await poser({ journal: [] }); return { ok: true }; }
   if (m?.type === "executer-un") return executerUn(m.p, m.id);
+  if (m?.type === "imdb-gql") {
+    try {
+      const r = await fetch("https://api.graphql.imdb.com/", { method: "POST", credentials: "include", headers: m.entetes || {}, body: m.corps });
+      return { status: r.status, texte: await r.text() };
+    } catch (e) { return { erreur: "IMDb injoignable (" + e.message + ")" }; }
+  }
   if (m?.type === "fait-main") {
     const c = await cfg();
     const op = (c.attente[m.p] || []).find(o => o.id === m.id);

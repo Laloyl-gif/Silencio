@@ -502,7 +502,7 @@ function rubriqueCompte(z, e) {
     if (v.mot_de_passe !== v.mot_de_passe2) { err.textContent = "Les deux mots de passe ne sont pas identiques."; return; }
     delete v.mot_de_passe2; delete v.identifiant; delete v.nom;
     try { await S.post("/api/compte/creer", { ...v, convertir: true }); S.toast("Compte créé"); S.rafraichir(true); }
-    catch (er) { err.textContent = er.message; }
+    catch (er) { err.textContent = er.message === "inconnu" ? "Silencio a été mis à jour mais tourne encore avec l'ancienne version : ferme-le complètement et relance-le." : er.message; }
   };
 }
 
@@ -522,10 +522,8 @@ function plateformes(z, e) {
     </div>`; };
   const rf = P.rf || {}, lb = P.lb || {}, im = P.imdb || {};
   z.innerHTML = `<p class="muet petit" style="margin-top:0">Silencio est la référence : ce que tu ajoutes, notes, retires ou ranges ici est recopié sur tes autres comptes. Les films cachés, les visionnages cachés, les listes privées et les critiques privées ne partent jamais.</p>
-    ${bloc("rf", "Par l'API officielle de Refract, avec ta clé, toute seule, toutes les minutes. Films vus, épisodes et watchlist partent tout de suite.", `
+    ${bloc("rf", "Par l'API officielle de Refract, avec ta clé, toute seule, toutes les minutes : films vus, épisodes, watchlist et notes (arrondies à l'entier, de 1 à 10).", `
       <div class="aj-ligne"><span>Compte</span><b>${rf.connecte ? esc(rf.nom_compte || "relié") : "pas relié"}</b></div>
-      <div class="aj-ligne"><span>Notes</span><b>${rf.notes_ouvertes ? "envoyées" : rf.notes_attente ? `${S.fmtNombre(rf.notes_attente)} en attente` : "en attente"}</b></div>
-      ${!rf.notes_ouvertes ? `<p class="pf-intro">Refract n'accepte pas encore les notes par son API. Silencio vérifie chaque jour : dès qu'il les ouvre, tes notes en attente partent toutes seules.</p>` : ""}
       <div class="aj-ligne aj-sous-ligne"><span>Clé personnelle</span><div><input class="aj-champ" data-rf-cle placeholder="${rf.connecte ? "•••• (enregistrée)" : "rfk_…"}" autocomplete="off"><div class="toi-actions" style="margin-top:4px"><button data-rf-ok>${rf.connecte ? "Changer la clé" : "Relier Refract"}</button>${rf.connecte ? `<button data-rf-off>Délier</button>` : ""}</div></div></div>
       ${rf.erreur ? `<p class="pf-alerte">${esc(rf.erreur)}</p>` : ""}`)}
     ${bloc("lb", "Par l'extension Silencio Sync dans Firefox, sur ton PC et ton téléphone, avec ta session Letterboxd déjà ouverte, discrètement : quelques actions à la fois, espacées.", `

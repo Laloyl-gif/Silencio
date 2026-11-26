@@ -12,11 +12,25 @@
   const hasard = (a, b) => a + Math.random() * (b - a);
   class Bloque extends Error {}
   let session = "";
+  let parFond = false;                     // l'appel depuis la page a échoué une fois : on passe par l'extension
 
   async function gql(query, variables, operationName) {
     const h = { "content-type": "application/json", "accept": "application/graphql+json, application/json" };
     if (session) h["x-amzn-sessionid"] = session;
-    const r = await F(GQL, { method: "POST", credentials: "include", headers: h, body: JSON.stringify({ query, operationName, variables }) });
+    const corps = JSON.stringify({ query, operationName, variables });
+    let r;
+    try {
+      if (parFond) throw new TypeError("par l'extension");
+      r = await F(GQL, { method: "POST", credentials: "include", headers: h, body: corps });
+    } catch (e) {
+      // Firefox refuse parfois l'appel depuis la page (« NetworkError ») : l'extension le fait elle-même,
+      // toujours avec ta session IMDb
+      if (!(e instanceof TypeError) || !B || !B.runtime) throw e;
+      const x = await B.runtime.sendMessage({ type: "imdb-gql", corps, entetes: h });
+      if (!x || x.erreur) throw new Error(x && x.erreur || "IMDb injoignable");
+      parFond = true;
+      r = { status: x.status, json: async () => JSON.parse(x.texte) };
+    }
     if (r.status === 401 || r.status === 403) throw new Bloque("session IMDb refusée : reconnecte-toi sur imdb.com dans Firefox.");
     if (r.status === 429) throw new Bloque("IMDb demande de ralentir : nouvel essai au prochain passage.");
     const j = await r.json().catch(() => null);

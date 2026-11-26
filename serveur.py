@@ -209,11 +209,8 @@ class App:
             r[p] = dict(miroir.compter(doc, p), nom=nom, passage=passages.get(p),
                         echecs=[dict(v, cle=k) for k, v in (echecs.get(p) or {}).items()][:50],
                         depuis=(app.get("miroir_depart") or {}).get(p))
-        caps = app.get("refract_caps") or {}
         r["rf"].update(connecte=bool(self.refract.cle), nom_compte=(app.get("refract") or {}).get("nom", ""),
-                       erreur=self.refract.etat["erreur"], notes_ouvertes=bool(caps.get("notes")),
-                       notes_attente=sum(1 for k in miroir.souhaite(doc, "rf") if k.startswith("note|"))
-                       if not caps.get("notes") else 0)
+                       erreur=self.refract.etat["erreur"])
         r["lb"]["pseudo"] = app.get("letterboxd_pseudo", "")
         r["modes"] = app.get("modes_ext") or {"lb": "auto", "imdb": "clic"}
         r["imdb"]["pseudo"] = app.get("imdb_pseudo", "")

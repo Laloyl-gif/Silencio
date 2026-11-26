@@ -1,12 +1,11 @@
 """Refract, par son API officielle (https://getrefract.app/developers) : une clé personnelle « rfk_… » créée dans
 l'appli Refract suffit, elle ne demande jamais de se reconnecter.
 
-Ce que l'API sait écrire aujourd'hui : films vus (avec la date), épisodes vus ou non, watchlist (ajout, retrait).
-Les notes arriveront plus tard chez Refract : Silencio les garde en attente et relit chaque jour la description
-officielle de l'API (openapi.json). Dès qu'un envoi de note y apparaît, les notes en attente partent toutes seules.
+Ce que Silencio envoie (API v1, vérifiée dans https://getrefract.app/v1/openapi.json) : films vus (avec la date),
+épisodes vus ou non, watchlist (ajout, retrait), notes des films et des séries (entier de 1 à 10).
+Jamais DELETE /v1/library/{id} : il effacerait aussi les visionnages et la note chez Refract.
 """
 import hashlib
-import re
 import time
 import urllib.parse
 
@@ -47,13 +46,6 @@ class Refract:
 
     def moi(self):
         return self._req("GET", "me")
-
-    # ---- ce que l'API sait faire (lu dans sa description officielle, une fois par jour)
-    def capacites(self, forcer=False):
-        app = self.stock.appareil
-        caps = app.get("refract_caps") or {}
-        if not forcer and time.time() - caps.get("verifie", 0) < 86400:
-            return caps
         try:
             doc = requete(config.API_REFRACT.rstrip("/") + "/openapi.json", entetes={"User-Agent": AGENT}, delai=20)
         except HorsLigne:
@@ -152,19 +144,17 @@ class Refract:
                         raise
             return "ok", None
         if s == "note":
-            caps = (self.stock.appareil.get("refract_caps") or {}).get("notes")
-            if not caps:
-                return "attente", None                     # Refract n'accepte pas encore les notes
-            rid = self.identifiant(op["cle"].split("|")[1])
+            cle = op["cle"].split("|")[1]
+            rid = self.identifiant(cle)
             if not rid:
                 return "introuvable", None
-            n = float(op["valeur"]) * caps["max"] / 10.0
-            n = int(round(n)) if caps.get("entier") else round(n * 2) / 2
-            chemin = caps["chemin"].replace("{id}", urllib.parse.quote(rid))
-            corps = {caps["champ"]: n}
-            if caps.get("champ_id"):
-                corps[caps["champ_id"]] = rid
-            self._req(caps["methode"], chemin, corps)
+            genre = "shows" if cle.startswith("t:") else "movies"
+            try:
+                self._req("PUT", f"ratings/{genre}/{urllib.parse.quote(rid)}", {"value": int(op["valeur"])})
+            except ErreurHTTP as e:
+                if e.code in (404, 405, 501):
+                    return "attente", None                 # pas (encore) ouvert sur ce compte : on garde la note
+                raise
             return "ok", None
         return "attente", None
 
@@ -174,12 +164,8 @@ class Refract:
             return None
         self.etat["en_cours"] = True
         try:
-            notes = bool(self.capacites().get("notes"))
             echecs = (self.stock.appareil.get("miroir_echecs") or {}).get("rf") or {}
-            ops = miroir.operations(self.stock.doc, "rf", self.meta, echecs, limite=100000)["ops"]
-            if not notes:                         # les notes attendent que Refract les accepte
-                ops = [o for o in ops if o["sorte"] != "note"]
-            ops = ops[:limite]
+            ops = miroir.operations(self.stock.doc, "rf", self.meta, echecs, limite=limite)["ops"]
             resultats = []
             for op in ops:
                 try:
@@ -221,35 +207,3 @@ class Refract:
         self.stock.sauver_appareil()
         return presence, a_importer
 
-
-def lire_notes(doc):
-    """Cherche dans la description OpenAPI de Refract une façon d'écrire une note : chemin, méthode, champ, échelle."""
-    comps = ((doc or {}).get("components") or {}).get("schemas") or {}
-
-    def resoudre(sch, n=0):
-        while isinstance(sch, dict) and "$ref" in sch and n < 10:
-            sch = comps.get(sch["$ref"].split("/")[-1]) or {}
-            n += 1
-        return sch or {}
-    for chemin, ops in ((doc or {}).get("paths") or {}).items():
-        if "rating" not in chemin.lower() or "game" in chemin.lower():
-            continue
-        for methode in ("put", "post"):
-            op = (ops or {}).get(methode)
-            if not op:
-                continue
-            sch = resoudre((((op.get("requestBody") or {}).get("content") or {}).get("application/json") or {})
-                           .get("schema") or {})
-            props = {k: resoudre(v) for k, v in (sch.get("properties") or {}).items()}
-            champ = next((k for k in ("rating", "value", "score", "stars") if k in props), None)
-            if not champ or props[champ].get("type") not in ("number", "integer"):
-                continue
-            maxi = props[champ].get("maximum") or 10
-            champ_id = next((k for k in ("title_id", "id", "movie_id", "refract_id") if k in props), None)
-            ch = re.sub(r"^/?v1", "", chemin)
-            ch = re.sub(r"\{[^}]+\}", "{id}", ch)
-            if "{id}" not in ch and not champ_id:
-                continue
-            return {"chemin": ch, "methode": methode.upper(), "champ": champ, "max": float(maxi),
-                    "entier": props[champ].get("type") == "integer", "champ_id": champ_id if "{id}" not in ch else None}
-    return None

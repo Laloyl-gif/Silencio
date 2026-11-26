@@ -87,7 +87,7 @@ P.choixProfil = async (vue, onglet) => {
       await S.post(onglet === "creer" ? "/api/compte/creer" : "/api/compte/connexion", v);
       entrer();
     } catch (er) {
-      err.textContent = er.horsLigne ? "Pas d'Internet : la première connexion sur un appareil en a besoin." : er.message;
+      err.textContent = er.horsLigne ? "Pas d'Internet : la première connexion sur un appareil en a besoin." : er.message === "inconnu" ? "Silencio a été mis à jour mais tourne encore avec l'ancienne version : ferme-le complètement et relance-le." : er.message;
       bouton.disabled = false; bouton.textContent = onglet === "creer" ? "Créer le compte" : "Se connecter";
     }
   };

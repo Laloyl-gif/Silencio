@@ -290,13 +290,6 @@ class H(BaseHTTPRequestHandler):
 
     def refract(self, methode, p, q):
         """Faux Refract (API v1) : clé « rfk_test »."""
-        if p == "/openapi.json":
-            chemins = {"/v1/watchlist/{id}": {"put": {}}}
-            if REFRACT_NOTES:
-                chemins["/v1/ratings/{title_id}"] = {"put": {"requestBody": {"content": {"application/json": {
-                    "schema": {"$ref": "#/components/schemas/Note"}}}}}}
-            return self.envoyer(200, {"openapi": "3.1.0", "paths": chemins, "components": {"schemas": {
-                "Note": {"type": "object", "properties": {"rating": {"type": "integer", "minimum": 1, "maximum": 10}}}}}})
         if self.headers.get("Authorization") != "Bearer rfk_test":
             return self.envoyer(401, {"type": "about:blank", "code": "unauthorized"})
         n = int(self.headers.get("Content-Length") or 0)
@@ -506,7 +499,6 @@ class H(BaseHTTPRequestHandler):
 
 ECRITURES = []
 REFRACT = []
-REFRACT_NOTES = False
 
 
 def lancer(port):

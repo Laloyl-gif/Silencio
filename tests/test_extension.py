@@ -159,6 +159,20 @@ def main():
                  "IMDb : critique préparée pour une publication à la main")
         verifier(r["5"]["etat"] == "ok" and r["5"]["ref"] == "ls0777" and not any(g[0]["operationName"] == "CreateList" and g is gql[-1] for g in gql),
                  "IMDb : ta watchlist IMDb est retrouvée, sans rien créer")
+        # Firefox refuse l'appel depuis la page (NetworkError) : l'extension le refait elle-même
+        pg3 = nav.new_page()
+        pg3.add_init_script(SHIM + """
+          globalThis.__fond = [];
+          browser.runtime.sendMessage = async m => { __fond.push(m); return { status: 200, texte: JSON.stringify({ data: { rateTitle: { rating: { value: 7 } } } }) }; };""")
+        pg3.route("https://api.graphql.imdb.com/**", lambda route: route.abort())
+        pg3.goto(f"http://127.0.0.1:{PORT}/")
+        pg3.add_script_tag(path=os.path.join(EXT, "im.js"))
+        rep3 = pg3.evaluate("""async ops => await window.__ecoutes[0]({ type: "silencio-executer", ops, ctx: { session: "1", rapide: true } })""",
+                            [{"id": "n", "cle": "note|m:1", "sorte": "note", "action": "poser", "valeur": 7, "imdb": "tt0116996"},
+                             {"id": "m", "cle": "note|m:2", "sorte": "note", "action": "poser", "valeur": 6, "imdb": "tt0116997"}])
+        fond = pg3.evaluate("__fond")
+        verifier(all(x["etat"] == "ok" for x in rep3["resultats"]) and len(fond) == 2 and fond[0]["type"] == "imdb-gql",
+                 "IMDb : NetworkError dans la page, l'extension fait l'appel elle-même")
         verifier(gql[0][1].get("x-amzn-sessionid") == "123-456", "IMDb : identifiant de session transmis")
         nav.close()
     s.shutdown()

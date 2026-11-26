@@ -314,6 +314,7 @@ presence, a_importer = rf.point_de_depart()
 verifier(presence == {"wl|m:490": 1} and "m:490" in a_importer, "Refract : sa watchlist entre dans Silencio")
 miroir.poser_depart(ms, "rf", presence)
 ms.action("watchlist", {"cle": "m:603", "val": True})
+ms.action("noter", {"cle": "t:1920", "note": 8.5})
 bilan = rf.passage()
 ecrits = [(m, p) for m, p, _, _ in faux_services.REFRACT if m != "GET"]
 verifier(("POST", "/history/movies") in ecrits and ("PUT", "/watchlist/rf-m-155") in ecrits and
@@ -321,19 +322,12 @@ verifier(("POST", "/history/movies") in ecrits and ("PUT", "/watchlist/rf-m-155"
 films = [c for m, p, c, _ in faux_services.REFRACT if p == "/history/movies"]
 verifier(all(f["watched_at"].endswith("T20:00:00Z") for f in films) and not any(f["movie_id"] == "rf-m-6977" for f in films) and
          any(f["watched_at"].startswith("2019-01-01") for f in films), "Refract : dates (même partielles), films cachés exclus")
-reste = miroir.operations(ms.doc, "rf", meta, limite=1000)["ops"]
-verifier(bilan["echec"] == 0 and reste and all(o["sorte"] == "note" for o in reste), "Refract : 409 IN_LIBRARY accepté, seules les notes attendent")
-verifier(not any("/ratings" in p for _, p, _, _ in faux_services.REFRACT), "Refract : aucune note envoyée tant que l'API ne les accepte pas")
-# Refract ouvre les notes : Silencio le lit dans openapi.json et envoie les notes en attente
-faux_services.REFRACT_NOTES = True
-rf.capacites(forcer=True)
-faux_services.REFRACT.clear()
-bilan = rf.passage()
 notes = {p: c for m, p, c, _ in faux_services.REFRACT if p.startswith("/ratings/")}
 verifier(notes and all(m == "PUT" for m, p, _, _ in faux_services.REFRACT if p.startswith("/ratings/")) and
-         all(isinstance(c["rating"], int) and 1 <= c["rating"] <= 10 for c in notes.values()), "Refract : notes envoyées dès que l'API les accepte (échelle 1-10)")
-verifier(miroir.operations(ms.doc, "rf", meta)["ops"] == [], "Refract : plus rien à faire")
-faux_services.REFRACT_NOTES = False
+         all(isinstance(c["value"], int) and 1 <= c["value"] <= 10 for c in notes.values()) and
+         any(p.startswith("/ratings/movies/") for p in notes) and any(p.startswith("/ratings/shows/") for p in notes),
+         "Refract : notes des films et des séries (entier de 1 à 10)")
+verifier(bilan["echec"] == 0 and miroir.operations(ms.doc, "rf", meta)["ops"] == [], "Refract : 409 IN_LIBRARY accepté, plus rien à faire")
 idem = [i for m, p, _, i in faux_services.REFRACT if p == "/history/movies"]
 verifier(all(idem) and len(set(idem)) == len(idem), "Refract : une clé d'idempotence par visionnage")
 shutil.rmtree(mdoss, ignore_errors=True)
