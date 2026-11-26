@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 
 ICI = os.path.dirname(os.path.abspath(__file__))
@@ -23,7 +24,7 @@ DONNEES = tempfile.mkdtemp(prefix="silencio_ui_")
 ENV = dict(os.environ, SILENCIO_DONNEES=DONNEES, SILENCIO_PORT=str(PS), SILENCIO_SANS_NAVIGATEUR="1",
            SILENCIO_TMDB=f"http://127.0.0.1:{PF}/tmdb/3", SILENCIO_TMDB_IMG=f"http://127.0.0.1:{PF}/img/",
            SILENCIO_GITHUB=f"http://127.0.0.1:{PF}/github", SILENCIO_WIKIDATA=f"http://127.0.0.1:{PF}/wikidata",
-           SILENCIO_IMDB=f"http://127.0.0.1:{PF}/imdb.tsv.gz", SILENCIO_MONDE=f"http://127.0.0.1:{PF}/monde.json", SILENCIO_NOMINATIM=f"http://127.0.0.1:{PF}/nominatim")
+           SILENCIO_IMDB=f"http://127.0.0.1:{PF}/imdb.tsv.gz", SILENCIO_REFRACT=f"http://127.0.0.1:{PF}/refract/v1", SILENCIO_MONDE=f"http://127.0.0.1:{PF}/monde.json", SILENCIO_NOMINATIM=f"http://127.0.0.1:{PF}/nominatim")
 os.environ.update({k: v for k, v in ENV.items() if k.startswith("SILENCIO_")})
 import faux_services  # noqa: E402
 faux_services.lancer(PF)
@@ -84,15 +85,30 @@ with sync_playwright() as p:
     pg.on("pageerror", lambda e: erreurs.append(("tel", str(e))))
     pg.goto(URL)
     pg.wait_for_selector(".accueil-profil")
-    # réglage GitHub depuis l'écran d'accueil : Lily apparaît, puis on crée Etienne
-    pg.click("summary")
-    pg.fill("[data-depot]", "test/silencio")
-    pg.fill("[data-jeton]", "jeton-etienne")
-    pg.click("[data-gh]")
-    pg.wait_for_selector(".choix-profil[data-id=lily]", timeout=15000)
-    capture(pg, "01_tel_choix_profil")
-    pg.fill("input[data-nom]", "Etienne")
-    pg.click("[data-creer]")
+    # écran de connexion, puis création du compte (avec un fichier de compte pour les comptes reliés)
+    capture(pg, "01_tel_connexion")
+    pg.click("[data-o=creer]")
+    pg.wait_for_selector("input[name=mot_de_passe2]")
+    pg.fill("input[name=nom]", "Etienne")
+    pg.fill("input[name=identifiant]", "etienne")
+    pg.fill("input[name=mot_de_passe]", "silencio-test-1")
+    pg.fill("input[name=mot_de_passe2]", "silencio-test-2")
+    pg.click("[type=submit]")
+    pg.wait_for_selector("[data-erreur]:not(:empty)")
+    pg.fill("input[name=mot_de_passe2]", "silencio-test-1")
+    fichier = os.path.join(CAPT, "compte-test.json")
+    with open(fichier, "w", encoding="utf-8") as f:
+        json.dump({"letterboxd_pseudo": "Haikazan", "imdb_pseudo": "Haika", "imdb_watchlist": "https://www.imdb.com/user/p.x/watchlist", "jeton_github": "jeton-etienne"}, f)
+    pg.locator("details.compte-plus summary").first.click()
+    pg.set_input_files("[data-fichier]", fichier)
+    pg.wait_for_function("document.querySelector('input[name=letterboxd_pseudo]').value === 'Haikazan'")
+    os.remove(fichier)
+    for d in pg.locator("details.compte-plus").all():
+        d.evaluate("x => x.open = true")
+    if pg.locator("input[name=depot]").count():
+        pg.fill("input[name=depot]", "test/silencio")
+    capture(pg, "01b_tel_creer_compte", plein=True)
+    pg.click("[type=submit]")
     try:
         pg.wait_for_selector(".bonjour", timeout=8000)
     except Exception:
@@ -156,6 +172,10 @@ with sync_playwright() as p:
     pg.fill(".modale [data-prix]", "9")
     pg.click(".modale [data-version] button[data-v=VO]")
     capture(pg, "05_tel_ajout_formulaire")
+    pg.click(".modale .aj-plus")
+    pg.evaluate("document.querySelector('.modale .corps-m').scrollTop = 99999")
+    pg.wait_for_timeout(300)
+    capture(pg, "05b_tel_ajout_plus")
     pg.click(".modale [data-ok]")
     pg.wait_for_timeout(600)
     e = api("/api/etat")
@@ -166,11 +186,17 @@ with sync_playwright() as p:
 
     # page film (téléphone), série, personne
     pg.goto(URL + "/#/titre/m:1018")
-    pg.wait_for_selector(".film-tete")
-    pg.wait_for_selector(".badge-prix")
+    pg.wait_for_selector(".prog-tete")
+    pg.wait_for_selector(".prog-prix div")
     pg.wait_for_timeout(900)
     capture(pg, "07_tel_film")
-    pg.screenshot(path=os.path.join(CAPT, "07b_tel_film_long.png"), full_page=True)
+    pg.evaluate("document.head.insertAdjacentHTML('beforeend', '<style id=sans-toast>#toasts{display:none}</style>')")
+    capture(pg, "07_tel_film")
+    for i, y in enumerate((560, 1270, 1980)):
+        pg.evaluate(f"window.scrollTo(0, {y})")
+        pg.wait_for_timeout(350)
+        capture(pg, f"07{'bcd'[i]}_tel_film")
+    pg.evaluate("window.scrollTo(0, 0); document.getElementById('sans-toast').remove()")
     pg.goto(URL + "/#/titre/t:1920")
     pg.wait_for_selector(".saison")
     pg.click(".saison[data-s='2'] .tete")
@@ -211,6 +237,81 @@ with sync_playwright() as p:
     pg.wait_for_timeout(400)
     assert 8 in api("/api/etat")["profil"]["profil"]["reglages"]["plateformes"]
     capture(pg, "12b_tel_reglages_affichage")
+    # Letterboxd, IMDb, Refract : Silencio maître
+    ec = api("/api/etat")
+    assert ec["compte"]["connecte"] and ec["compte"]["id"] == "etienne" and ec["plateformes"]["lb"]["pseudo"] == "Haikazan" \
+        and ec["plateformes"]["imdb"]["pseudo"] == "Haika", ec["compte"]
+    pg.goto(URL + "/#/reglages/compte")
+    pg.wait_for_selector("[data-mdp]")
+    capture(pg, "12d_tel_compte", plein=True)
+    pg.goto(URL + "/#/reglages/plateformes")
+    pg.wait_for_selector("[data-lb-pseudo]")
+    pg.fill("[data-lb-pseudo]", "etienne")
+    pg.press("[data-lb-pseudo]", "Tab")
+    pg.wait_for_timeout(1200)
+    pg.fill("[data-rf-cle]", "rfk_test")
+    pg.click("[data-rf-ok]")
+    pg.wait_for_timeout(2500)
+    e = api("/api/etat")["plateformes"]
+    assert e["rf"]["connecte"] and e["rf"]["nom_compte"] == "etienne" and e["lb"]["pseudo"] == "etienne", e["rf"]
+    for _ in range(30):
+        if api("/api/etat")["plateformes"]["rf"]["envoye"] > 3:
+            break
+        time.sleep(0.5)
+    assert api("/api/etat")["plateformes"]["rf"]["envoye"] > 3, "Refract : envois"
+    pg.goto(URL + "/#/reglages/plateformes")
+    pg.wait_for_selector("[data-pf=rf]")
+    capture(pg, "12c_tel_plateformes", plein=True)
+    try:
+        api("/api/ext/ops?p=lb")
+        raise AssertionError("sans code d'appairage, l'extension doit être refusée")
+    except urllib.error.HTTPError as er:
+        assert er.code == 403
+    jeton = api("/api/etat")["plateformes"]["jeton"]
+    api("/api/plateformes/depart", {"plateforme": "lb", "vide": True})
+    api("/api/plateformes/depart", {"plateforme": "imdb", "vide": True})
+    # l'extension (background.js) avec une fausse API Firefox : elle lit les opérations et rend ses résultats
+    pe = tel.new_page()
+    pe.goto(URL + "/extension/LISEZMOI.html")
+    pe.evaluate("""() => {
+      const store = {}, ecoutes = [];
+      globalThis.browser = {
+        storage: { local: { get: async d => ({ ...d, ...JSON.parse(JSON.stringify(store)) }), set: async o => { Object.assign(store, o); } } },
+        alarms: { clear: async () => {}, create() {}, onAlarm: { addListener() {} } },
+        runtime: { onInstalled: { addListener() {} }, onStartup: { addListener() {} }, onMessage: { addListener(f) { ecoutes.push(f); } }, openOptionsPage: async () => {} },
+        tabs: { query: async () => [{ id: 1, status: "complete" }], create: async () => ({ id: 2 }), get: async () => ({ status: "complete" }), remove: async () => {},
+                onUpdated: { addListener() {}, removeListener() {} },
+                sendMessage: async (id, m) => ({ cache: {}, bloque: "", resultats: m.ops.map(o => ({ id: o.id, cle: o.cle, action: o.action, valeur: o.valeur, titre: o.titre,
+                  etat: o.sorte === "critique" ? "manuel" : "ok", lien: o.sorte === "critique" ? "https://www.imdb.com/review/create/?tconst=" + o.imdb : undefined,
+                  ref: o.sorte === "liste" ? "ls9" : undefined })) }) },
+        scripting: { executeScript: async () => [] },
+        cookies: { get: async () => ({ value: "tok" }), getAll: async () => [{ name: "x" }] },
+        webRequest: { onBeforeRequest: { addListener() {} } }
+      };
+      window.__msg = m => ecoutes[0](m);
+    }""")
+    pe.add_script_tag(path=os.path.join(RACINE, "extension", "background.js"))
+    pe.evaluate("async j => await window.__msg({ type: 'reglages', valeurs: { adresse: location.origin, jeton: j } })", jeton)
+    # IMDb par défaut « un clic par action » : rien ne part tout seul, la fenêtre de l'extension liste les actions
+    bilan = pe.evaluate("async () => await window.__msg({ type: 'synchroniser' })")
+    assert bilan["imdb"].get("a_reporter", 0) > 0 and not bilan["imdb"].get("fait") and bilan["imdb"]["mode"] == "clic", bilan["imdb"]
+    etat_ext = pe.evaluate("async () => await window.__msg({ type: 'etat' })")
+    un = etat_ext["attente"]["imdb"][0]
+    r1 = pe.evaluate("async id => await window.__msg({ type: 'executer-un', p: 'imdb', id })", un["id"])
+    assert r1["ok"], r1
+    etat_ext = pe.evaluate("async () => await window.__msg({ type: 'etat' })")
+    assert un["id"] not in [o["id"] for o in etat_ext["attente"]["imdb"]], "action envoyée d'un clic"
+    api("/api/reglages", {"modes_ext": {"imdb": "auto"}})
+    for _ in range(4):
+        bilan = pe.evaluate("async () => await window.__msg({ type: 'synchroniser' })")
+        assert 1 <= bilan["lb"].get("fait", 0) <= 6 and 1 <= bilan["imdb"].get("fait", 0) <= 6, bilan
+    pl = api("/api/etat")["plateformes"]
+    assert pl["lb"]["envoye"] >= 4 and pl["imdb"]["envoye"] >= 4 and pl["extension_vue"].get("lb"), pl["lb"]
+    etat_ext = pe.evaluate("async () => await window.__msg({ type: 'etat' })")
+    assert etat_ext["quota"]["lb"]["n"] >= 4, etat_ext["quota"]
+    etat_ext = pe.evaluate("async () => await window.__msg({ type: 'etat' })")
+    assert etat_ext["journal"] and etat_ext["dernier"]["bilan"]["lb"], etat_ext["journal"][:3]
+    pe.close()
     pg.goto(URL + "/#/profil")
     pg.wait_for_selector(".profil-tete")
     pg.wait_for_timeout(600)
@@ -231,7 +332,7 @@ with sync_playwright() as p:
     pg.wait_for_timeout(900)
     capture(pg, "16_tel_decouvrir", plein=True)
     pg.goto(URL + "/#/personne/5602")
-    pg.wait_for_selector(".film-tete")
+    pg.wait_for_selector(".pers-tete")
     pg.wait_for_timeout(700)
     capture(pg, "17_tel_personne")
     pg.goto(URL + "/#/wrapped/2026")
@@ -255,19 +356,18 @@ with sync_playwright() as p:
     pp.wait_for_timeout(1500)
     capture(pp, "20_pc_accueil")
     pp.goto(URL + "/#/titre/m:1018")
-    pp.wait_for_selector(".film-tete")
+    pp.wait_for_selector(".prog-tete")
     pp.wait_for_timeout(1200)
     capture(pp, "21_pc_film")
     # anneau : toucher, puis la rangée ; annulation au clavier
-    pp.click(".anneau")
-    pp.locator(".zone-rangee .case-note").nth(8).click()
+    pp.locator(".prog-note .case-note").nth(8).click()
     pp.wait_for_timeout(900)
     assert api("/api/etat")["profil"]["titres"]["m:1018"]["note"] == 9
     pp.keyboard.press("z")
     pp.wait_for_timeout(500)
     assert api("/api/etat")["profil"]["titres"]["m:1018"]["note"] == 10, "annulation"
     pp.goto(URL + "/#/personne/5602")
-    pp.wait_for_selector(".film-tete")
+    pp.wait_for_selector(".pers-tete")
     pp.wait_for_timeout(1500)
     capture(pp, "22_pc_personne")
     pp.screenshot(path=os.path.join(CAPT, "22b_pc_personne_long.png"), full_page=True)

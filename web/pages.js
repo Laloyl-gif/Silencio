@@ -10,7 +10,7 @@ S.choisirTitre = (cb, titre = "Ajouter un titre") => {
   const corps = el(`<div><input class="champ" type="search" placeholder="Titre…" autocomplete="off"><div class="res-recherche" style="margin-top:10px"></div></div>`);
   S.ouvrirModale({ titre, corps });
   const champ = $("input", corps), res = $(".res-recherche", corps);
-  const afficher = cles => { res.innerHTML = cles.map(c => { const m = S.info(c) || {}; return `<div class="ligne" data-cle="${c}">${S.affiche(m, { taille: "w154" })}<div class="corps"><b>${esc(S.nomTitre(m))}</b><span>${m.a || ""} · ${c[0] === "t" ? "Série" : "Film"}</span></div></div>`; }).join(""); $$(".ligne", res).forEach(l => l.onclick = () => { S.fermerModale(); cb(l.dataset.cle); }); };
+  const afficher = cles => { res.innerHTML = cles.map(c => { const m = S.info(c) || {}; return `<div class="ligne" data-cle="${c}">${S.affiche(m, { taille: "w154" })}<div class="corps"><b>${esc(S.nomTitre(m))}</b><span>${m.a || ""}, ${c[0] === "t" ? "Série" : "Film"}</span></div></div>`; }).join(""); $$(".ligne", res).forEach(l => l.onclick = () => { S.fermerModale(); cb(l.dataset.cle); }); };
   champ.oninput = S.debounce(async () => {
     const q = champ.value.trim(); if (!q) return afficher([]);
     const loc = S.rechercheLocale(q, 5); afficher(loc);
@@ -19,38 +19,83 @@ S.choisirTitre = (cb, titre = "Ajouter un titre") => {
   setTimeout(() => champ.focus(), 80);
 };
 
-// ------------------------------------------------------------------ premier lancement : qui es-tu ?
-P.choixProfil = async (vue) => {
+// ------------------------------------------------------------------ premier lancement : connexion ou création de compte
+// Le mot de passe ne quitte pas l'appareil : il sert à chiffrer ta partie privée (et tes clés) sur GitHub.
+const CHAMPS_FICHIER = ["nom", "identifiant", "letterboxd_pseudo", "imdb_pseudo", "imdb_watchlist", "refract_cle", "jeton_github"];
+function lireFichierCompte(input, form) {
+  const f = input.files && input.files[0]; if (!f) return;
+  f.text().then(t => {
+    let d; try { d = JSON.parse(t); } catch { S.toast("Ce fichier n'est pas un fichier de compte Silencio"); return; }
+    let n = 0;
+    for (const k of CHAMPS_FICHIER) { const x = form.querySelector(`[name="${k}"]`); if (x && d[k]) { x.value = d[k]; n++; } }
+    const plus = form.querySelector("details"); if (plus) plus.open = true;
+    S.toast(n ? `${n} champ${n > 1 ? "s" : ""} rempli${n > 1 ? "s" : ""}` : "Rien à remplir dans ce fichier");
+  });
+}
+S.lireFichierCompte = lireFichierCompte;
+S.champsRelies = (v = {}) => `
+  <label class="etiquette">Pseudo Letterboxd</label><input class="champ" name="letterboxd_pseudo" value="${esc(v.letterboxd_pseudo || "")}" autocomplete="off" spellcheck="false">
+  <label class="etiquette">Pseudo IMDb</label><input class="champ" name="imdb_pseudo" value="${esc(v.imdb_pseudo || "")}" autocomplete="off" spellcheck="false">
+  <label class="etiquette">Lien de ta watchlist IMDb</label><input class="champ" name="imdb_watchlist" value="${esc(v.imdb_watchlist || "")}" placeholder="https://www.imdb.com/user/…/watchlist" autocomplete="off" spellcheck="false">
+  <label class="etiquette">Clé Refract</label><input class="champ" name="refract_cle" type="password" placeholder="rfk_…" autocomplete="off">
+  <label class="etiquette">Jeton GitHub</label><input class="champ" name="jeton_github" type="password" placeholder="${S.etat?.appareil?.github?.jeton ? "déjà enregistré sur cet appareil" : "github_pat_…"}" autocomplete="off">`;
+
+P.choixProfil = async (vue, onglet) => {
   document.body.classList.add("sans-profil");
   $("#lateral").style.display = "none"; $("#barre-bas").style.display = "none";
   vue.className = "plein";
-  vue.innerHTML = `<div class="accueil-profil"><div class="boite"><div class="centre"><img src="icone.svg" alt="" style="width:76px;height:76px;border-radius:20px;margin:0 auto 14px"></div><h1>Silencio</h1><div class="devise">No hay banda. Il n'y a pas d'orchestre.</div><div data-liste>${S.chargement()}</div></div></div>`;
   const d = await S.api("/api/profils").catch(() => ({ locaux: [], github: [], twin_picks: [] }));
-  if (S.moi) return;                                   // un profil a été choisi entre-temps
-  const g = S.etat?.appareil?.github || {};
-  const choix = (liste, source) => liste.map(p => `<button class="choix-profil" data-id="${esc(p.id)}" data-nomp="${esc(p.nom)}" data-source="${source}">${S.avatar(p.id, p.nom)}<span class="espace"><b>${esc(p.nom)}</b><br><span class="mini discret">${source === "github" ? "sur GitHub" : source === "twinpicks" ? "profil Twin Picks" : "sur cet appareil"} · ${S.pluriel(p.nb, "titre")}</span></span>${ico("retour", "")}</button>`).join("");
-  const dejaVus = new Set([...d.locaux, ...d.github].map(p => p.id));
-  $("[data-liste]", vue).innerHTML = `
-    <p class="muet centre" style="margin-top:0">Qui regarde ? Choisis ton profil : cet appareil sera le tien.</p>
-    ${choix(d.locaux, "local")}${choix(d.github.filter(p => !d.locaux.some(l => l.id === p.id)), "github")}${choix(d.twin_picks.filter(p => !dejaVus.has(p.id)), "twinpicks")}
-    <div class="carte" style="margin-top:14px"><label class="etiquette" style="margin-top:0">Nouveau profil</label><div class="flex"><input class="champ" data-nom placeholder="Ton prénom"><button class="bouton principal" data-creer>Créer</button></div></div>
-    <details class="carte" style="margin-top:10px" ${g.jeton ? "" : ""}><summary class="petit muet" style="cursor:pointer">Retrouver les profils de tes amis (GitHub)</summary>
-      <label class="etiquette">Dépôt GitHub des profils</label><input class="champ" data-depot placeholder="compte/silencio" value="${esc(g.depot || "")}">
-      <label class="etiquette">Ton jeton GitHub (accès au dépôt)</label><input class="champ" data-jeton type="password" placeholder="${g.jeton ? "••••" : "github_pat_…"}">
-      <button class="bouton" data-gh style="margin-top:10px">Chercher les profils</button><div class="mini discret" data-gh-etat style="margin-top:8px"></div></details>`;
-  $$(".choix-profil", vue).forEach(b => b.onclick = () => choisir({ id: b.dataset.id, nom: b.dataset.nomp, twin_picks: b.dataset.source === "twinpicks" ? b.dataset.id : undefined }));
-  $("[data-creer]", vue).onclick = () => { const nom = $("[data-nom]", vue).value.trim(); if (nom) choisir({ id: nom, nom }); };
-  $("[data-nom]", vue).onkeydown = e => { if (e.key === "Enter") $("[data-creer]", vue).click(); };
-  $("[data-gh]", vue).onclick = async () => {
-    const etat = $("[data-gh-etat]", vue); etat.textContent = "Recherche…";
-    await S.post("/api/reglages", { github: { depot: $("[data-depot]", vue).value, jeton: $("[data-jeton]", vue).value || null } });
-    await S.post("/api/sync");
-    for (let i = 0; i < 20; i++) { await new Promise(r => setTimeout(r, 1000)); const e = await S.chargerEtat(); if (!e.sync.en_cours && e.sync.derniere || e.sync.erreur) { if (e.sync.erreur) { etat.textContent = e.sync.erreur; return; } break; } }
-    P.choixProfil(vue);
+  if (S.moi) return;
+  onglet = onglet || "connexion";
+  const e = S.etat || {};
+  const sansDepot = !(e.compte && e.compte.depot);
+  vue.innerHTML = `<div class="accueil-profil"><div class="boite compte-boite">
+    <h1>Silencio</h1><div class="devise">No hay banda. Il n'y a pas d'orchestre.</div>
+    <nav class="compte-onglets"><button data-o="connexion" class="${onglet === "connexion" ? "actif" : ""}">Se connecter</button><button data-o="creer" class="${onglet === "creer" ? "actif" : ""}">Créer un compte</button></nav>
+    <form data-form autocomplete="on">${onglet === "connexion" ? `
+      <label class="etiquette">Identifiant</label><input class="champ" name="identifiant" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+      <label class="etiquette">Mot de passe</label><input class="champ" name="mot_de_passe" type="password" autocomplete="current-password" required>
+      <p class="compte-note">Cet appareil restera connecté jusqu'à ce que tu te déconnectes dans Réglages.</p>
+      <button class="bouton principal large" type="submit">Se connecter</button>` : `
+      <label class="etiquette">Ton prénom</label><input class="champ" name="nom" autocomplete="given-name" required>
+      <label class="etiquette">Identifiant</label><input class="champ" name="identifiant" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="lettres, chiffres, tirets" required>
+      <label class="etiquette">Mot de passe</label><input class="champ" name="mot_de_passe" type="password" autocomplete="new-password" minlength="10" required>
+      <label class="etiquette">Encore une fois</label><input class="champ" name="mot_de_passe2" type="password" autocomplete="new-password" required>
+      <p class="compte-note">Garde-le bien : il chiffre ta partie privée et tes clés. Sans lui, personne ne peut les relire, pas même toi.</p>
+      <details class="compte-plus"><summary>Comptes reliés (facultatif, modifiables ensuite)</summary>${S.champsRelies()}
+        <label class="compte-fichier">Remplir depuis un fichier de compte<input type="file" accept=".json,application/json" data-fichier hidden></label></details>
+      <button class="bouton principal large" type="submit">Créer le compte</button>`}
+      ${sansDepot ? `<details class="compte-plus"><summary>Dépôt GitHub des profils</summary><input class="champ" name="depot" placeholder="compte/silencio"></details>` : ""}
+      <p class="compte-erreur" data-erreur role="alert"></p>
+    </form>
+    ${d.locaux.length ? `<div class="compte-locaux"><p class="compte-note">Profils sans compte sur cet appareil</p>${d.locaux.map(p => `<button class="choix-profil" data-id="${esc(p.id)}" data-nomp="${esc(p.nom)}">${S.avatar(p.id, p.nom)}<span class="espace"><b>${esc(p.nom)}</b><br><span class="mini discret">${S.pluriel(p.nb, "titre")}</span></span></button>`).join("")}</div>` : ""}
+  </div></div>`;
+  $$("[data-o]", vue).forEach(b => b.onclick = () => P.choixProfil(vue, b.dataset.o));
+  const form = $("[data-form]", vue), err = $("[data-erreur]", vue);
+  form.oninput = () => { err.textContent = ""; };
+  const fic = $("[data-fichier]", vue); if (fic) fic.onchange = () => lireFichierCompte(fic, form);
+  $$(".choix-profil", vue).forEach(b => b.onclick = () => choisir(b.dataset.id, b.dataset.nomp));
+  form.onsubmit = async ev => {
+    ev.preventDefault();
+    const v = Object.fromEntries(new FormData(form).entries());
+    err.textContent = "";
+    if (onglet === "creer" && v.mot_de_passe !== v.mot_de_passe2) { err.textContent = "Les deux mots de passe ne sont pas identiques."; return; }
+    const bouton = form.querySelector("[type=submit]"); bouton.disabled = true; bouton.textContent = onglet === "creer" ? "Création…" : "Connexion…";
+    try {
+      if (v.depot) await S.post("/api/reglages", { github: { depot: v.depot } });
+      delete v.mot_de_passe2; delete v.depot;
+      await S.post(onglet === "creer" ? "/api/compte/creer" : "/api/compte/connexion", v);
+      entrer();
+    } catch (er) {
+      err.textContent = er.horsLigne ? "Pas d'Internet : la première connexion sur un appareil en a besoin." : er.message;
+      bouton.disabled = false; bouton.textContent = onglet === "creer" ? "Créer le compte" : "Se connecter";
+    }
   };
-  async function choisir(c) {
+  async function choisir(id, nom) {
+    try { await S.post("/api/profil/choisir", { id, nom }); entrer(); } catch (er) { err.textContent = er.message; }
+  }
+  async function entrer() {
     vue.innerHTML = S.chargement();
-    await S.post("/api/profil/choisir", c);
     await S.chargerEtat();
     document.body.classList.remove("sans-profil");
     $("#lateral").style.display = ""; $("#barre-bas").style.display = "";
@@ -86,16 +131,15 @@ P.accueil = async (vue) => {
   const e = S.etat;
   const duree = c => { const m = S.info(c) || {}; return m.ty === "t" ? (m.dep ? `${m.dep} min / ép.` : "Série") : S.duree(m.r) || ""; };
   vue.innerHTML = `
-    <div class="entete bonjour"><h1>${bonjour()}, <i>${esc(moi.profil.nom.split(" ")[0])}</i></h1><span class="espace"></span>
-      <a class="icone-bouton" href="#/notifs" aria-label="Notifications">${ico("cloche")}${e.notifs ? `<span class="badge">${e.notifs}</span>` : ""}</a>
-      <a class="icone-bouton" href="#/reglages" aria-label="Réglages" style="margin-left:0">${ico("reglages")}</a></div>
-    <div class="recherche-accueil">${ico("recherche")}<input type="search" placeholder="Film, série, personne" autocomplete="off" enterkeyhint="search" data-recherche></div>
+    <div class="entete bonjour"><h1>${bonjour()}, <i>${esc(moi.profil.nom.split(" ")[0])}</i></h1>
+      <nav class="liens-tete tel"><a href="#/notifs">Notifications${e.notifs ? ` <b>${e.notifs}</b>` : ""}</a><a href="#/reglages">Réglages</a></nav></div>
+    <div class="recherche-accueil"><input type="search" placeholder="Rechercher un film, une série, une personne" autocomplete="off" enterkeyhint="search" data-recherche></div>
     <div data-resultats class="cache"></div>
     <div data-blocs>
-    ${journal.length ? `<div class="section"><div class="section-titre"><h2>Derniers vus</h2><a class="lien" href="#/journal">Journal</a></div><div class="rangee">${journal.slice(0, 14).map(j => S.vignette(j.cle, { note: j.note })).join("")}</div></div>`
-      : `<div class="carte vide" style="margin-top:20px"><b>Ton journal est vide</b>Le bouton <b>+</b> ajoute ton premier film.</div>`}
-    ${enCours.length ? `<div class="section"><div class="section-titre"><h2>Reprendre</h2></div><div class="suivre">${enCours.map(({ c, p }) => { const m = S.info(c) || {}; return `<a class="carte" href="#/titre/${c}">${S.affiche(m, { taille: "w154" })}<div style="min-width:0"><b class="coupe" style="display:block">${esc(S.nomTitre(m))}</b><span class="petit" style="color:${p.futur ? "var(--texte-3)" : "var(--accent)"}">S${p.s} · É${p.e}${p.futur && p.date ? ` · ${S.fmtDate(p.date, true)}` : ""}</span></div></a>`; }).join("")}</div></div>` : ""}
-    ${wl.length ? `<div class="section"><div class="section-titre"><h2>À voir ensuite</h2><button class="lien" data-tirage aria-label="Tirage au sort" style="color:var(--accent)">${ico("des")}</button><a class="lien" href="#/watchlist" style="margin-left:14px">Watchlist</a></div><div class="rangee">${wl.slice(0, 14).map(c => S.vignette(c, { info: duree(c) })).join("")}</div></div>` : ""}
+    ${journal.length ? `<div class="section"><div class="section-titre"><h2>Derniers vus</h2><a class="lien" href="#/journal">Tout le journal</a></div><div class="rangee">${journal.slice(0, 14).map(j => S.vignette(j.cle, { note: j.note })).join("")}</div></div>`
+      : `<div class="vide"><b>Ton journal est vide</b>Le bouton + ajoute ton premier film.</div>`}
+    ${enCours.length ? `<div class="section"><div class="section-titre"><h2>Reprendre</h2></div><div class="suivre">${enCours.map(({ c, p }) => { const m = S.info(c) || {}; return `<a class="reprise" href="#/titre/${c}">${S.affiche(m, { taille: "w154" })}<div style="min-width:0"><b class="coupe">${esc(S.nomTitre(m))}</b><span class="${p.futur ? "futur" : ""}">Saison ${p.s}, épisode ${p.e}${p.futur && p.date ? `, le ${S.fmtDate(p.date, true)}` : ""}</span></div></a>`; }).join("")}</div></div>` : ""}
+    ${wl.length ? `<div class="section"><div class="section-titre"><h2>À voir ensuite</h2><button class="lien" data-tirage>Au hasard</button><a class="lien" href="#/watchlist" style="margin-left:16px">Watchlist</a></div><div class="rangee">${wl.slice(0, 14).map(c => S.vignette(c, { info: duree(c) })).join("")}</div></div>` : ""}
     ${ceJour.length ? `<div class="section"><div class="section-titre"><h2>Ce jour-là</h2></div><div class="rangee">${ceJour.map(j => S.vignette(j.cle, { note: j.note, info: j.date.slice(0, 4) })).join("")}</div></div>` : ""}
     <div class="section" data-sorties></div>
     <div class="section" data-anniv></div>
@@ -126,7 +170,7 @@ P.accueil = async (vue) => {
   }
   const remplirAnniv = r => {
     if (!r.length) return;
-    $("[data-anniv]", vue).innerHTML = `<div class="section-titre"><h2>Anniversaires</h2></div><div class="rangee">${r.slice(0, 12).map(p => `<a class="personne-v anniv" href="#/personne/${p.id}">${S.portrait(p.photo, p.nom)}<b>${esc(p.nom)}</b><span>${p.dans === 0 ? "aujourd'hui" : p.dans === 1 ? "demain" : `dans ${p.dans} jours`}${p.deces ? "" : ` · ${p.age} ans`}</span></a>`).join("")}</div>`;
+    $("[data-anniv]", vue).innerHTML = `<div class="section-titre"><h2>Anniversaires</h2></div><div class="rangee">${r.slice(0, 12).map(p => `<a class="personne-v anniv" href="#/personne/${p.id}">${S.portrait(p.photo, p.nom)}<b>${esc(p.nom)}</b><span>${p.dans === 0 ? "aujourd'hui" : p.dans === 1 ? "demain" : `dans ${p.dans} jours`}${p.deces ? "" : `, ${p.age} ans`}</span></a>`).join("")}</div>`;
   };
   if (S.memo.anniv) remplirAnniv(S.memo.anniv); else S.api("/api/anniversaires").then(d => { S.memo.anniv = d.r; remplirAnniv(d.r); }).catch(() => {});
 };
@@ -137,13 +181,13 @@ function tirage() {
   if (!wl.length) { S.toast("Ta watchlist est vide."); return; }
   const f = { type: "", duree: 0, genre: "" };
   const corps = el(`<div><div class="flex" style="flex-wrap:wrap"><div class="segments" data-type><button data-v="" class="actif">Tout</button><button data-v="m">Film</button><button data-v="t">Série</button></div><select class="champ" data-duree style="width:auto;height:34px"><option value="0">Toutes durées</option><option value="100">Moins de 1 h 40</option><option value="120">Moins de 2 h</option><option value="150">Moins de 2 h 30</option></select><select class="champ" data-genre style="width:auto;height:34px"><option value="">Tous genres</option>${Object.entries(S.GENRES).filter(([k]) => +k < 10759).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></div><div data-res style="margin-top:14px"></div></div>`);
-  S.ouvrirModale({ titre: "Tirage au sort", corps, pied: `<button class="bouton principal" data-relancer>${ico("des")} Relancer</button>` });
+  S.ouvrirModale({ titre: "Tirage au sort", corps, pied: `<button class="bouton principal" data-relancer>Relancer</button>` });
   const tirer = () => {
     const cands = wl.filter(c => { const m = S.info(c) || {}; return (!f.type || m.ty === f.type) && (!f.duree || (m.r && m.r <= f.duree && m.ty === "m")) && (!f.genre || (m.g || []).includes(+f.genre)); });
     const z = $("[data-res]", corps);
     if (!cands.length) { z.innerHTML = S.vide("Aucun titre ne correspond"); return; }
     const c = cands[Math.floor(Math.random() * cands.length)]; const m = S.info(c) || {};
-    z.innerHTML = `<a class="tirage" href="#/titre/${c}">${m.fd ? `<img class="fond" src="${S.img(m.fd, "w780")}" alt="">` : ""}<div class="flex haut" style="gap:14px">${S.affiche(m, { taille: "w185" }).replace('class="affiche"', 'class="affiche" style="width:90px"')}<div><div class="mini discret">parmi ${cands.length}</div><h3 class="serif" style="font-size:24px;font-weight:600">${esc(S.nomTitre(m))}</h3><div class="muet petit">${[m.a, S.duree(m.ty === "m" ? m.r : 0), (m.g || []).slice(0, 2).map(g => S.GENRES[g]).join(", ")].filter(Boolean).join(" · ")}</div></div></div></a>`;
+    z.innerHTML = `<a class="tirage" href="#/titre/${c}">${m.fd ? `<img class="fond" src="${S.img(m.fd, "w780")}" alt="">` : ""}<div class="flex haut" style="gap:14px">${S.affiche(m, { taille: "w185" }).replace('class="affiche"', 'class="affiche" style="width:90px"')}<div><div class="mini discret">parmi ${cands.length}</div><h3 class="serif" style="font-size:24px;font-weight:600">${esc(S.nomTitre(m))}</h3><div class="muet petit">${[m.a, S.duree(m.ty === "m" ? m.r : 0), (m.g || []).slice(0, 2).map(g => S.GENRES[g]).join(", ")].filter(Boolean).join(", ")}</div></div></div></a>`;
     $("a", z).onclick = () => S.fermerModale(true);
   };
   $$("[data-type] button", corps).forEach(b => b.onclick = () => { f.type = b.dataset.v; $$("[data-type] button", corps).forEach(x => x.classList.toggle("actif", x === b)); tirer(); });
@@ -170,7 +214,7 @@ P.recherche = (vue, args, params) => {
       for (const [c] of Object.entries(S.vivants(doc.titres))) for (const id of (S.info(c)?.re || [])) reals.set(id, (reals.get(id) || 0) + 1);
       const fav = Object.entries(S.vivants(doc.favoris));
       zone.innerHTML = `${fav.length ? `<div class="section-titre"><h2>Tes personnes favorites</h2></div><div class="rangee">${fav.map(([id, p]) => `<a class="personne-v" href="#/personne/${id}">${S.portrait(p.photo, p.nom)}${esc(p.nom)}</a>`).join("")}</div>` : ""}
-        <div class="section-titre section"><h2>Explorer</h2></div><div class="puces"><a class="puce" href="#/decouvrir/explorer">${ico("decouvrir")} Explorer par genre, pays, décennie…</a><a class="puce" href="#/decouvrir">Pour toi</a><a class="puce" href="#/decouvrir/soir">Ce soir entre amis</a><a class="puce" href="#/decouvrir/palmares">Palmarès</a></div>`;
+        <div class="section-titre section"><h2>Explorer</h2></div><div class="puces"><a class="puce" href="#/decouvrir/explorer">Explorer par genre, pays, décennie</a><a class="puce" href="#/decouvrir">Pour toi</a><a class="puce" href="#/decouvrir/soir">Ce soir entre amis</a><a class="puce" href="#/decouvrir/palmares">Palmarès</a></div>`;
       return;
     }
     const loc = etat.onglet === "person" ? [] : S.rechercheLocale(etat.q, 4).filter(c => etat.onglet === "tout" || (etat.onglet === "movie" ? c[0] === "m" : c[0] === "t"));
@@ -219,97 +263,104 @@ function rendreTitre(vue, cle, data) {
   const t = S.monTitre(cle), journal = S.journalDe(cle), wl = S.dansWatchlist(cle);
   const date = d.release_date || d.first_air_date || "";
   const reals = tv ? (d.created_by || []) : (d.credits?.crew || []).filter(c => c.job === "Director");
-  const duree = tv ? (d.episode_run_time?.[0] ? `${d.episode_run_time[0]} min` : "") : S.duree(d.runtime);
+  const duree = tv ? (d.episode_run_time?.[0] ? `${d.episode_run_time[0]} min par épisode` : "") : S.duree(d.runtime);
   const pays = [...new Set((d.production_countries || []).map(p => p.iso_3166_1).concat(tv ? d.origin_country || [] : []))];
   const amis = Object.entries(data.amis || {}).sort((a, b) => (b[1].note ?? -1) - (a[1].note ?? -1));
   const sortieFR = !tv && (d.release_dates?.results || []).find(r => r.iso_3166_1 === "FR")?.release_dates?.find(x => x.type === 3)?.release_date?.slice(0, 10);
   const fourn = data.fournisseurs || {};
   const cast = tv ? (d.aggregate_credits?.cast || []).slice(0, 30) : (d.credits?.cast || []).slice(0, 30);
   const crewBrut = tv ? (d.aggregate_credits?.crew || []).flatMap(c => (c.jobs || []).map(j => ({ ...c, job: j.job }))) : (d.credits?.crew || []);
-  const METIERS = [["Screenplay", "Scénario"], ["Writer", "Scénario"], ["Novel", "Roman"], ["Director of Photography", "Image"], ["Original Music Composer", "Musique"], ["Editor", "Montage"], ["Production Design", "Décors"], ["Costume Design", "Costumes"], ["Sound Designer", "Son"], ["Casting", "Casting"], ["Visual Effects Supervisor", "Effets visuels"], ["Producer", "Production"]];
+  const METIERS = [["Screenplay", "Scénario"], ["Writer", "Scénario"], ["Novel", "Roman"], ["Director of Photography", "Image"], ["Original Music Composer", "Musique"], ["Editor", "Montage"], ["Production Design", "Décors"], ["Costume Design", "Costumes"], ["Sound Designer", "Son"], ["Casting", "Casting"], ["Producer", "Production"]];
   const equipe = {};
   for (const [job, lib] of METIERS) for (const c of crewBrut.filter(x => x.job === job)) { const l = equipe[lib] = equipe[lib] || []; if (!l.some(x => x.id === c.id) && l.length < 3) l.push({ id: c.id, nom: c.name }); }
   const recos = (d.recommendations?.results || []).map(r => S.retenir(r, tv ? "tv" : "movie")).filter(c => c && !S.monTitre(c).vu).slice(0, 16);
   const motscles = ((tv ? d.keywords?.results : d.keywords?.keywords) || []).slice(0, 5);
   const ratio = d.budget > 1000 && d.revenue ? d.revenue / d.budget : null;
-  const verdict = ratio == null ? null : ratio < 1 ? ["Bide", "mauvais"] : ratio < 2.5 ? ["Juste rentable", "moyen"] : ratio < 5 ? ["Succès", "bon"] : ["Triomphe", "bon"];
-  const groupes = [["flatrate", "Abonnement"], ["free", "Gratuit"], ["ads", "Gratuit avec pub"], ["rent", "Location"], ["buy", "Achat"]].filter(([k]) => fourn[k]?.length);
+  const rentab = ratio == null ? "" : ratio < 1 ? "Un échec : le box-office n'a pas couvert le budget." : ratio < 2.5 ? `Rentabilité fragile : ${S.fmtNote(ratio)} fois le budget.` : `Un succès : ${S.fmtNote(ratio)} fois le budget.`;
+  const groupes = [["flatrate", "En abonnement"], ["free", "Gratuit"], ["ads", "Gratuit avec publicité"], ["rent", "En location"], ["buy", "À l'achat"]].filter(([k]) => fourn[k]?.length);
   const titreRecherche = d.title || d.name;
   const vt = "affiche-" + cle.replace(":", "-");
+  const annees = date ? date.slice(0, 4) + (tv && d.last_air_date && d.status !== "Returning Series" && d.last_air_date.slice(0, 4) !== date.slice(0, 4) ? "–" + d.last_air_date.slice(0, 4) : "") : "";
   vue.className = "";
   vue.innerHTML = `<div class="fond-film">${d.poster_path ? `<img src="${S.img(d.poster_path, "w342")}" alt="">` : ""}</div>
-  <div class="page-film">
-    <header class="film-tete apparait">
-      <div class="film-affiche">${S.affiche(m, { taille: "w500", vt })}</div>
-      <div class="film-titres">
-        <h1>${esc(S.nomTitre(m))}</h1>
-        ${S.autreTitre(m) ? `<div class="vo">${esc(S.autreTitre(m))}</div>` : ""}
-        <div class="film-ligne">${date ? `<span>${date.slice(0, 4)}${tv && d.last_air_date && d.status !== "Returning Series" && d.last_air_date.slice(0, 4) !== date.slice(0, 4) ? "–" + d.last_air_date.slice(0, 4) : ""}</span>` : ""}${reals.map(r => `<a href="#/personne/${r.id}">${esc(r.name)}</a>`).join("")}</div>
-        <div class="tags">${(d.genres || []).map(g => `<a class="tag" href="#/decouvrir/explorer?genre=${g.id}&type=${tv ? "tv" : "movie"}">${esc(S.GENRES[g.id] || g.name)}</a>`).join("")}${motscles.map(k => `<a class="tag tag-mc" href="#/motcle/${k.id}">${esc(k.name)}</a>`).join("")}</div>
-        <div class="notes-logos">${data.imdb ? `<span class="note-logo">${S.LOGOS.imdb}<b>${S.fmtNote(data.imdb[0])}</b></span>` : ""}${d.vote_count ? `<span class="note-logo">${S.LOGOS.tmdb}<b>${S.fmtNote(d.vote_average)}</b></span>` : ""}</div>
+  <article class="programme">
+    <header class="prog-tete">
+      <div class="prog-affiche">${S.affiche(m, { taille: "w780", vt })}</div>
+      <div class="prog-entete">
+        <h1 class="prog-titre">${esc(S.nomTitre(m))}</h1>
+        ${S.autreTitre(m) ? `<div class="prog-vo">${esc(S.autreTitre(m))}</div>` : ""}
+        <div class="prog-credit">${annees ? `<span>${annees}</span>` : ""}${reals.length ? `<span>${tv ? "créée par " : "de "}${reals.map(r => `<a href="#/personne/${r.id}">${esc(r.name)}</a>`).join(", ")}</span>` : ""}${duree ? `<span>${duree}</span>` : ""}</div>
+        <div class="prog-genres">${(d.genres || []).map(g => `<a href="#/decouvrir/explorer?genre=${g.id}&type=${tv ? "tv" : "movie"}">${esc(S.GENRES[g.id] || g.name)}</a>`).join(", ")}</div>
+        <div class="prog-notes">${data.imdb ? `<span>${S.LOGOS.imdb}${S.fmtNote(data.imdb[0])}</span>` : ""}${d.vote_count ? `<span>${S.LOGOS.tmdb}${S.fmtNote(d.vote_average)}</span>` : ""}</div>
       </div>
     </header>
-    <div data-prix class="prix-film"></div>
-    <section class="film-note apparait" style="--i:1">
-      <div data-anneau></div>
-      <div class="cartes-film">
-        ${duree ? `<div class="carte-stat"><span>Durée</span><b>${duree}</b></div>` : ""}
-        ${tv ? `<div class="carte-stat"><span>Épisodes</span><b>${d.number_of_episodes || "–"}</b><small>${S.pluriel(d.number_of_seasons || 0, "saison")}</small></div>` : ""}
-        ${d.budget ? `<div class="carte-stat"><span>Budget</span><b>${S.argent(d.budget)}</b>${ratio != null ? `<div class="jauge-bide ${verdict[1]}" title="Recettes ${S.argent(d.revenue)}"><i style="width:${Math.min(100, ratio / 6 * 100)}%"></i><em style="left:${2.5 / 6 * 100}%"></em></div><small>${verdict[0]} · ×${S.fmtNote(ratio)}</small>` : `<small>recettes inconnues</small>`}</div>` : ""}
+    <div class="prog-corps">
+    ${d.tagline ? `<p class="prog-accroche">${esc(d.tagline)}</p>` : ""}
+    ${d.overview || d.overview_en ? `<p class="prog-synopsis" data-synopsis>${esc(d.overview || d.overview_en)}</p>` : ""}
+    <div class="prog-prix" data-prix></div>
+    <section class="panneau">
+      <div class="pan-etats">
+        <button data-etat-vu class="${t.vu || journal.length ? "actif" : ""}" style="--c:#4cc46f">Vu</button>
+        <button data-coeur class="${t.coeur ? "actif" : ""}" style="--c:#f0505f">Coup de cœur</button>
+        <button data-wl class="${wl ? "actif" : ""}" style="--c:#6f9bff">Watchlist</button>
       </div>
+      <div class="prog-note">
+        <div class="pan-tete"><span>${t.note == null ? "Note ce film" : "Ta note"}</span><b data-chiffre>${t.note == null ? "" : S.fmtNote(t.note)}</b></div>
+        <div data-reglette></div>
+      </div>
+      <button class="pan-ligne" data-vu>${journal.length || t.vu ? "Ajouter un visionnage" : "Ajouter au journal"}</button>
+      <button class="pan-ligne" data-liste>Ajouter à une liste</button>
+      ${!tv ? `<button class="pan-ligne" data-collection>${t.collection ? `Dans ta collection, ${esc(t.collection.format || "")}` : "Ajouter à ta collection"}</button>` : ""}
     </section>
-    <div class="boutons-film apparait" style="--i:2"><button class="bouton" data-synopsis>${ico("texte")} Synopsis</button><button class="bouton" data-infos>${ico("info")} Infos</button></div>
-    ${tv ? `<section class="bloc" data-saisons></section>` : ""}
-    ${cast.length ? `<section class="section-film"><h2>Casting</h2><div class="rangee rangee-cast">${cast.map(c => `<a class="personne-v" href="#/personne/${c.id}">${S.portrait(c.profile_path, c.name)}<b>${esc(c.name)}</b><span>${esc(tv ? (c.roles || []).map(r => r.character).filter(Boolean)[0] || "" : c.character || "")}</span></a>`).join("")}</div></section>` : ""}
-    ${Object.keys(equipe).length ? `<section class="section-film"><h2>Équipe</h2><div class="grille-equipe">${Object.entries(equipe).map(([lib, l]) => `<div><span>${lib}</span>${l.map(p => `<a href="#/personne/${p.id}">${esc(p.nom)}</a>`).join("")}</div>`).join("")}</div></section>` : ""}
-    <section class="section-film"><div class="onglets onglets-film"><button data-o="toi" class="actif">Toi</button>${amis.length ? `<button data-o="amis">Amis <span class="discret">${amis.length}</span></button>` : ""}</div><div data-onglet-toi></div><div data-onglet-amis class="cache"></div></section>
-    ${groupes.length ? `<section class="section-film"><h2>Regarder</h2>${groupes.map(([k, l]) => `<div class="groupe-dispo"><span>${l}</span><div class="logos-dispo">${fourn[k].map(p => `<a href="${esc(S.lienPlateforme(p.provider_id, titreRecherche, fourn.link || "#"))}" target="_blank" rel="noopener" title="${esc(p.provider_name)}"><img src="${S.img(p.logo_path, "w92")}" alt="${esc(p.provider_name)}"></a>`).join("")}</div></div>`).join("")}</section>` : ""}
-    ${data.collection?.parts?.length > 1 ? `<section class="section-film"><h2>${esc(data.collection.name)}</h2><div class="rangee">${data.collection.parts.sort((a, b) => (a.release_date || "9").localeCompare(b.release_date || "9")).map(p => S.vignette(S.retenir(p, "movie"), { vu: S.monTitre("m:" + p.id).vu })).join("")}</div></section>` : ""}
-    ${recos.length ? `<section class="section-film"><h2>Dans le même esprit</h2><div class="rangee">${recos.map(c => S.vignette(c)).join("")}</div></section>` : ""}
-  </div>
-  <nav class="barre-film">
-    <button class="bouton principal" data-vu>${ico("oeil")} ${journal.length || t.vu ? "Revu" : "J'ai vu"}</button>
-    <button class="icone-bouton grand ${wl ? "actif" : ""}" data-wl aria-label="Watchlist">${ico(wl ? "watchlist-plein" : "watchlist")}</button>
-    <button class="icone-bouton grand" data-liste aria-label="Ajouter à une liste">${ico("listes")}</button>
-    ${!tv ? `<button class="icone-bouton grand ${t.collection ? "actif" : ""}" data-collection aria-label="Collection">${ico("boite")}</button>` : ""}
-  </nav>`;
-  // couleurs de l'affiche : fond, halos, couleur d'accent de la page
+    ${tv ? `<section class="prog-section" data-saisons></section>` : ""}
+    <section class="prog-section">
+      <div class="prog-onglets" data-fiche>${cast.length ? `<button data-f="cast" class="actif">Casting</button>` : ""}${Object.keys(equipe).length ? `<button data-f="equipe">Équipe</button>` : ""}<button data-f="infos">Infos</button></div>
+      ${cast.length ? `<div data-panneau="cast"><div class="prog-cast">${cast.map(c => `<a href="#/personne/${c.id}"><div class="tete-acteur">${c.profile_path ? `<img loading="lazy" src="${S.img(c.profile_path, "w185")}" alt="">` : `<span>${esc(S.initiales(c.name))}</span>`}</div><b>${esc(c.name)}</b><em>${esc(tv ? (c.roles || []).map(r => r.character).filter(Boolean)[0] || "" : c.character || "")}</em></a>`).join("")}</div></div>` : ""}
+      ${Object.keys(equipe).length ? `<div data-panneau="equipe" class="cache"><dl class="prog-equipe">${Object.entries(equipe).map(([lib, l]) => `<dt>${lib}</dt><dd>${l.map(p => `<a href="#/personne/${p.id}">${esc(p.nom)}</a>`).join("")}</dd>`).join("")}</dl></div>` : ""}
+      <div data-panneau="infos" class="cache"><dl class="prog-equipe">
+        ${d.budget ? `<dt>Budget</dt><dd>${S.argent(d.budget)}</dd>` : ""}${d.revenue ? `<dt>Box-office</dt><dd>${S.argent(d.revenue)}${rentab ? `<small>${rentab}</small>` : ""}</dd>` : ""}
+        ${date ? `<dt>${tv ? "Première diffusion" : "Sortie"}</dt><dd>${S.fmtDate(date)}</dd>` : ""}${sortieFR && sortieFR !== date ? `<dt>En France</dt><dd>${S.fmtDate(sortieFR)}</dd>` : ""}
+        ${tv && d.status ? `<dt>Statut</dt><dd>${esc({ "Returning Series": "En cours", Ended: "Terminée", Canceled: "Annulée", "In Production": "En production" }[d.status] || d.status)}</dd>` : ""}
+        ${pays.length ? `<dt>Pays</dt><dd>${pays.map(p => esc(S.pays(p))).join(", ")}</dd>` : ""}
+        ${(d.production_companies || []).length ? `<dt>Production</dt><dd>${d.production_companies.slice(0, 6).map(c => esc(c.name)).join(", ")}</dd>` : ""}
+        ${tv && (d.networks || []).length ? `<dt>Chaîne</dt><dd>${d.networks.map(n => esc(n.name)).join(", ")}</dd>` : ""}
+        ${motscles.length ? `<dt>Thèmes</dt><dd>${motscles.map(k => `<a href="#/motcle/${k.id}" style="display:inline">${esc(k.name)}</a>`).join(", ")}</dd>` : ""}
+      </dl></div>
+    </section>
+    <section class="prog-section"><div class="prog-onglets"><button data-o="toi" class="actif">Ton journal</button>${amis.length ? `<button data-o="amis">Tes amis</button>` : ""}</div><div data-onglet-toi></div><div data-onglet-amis class="cache"></div></section>
+    ${groupes.length ? `<section class="prog-section"><h2>Le regarder</h2><div class="prog-dispo">${groupes.map(([k, l]) => `<div><span>${l}</span>${fourn[k].map(p => `<a href="${esc(S.lienPlateforme(p.provider_id, titreRecherche, fourn.link || "#"))}" target="_blank" rel="noopener" title="${esc(p.provider_name)}"><img src="${S.img(p.logo_path, "w92")}" alt="${esc(p.provider_name)}"></a>`).join("")}</div>`).join("")}</div></section>` : ""}
+    ${data.collection?.parts?.length > 1 ? `<section class="prog-section"><h2>${esc(data.collection.name)}</h2><div class="prog-rangee">${data.collection.parts.sort((a, b) => (a.release_date || "9").localeCompare(b.release_date || "9")).map(p => S.vignette(S.retenir(p, "movie"), { vu: S.monTitre("m:" + p.id).vu })).join("")}</div></section>` : ""}
+    ${recos.length ? `<section class="prog-section"><h2>Dans le même esprit</h2><div class="prog-rangee">${recos.map(c => S.vignette(c)).join("")}</div></section>` : ""}
+    </div>
+  </article>`;
   if (d.poster_path) S.couleursAffiche(S.img(d.poster_path, "w92")).then(c => {
     if (!c || !location.hash.includes(cle)) return;
-    const a = S.accentLisible(c[0]);
-    document.body.style.setProperty("--accent-film", a.join(","));
-    document.body.style.setProperty("--accent-film-2", S.accentLisible(c[1]).join(","));
+    document.body.style.setProperty("--accent-film", S.accentLisible(c[0]).join(","));
   });
-  // ta note : l'anneau, toucher pour noter
-  const an = S.anneau(t.note, v => S.agir("noter", { cle, note: v }, { toast: v == null ? "Note retirée" : `Noté ${S.fmtNote(v)}`, sansRendu: true }));
-  an.insertAdjacentHTML("beforeend", `<button class="coeur ${t.coeur ? "actif" : ""}" data-coeur aria-label="Coup de cœur">${ico(t.coeur ? "coeur-plein" : "coeur")}</button>`);
-  $("[data-anneau]", vue).append(an);
-  $("[data-coeur]", vue).onclick = ev => { const b = ev.currentTarget; const nv = !b.classList.contains("actif"); b.classList.toggle("actif", nv); b.innerHTML = ico(nv ? "coeur-plein" : "coeur"); b.classList.remove("rebond"); void b.offsetWidth; b.classList.add("rebond"); S.agir("coeur", { cle, val: nv }, { toast: nv ? "Coup de cœur" : "Cœur retiré", sansRendu: true }); };
+  // ta note : le gros chiffre suit la réglette
+  const chiffre = $("[data-chiffre]", vue);
+  const ecrire = v => { chiffre.textContent = v == null ? "" : S.fmtNote(v); chiffre.previousElementSibling.textContent = v == null ? "Note ce film" : "Ta note"; };
+  const reglette = S.rangee(t.note, v => (v != null && $("[data-etat-vu]", vue)?.classList.add("actif"), S.agir("noter", { cle, note: v }, { toast: v == null ? "Note retirée" : `Noté ${S.fmtNote(v)}`, sansRendu: true })), { grande: true, delai: 450 });
+  reglette.addEventListener("click", () => setTimeout(() => ecrire(reglette.valeur()), 0));
+  $("[data-reglette]", vue).append(reglette);
+  $("[data-coeur]", vue).onclick = ev => { const b = ev.currentTarget; const nv = !b.classList.contains("actif"); b.classList.toggle("actif", nv);  S.agir("coeur", { cle, val: nv }, { toast: nv ? "Coup de cœur" : "Cœur retiré", sansRendu: true }); };
   $("[data-vu]", vue).onclick = () => S.ouvrirAjout(cle);
-  $("[data-wl]", vue).onclick = () => S.agir("watchlist", { cle, val: !wl }, { toast: wl ? "Retiré de la watchlist" : "Dans ta watchlist" });
+  $("[data-wl]", vue).onclick = () => S.agir("watchlist", { cle, val: !wl }, { toast: wl ? "Retiré de ta watchlist" : "Ajouté à ta watchlist" });
+  $("[data-etat-vu]", vue).onclick = () => { const vu = t.vu || journal.length; S.agir("vu", { cle, val: !vu }, { toast: vu ? "Marqué pas vu" : "Marqué vu" }); };
+  const syn = $("[data-synopsis]", vue); if (syn) syn.onclick = () => syn.classList.toggle("ouvert");
+  $$("[data-fiche] button", vue).forEach(b => b.onclick = () => { $$("[data-fiche] button", vue).forEach(x => x.classList.toggle("actif", x === b)); $$("[data-panneau]", vue).forEach(p => p.classList.toggle("cache", p.dataset.panneau !== b.dataset.f)); });
   $("[data-liste]", vue).onclick = () => S.choisirListe(cle);
   const col = $("[data-collection]", vue); if (col) col.onclick = () => collection(cle);
-  $("[data-synopsis]", vue).onclick = () => S.ouvrirModale({ titre: "Synopsis", corps: `${d.tagline ? `<p class="serif" style="font-style:italic;color:var(--texte-2);font-size:17px;margin-top:0">${esc(d.tagline)}</p>` : ""}<p class="synopsis" style="font-size:16px">${esc(d.overview || d.overview_en || "Pas de synopsis.")}</p>` });
-  $("[data-infos]", vue).onclick = () => S.ouvrirModale({ titre: "Infos", corps: `<dl class="tableau-infos">
-    ${date ? `<dt>${tv ? "Première diffusion" : "Sortie"}</dt><dd>${S.fmtDate(date)}</dd>` : ""}${sortieFR && sortieFR !== date ? `<dt>En France</dt><dd>${S.fmtDate(sortieFR)}</dd>` : ""}
-    ${tv && d.status ? `<dt>Statut</dt><dd>${esc({ "Returning Series": "En cours", Ended: "Terminée", Canceled: "Annulée", "In Production": "En production" }[d.status] || d.status)}</dd>` : ""}
-    ${pays.length ? `<dt>Pays</dt><dd>${pays.map(p => esc(S.pays(p))).join(", ")}</dd>` : ""}
-    ${d.revenue ? `<dt>Recettes</dt><dd>${S.argent(d.revenue)}</dd>` : ""}
-    ${(d.production_companies || []).length ? `<dt>Production</dt><dd>${d.production_companies.slice(0, 6).map(c => esc(c.name)).join(", ")}</dd>` : ""}
-    ${tv && (d.networks || []).length ? `<dt>Chaîne</dt><dd>${d.networks.map(n => esc(n.name)).join(", ")}</dd>` : ""}
-  </dl>` });
-  // onglets Toi / Amis
   const toi = $("[data-onglet-toi]", vue), am = $("[data-onglet-amis]", vue);
   monJournal(toi, cle, t, journal);
-  am.innerHTML = amis.map(([pid, a]) => { const ec = a.note != null && t.note != null ? a.note - t.note : null; return `<div class="ami-note"><a href="#/profil/${encodeURIComponent(pid)}">${S.avatar(pid, a.nom)}</a><span class="espace"><b>${esc(a.nom)}</b>${a.coeur ? ` <span style="color:var(--rouge)">${ico("coeur-plein")}</span>` : ""}${!a.vu && a.watchlist ? `<br><span class="mini discret">veut le voir</span>` : ""}</span>${a.note != null ? `<span class="note-ami">${S.fmtNote(a.note)}</span>` : ""}</div>${a.critiques.map(c => `<div class="critique" style="padding-left:42px"><p>${esc(c.texte)}</p></div>`).join("")}`; }).join("");
-  $$(".onglets-film button", vue).forEach(b => b.onclick = () => { $$(".onglets-film button", vue).forEach(x => x.classList.toggle("actif", x === b)); toi.classList.toggle("cache", b.dataset.o !== "toi"); am.classList.toggle("cache", b.dataset.o !== "amis"); });
+  am.innerHTML = amis.map(([pid, a]) => `<div class="ami-ligne"><b>${esc(a.nom)}</b>${a.note != null ? `<span class="n">${S.fmtNote(a.note)}</span>` : "<span></span>"}<small>${a.vu ? (a.coeur ? "coup de cœur" : "l'a vu") : a.watchlist ? "veut le voir" : ""}</small>${a.critiques.map(c => `<p>${esc(c.texte)}</p>`).join("")}</div>`).join("");
+  $$("[data-o]", vue).forEach(b => b.onclick = () => { $$("[data-o]", vue).forEach(x => x.classList.toggle("actif", x === b)); toi.classList.toggle("cache", b.dataset.o !== "toi"); am.classList.toggle("cache", b.dataset.o !== "amis"); });
   if (tv) saisons($("[data-saisons]", vue), cle, d);
-  // récompenses (Wikidata), sans bloquer la page
   const pz = $("[data-prix]", vue);
   const peindrePrix = r => {
     if (!r || (!r.gagnes.length && !r.nominations.length)) return;
-    pz.innerHTML = `${r.gagnes.map(p => `<span class="badge-prix">${ico("trophee")}${esc(p.prix)}${p.annee ? ` <em>${p.annee}</em>` : ""}</span>`).join("")}${r.nominations.length ? `<button class="badge-prix nomination" data-nom>+ ${S.pluriel(r.nominations.length, "nomination")}</button><div class="cache liste-nominations">${r.nominations.map(p => `<span>${esc(p.prix)}${p.annee ? ` · ${p.annee}` : ""}</span>`).join("")}</div>` : ""}`;
-    const b = $("[data-nom]", pz); if (b) b.onclick = () => $(".liste-nominations", pz).classList.toggle("cache");
+    pz.innerHTML = `${r.gagnes.map(p => `<div>${esc(p.prix)}${p.annee ? `, ${p.annee}` : ""}</div>`).join("")}${r.nominations.length ? `<button data-nom>et ${S.pluriel(r.nominations.length, "nomination")}</button><div class="nominations cache">${r.nominations.map(p => `<div>${esc(p.prix)}${p.annee ? `, ${p.annee}` : ""}</div>`).join("")}</div>` : ""}`;
+    const b = $("[data-nom]", pz); if (b) b.onclick = () => { $(".nominations", pz).classList.toggle("cache"); b.remove(); };
   };
   if (S.memo["prix:" + cle]) peindrePrix(S.memo["prix:" + cle]);
   else S.api("/api/prix/titre/" + cle).then(r => { S.memo["prix:" + cle] = r; if (location.hash.includes(cle)) peindrePrix(r); }).catch(() => {});
@@ -318,29 +369,31 @@ function rendreTitre(vue, cle, data) {
 function monJournal(z, cle, t, journal) {
   const cit = t.citations || [], et = t.etiquettes || [], det = Object.entries(t.detail || {}).filter(([, v]) => v);
   const LIB = { scenario: "Scénario", realisation: "Mise en scène", jeu: "Jeu", image: "Image", musique: "Musique", son: "Son" };
-  z.innerHTML = `${journal.length ? `<div class="lignes">${journal.map(j => `<div class="ligne" data-j="${j.id}" style="cursor:pointer"><div class="jour"><b>${+j.date.slice(8, 10) || ""}</b><span>${S.MOIS_C[+j.date.slice(5, 7) - 1] || ""} ${j.date.slice(2, 4)}</span></div><div class="corps"><span class="icones-ligne">${j.revision ? ico("revision") : ""}${j.ou?.type === "cinema" ? ico("ticket") + `<span class="mini">${esc(j.ou.cinema || "")}${j.ou.salle ? " · " + esc(j.ou.salle) : ""}</span>` : j.ou?.nom ? ico(j.ou.type === "support" ? "disque" : "play") + `<span class="mini">${esc(j.ou.nom)}</span>` : ""}${j.version ? `<span class="mini">${esc(j.version)}</span>` : ""}${(j.avec || []).length ? `<span class="mini">avec ${esc(j.avec.map(a => S.amis[a]?.profil?.nom || a).join(", "))}</span>` : ""}${j.prive ? ico("cadenas") : ""}</span>${j.critique ? `<div class="petit" style="color:#d6d4df;white-space:pre-wrap;margin-top:4px">${esc(j.critique)}${j.critique_privee ? ` <span class="discret">${ico("cadenas")}</span>` : ""}</div>` : ""}</div><div class="droite">${j.note != null ? `<span class="note-txt">${S.fmtNote(j.note)}</span>` : ""}${ico("crayon")}</div></div>`).join("")}</div>` : `<div class="mini discret" style="padding:6px 0">Pas encore dans ton journal.</div>`}
-    ${det.length ? `<div class="mini-notes" style="margin-top:14px">${det.map(([k, v]) => `<span class="petit muet">${LIB[k] || k}</span><div class="flex"><div class="jauge" style="width:140px"><i style="width:${v * 10}%"></i></div><span class="mini">${v}/10</span></div>`).join("")}</div>` : ""}
-    <div style="margin-top:14px">${cit.map((c, i) => `<div class="citation flex haut"><span class="espace">${esc(c)}</span><button class="discret" data-cit-suppr="${i}">${ico("x")}</button></div>`).join("")}</div>
-    <div class="puces" style="margin-top:10px">${et.map(e => `<span class="puce actif">${esc(e)} <button class="x" data-et-suppr="${esc(e)}">${ico("x")}</button></span>`).join("")}<button class="puce" data-cit>${ico("citation")} Citation</button><button class="puce" data-et>${ico("plus")} Étiquette</button>${t.prive ? `<button class="puce actif" data-prive>${ico("cadenas")} Film caché</button>` : `<button class="puce" data-prive>${ico("cadenas")} Cacher ce film</button>`}</div>`;
+  const ou = j => j.ou?.type === "cinema" ? `au ${esc(j.ou.cinema || "cinéma")}${j.ou.salle ? `, salle ${esc(j.ou.salle)}` : ""}` : j.ou?.nom ? `sur ${esc(j.ou.nom)}` : "";
+  z.innerHTML = `${journal.length ? journal.map(j => `<button class="toi-vis" data-j="${j.id}"><span class="toi-date">${esc(S.fmtDateP(j.date))}</span><span class="toi-det">${[j.revision ? "revu" : "", ou(j), j.version, (j.avec || []).length ? "avec " + esc(j.avec.map(a => S.amis[a]?.profil?.nom || a).join(", ")) : ""].filter(Boolean).join(", ")}</span>${j.note != null ? `<span class="toi-note">${S.fmtNote(j.note)}</span>` : ""}${j.critique ? `<span class="toi-critique">${esc(j.critique)}</span>` : ""}</button>`).join("") : `<p class="toi-vide">Pas encore dans ton journal.</p>`}
+    ${det.length ? `<dl class="prog-equipe" style="margin-top:14px">${det.map(([k, v]) => `<dt>${LIB[k] || k}</dt><dd>${v} sur 10</dd>`).join("")}</dl>` : ""}
+    ${cit.map((c, i) => `<blockquote class="toi-citation">${esc(c)}<button data-cit-suppr="${i}">retirer</button></blockquote>`).join("")}
+    ${et.length ? `<p class="toi-etiquettes">${et.map(e => `<span>${esc(e)} <button data-et-suppr="${esc(e)}" aria-label="Retirer">×</button></span>`).join(", ")}</p>` : ""}
+    <div class="toi-actions"><button data-cit>Ajouter une réplique</button><button data-et>Ajouter une étiquette</button><button data-prive>${t.prive ? "Montrer ce film à tes amis" : "Cacher ce film à tes amis"}</button></div>`;
   $$("[data-j]", z).forEach(l => l.onclick = () => S.ouvrirAjout(cle, journal.find(j => j.id === l.dataset.j)));
-  $$("[data-cit-suppr]", z).forEach(b => b.onclick = () => S.agir("titre", { cle, champs: { citations: cit.filter((_, i) => i !== +b.dataset.citSuppr) } }, { toast: "Citation retirée" }));
+  $$("[data-cit-suppr]", z).forEach(b => b.onclick = () => S.agir("titre", { cle, champs: { citations: cit.filter((_, i) => i !== +b.dataset.citSuppr) } }, { toast: "Réplique retirée" }));
   $$("[data-et-suppr]", z).forEach(b => b.onclick = () => S.agir("titre", { cle, champs: { etiquettes: et.filter(e => e !== b.dataset.etSuppr) } }, { toast: "Étiquette retirée" }));
   $("[data-cit]", z).onclick = () => {
-    const c = el(`<div><textarea class="champ" placeholder="« No hay banda… »"></textarea></div>`);
-    S.ouvrirModale({ titre: "Ta réplique préférée", corps: c, pied: `<button class="bouton principal" data-ok>Ajouter</button>` });
+    const c = el(`<div><textarea class="champ" placeholder="No hay banda…"></textarea></div>`);
+    S.ouvrirModale({ titre: "Ta réplique", corps: c, pied: `<button class="bouton principal" data-ok>Ajouter</button>` });
     $("textarea", c).focus();
-    $("[data-ok]", c.closest(".modale")).onclick = async () => { const v = $("textarea", c).value.trim(); if (!v) return; await S.agir("titre", { cle, champs: { citations: [...cit, v] } }, { toast: "Citation ajoutée", sansRendu: true }); S.fermerModale(); S.rafraichir(true); };
+    $("[data-ok]", c.closest(".modale")).onclick = async () => { const v = $("textarea", c).value.trim(); if (!v) return; await S.agir("titre", { cle, champs: { citations: [...cit, v] } }, { toast: "Réplique ajoutée", sansRendu: true }); S.fermerModale(); S.rafraichir(true); };
   };
   $("[data-et]", z).onclick = () => {
     const toutes = [...new Set(Object.values(S.vivants(S.moi.titres)).flatMap(x => x.etiquettes || []))].filter(e => !et.includes(e));
-    const c = el(`<div><input class="champ" placeholder="Nouvelle étiquette" list="etq"><datalist id="etq">${toutes.map(e => `<option value="${esc(e)}">`).join("")}</datalist><div class="puces" style="margin-top:10px">${toutes.slice(0, 30).map(e => `<button class="puce" data-v="${esc(e)}">${esc(e)}</button>`).join("")}</div></div>`);
+    const c = el(`<div><input class="champ" placeholder="Nouvelle étiquette" list="etq"><datalist id="etq">${toutes.map(e => `<option value="${esc(e)}">`).join("")}</datalist><p class="toi-etiquettes">${toutes.slice(0, 30).map(e => `<button data-v="${esc(e)}">${esc(e)}</button>`).join(", ")}</p></div>`);
     S.ouvrirModale({ titre: "Étiquette", corps: c, pied: `<button class="bouton principal" data-ok>Ajouter</button>` });
-    const ajouter = async v => { v = v.trim(); if (!v) return; await S.agir("titre", { cle, champs: { etiquettes: [...et, v] } }, { toast: `Étiquette « ${v} »`, sansRendu: true }); S.fermerModale(); S.rafraichir(true); };
+    const ajouter = async v => { v = v.trim(); if (!v) return; await S.agir("titre", { cle, champs: { etiquettes: [...et, v] } }, { toast: "Étiquette ajoutée", sansRendu: true }); S.fermerModale(); S.rafraichir(true); };
     $$("[data-v]", c).forEach(b => b.onclick = () => ajouter(b.dataset.v));
     $("[data-ok]", c.closest(".modale")).onclick = () => ajouter($("input", c).value);
     $("input", c).onkeydown = e => { if (e.key === "Enter") ajouter(e.target.value); };
   };
-  $("[data-prive]", z).onclick = () => S.agir("titre", { cle, champs: { prive: !t.prive } }, { toast: t.prive ? "Film visible par tes amis" : "Film caché à tes amis (il compte dans tes stats)" });
+  $("[data-prive]", z).onclick = () => S.agir("titre", { cle, champs: { prive: !t.prive } }, { toast: t.prive ? "Film visible par tes amis" : "Film caché à tes amis" });
 }
 
 function collection(cle) {
@@ -361,8 +414,8 @@ function saisons(z, cle, d) {
   const total = liste.filter(x => x.season_number).reduce((n, x) => n + x.episode_count, 0);
   const nbVus = [...vus].filter(e => !e.startsWith("0x")).length;
   const p = S.prochainEpisode(cle);
-  z.innerHTML = `<div class="section-titre"><h2>Saisons<span class="compte">${liste.filter(x => x.season_number).length}</span></h2><span class="mini discret">${nbVus}/${total} épisodes vus${p ? ` · prochain : S${p.s} É${p.e}${p.futur && p.date ? " le " + S.fmtDate(p.date, true) : ""}` : ""}</span></div>
-    ${liste.map(x => { const n = x.season_number; const v = Array.from({ length: x.episode_count }, (_, i) => `${n}x${i + 1}`).filter(e => vus.has(e)).length; const note = (s.saisons || {})[n]; return `<div class="saison" data-s="${n}"><div class="tete">${S.affiche({ af: x.poster_path, t: x.name }, { taille: "w92" }).replace('class="affiche"', 'class="affiche" style="width:42px"')}<div class="espace"><b style="font-weight:550">${esc(x.name || "Saison " + n)}</b><div class="mini discret">${v}/${x.episode_count} épisodes${x.air_date ? " · " + x.air_date.slice(0, 4) : ""}${note ? ` · ta note ${S.fmtNote(note)}` : ""}</div><div class="barre"><i style="width:${100 * v / x.episode_count}%"></i></div></div><button class="coche ${v === x.episode_count ? "ok" : ""}" data-tout="${n}" data-nb="${x.episode_count}" title="Toute la saison">${ico("ok")}</button></div><div class="episodes cache"></div></div>`; }).join("")}
+  z.innerHTML = `<div class="section-titre"><h2>Saisons<span class="compte">${liste.filter(x => x.season_number).length}</span></h2><span class="mini discret">${nbVus}/${total} épisodes vus${p ? `, prochain : S${p.s} É${p.e}${p.futur && p.date ? " le " + S.fmtDate(p.date, true) : ""}` : ""}</span></div>
+    ${liste.map(x => { const n = x.season_number; const v = Array.from({ length: x.episode_count }, (_, i) => `${n}x${i + 1}`).filter(e => vus.has(e)).length; const note = (s.saisons || {})[n]; return `<div class="saison" data-s="${n}"><div class="tete">${S.affiche({ af: x.poster_path, t: x.name }, { taille: "w92" }).replace('class="affiche"', 'class="affiche" style="width:42px"')}<div class="espace"><b style="font-weight:550">${esc(x.name || "Saison " + n)}</b><div class="mini discret">${v}/${x.episode_count} épisodes${x.air_date ? ", " + x.air_date.slice(0, 4) : ""}${note ? `, ta note ${S.fmtNote(note)}` : ""}</div><div class="barre"><i style="width:${100 * v / x.episode_count}%"></i></div></div><button class="coche ${v === x.episode_count ? "ok" : ""}" data-tout="${n}" data-nb="${x.episode_count}" title="Toute la saison"></button></div><div class="episodes cache"></div></div>`; }).join("")}
     <div data-courbe style="margin-top:12px"></div>`;
   $$(".saison", z).forEach(b => {
     const n = +b.dataset.s;
@@ -374,8 +427,8 @@ function saisons(z, cle, d) {
       try {
         const sa = S.memo[`saison:${cle}:${n}`] = S.memo[`saison:${cle}:${n}`] || await S.api(`/api/saison/${d.id}/${n}`);
         const auj = S.aujourdhui();
-        eps.innerHTML = `<div class="flex" style="padding:10px 12px;border-bottom:1px solid var(--ligne)"><span class="petit muet">Ta note de la saison</span><span data-note-s></span></div>` + (sa.episodes || []).map(e => `<div class="episode"><span class="num">É${e.episode_number}</span><span class="espace"><span style="${e.air_date > auj ? "color:var(--texte-3)" : ""}">${esc(e.name || "")}</span><br><span class="mini discret">${e.air_date ? S.fmtDate(e.air_date, true) : ""}${e.runtime ? " · " + e.runtime + " min" : ""}${e.vote_count ? " · TMDB " + S.fmtNote(e.vote_average) : ""}</span></span><button class="coche ${vus.has(`${n}x${e.episode_number}`) ? "ok" : ""}" data-ep="${n}x${e.episode_number}">${ico("ok")}</button></div>`).join("");
-        $("[data-note-s]", eps).append(S.etoiles((s.saisons || {})[n], v => S.agir("note_saison", { cle, saison: n, note: v }, { toast: `Saison ${n} : ${v == null ? "note retirée" : S.fmtNote(v)}`, sansRendu: true }), { petites: true }));
+        eps.innerHTML = `<div class="flex" style="padding:10px 12px;border-bottom:1px solid var(--ligne)"><span class="petit muet">Ta note de la saison</span><span data-note-s></span></div>` + (sa.episodes || []).map(e => `<div class="episode"><span class="num">É${e.episode_number}</span><span class="espace"><span style="${e.air_date > auj ? "color:var(--texte-3)" : ""}">${esc(e.name || "")}</span><br><span class="mini discret">${e.air_date ? S.fmtDate(e.air_date, true) : ""}${e.runtime ? ", " + e.runtime + " min" : ""}${e.vote_count ? ", TMDB " + S.fmtNote(e.vote_average) : ""}</span></span><button class="coche ${vus.has(`${n}x${e.episode_number}`) ? "ok" : ""}" data-ep="${n}x${e.episode_number}"></button></div>`).join("");
+        $("[data-note-s]", eps).append(S.rangee((s.saisons || {})[n], v => S.agir("note_saison", { cle, saison: n, note: v }, { toast: `Saison ${n} : ${v == null ? "note retirée" : S.fmtNote(v)}`, sansRendu: true }), { petites: true }));
         $$("[data-ep]", eps).forEach(c => c.onclick = () => { const ok = !c.classList.contains("ok"); c.classList.toggle("ok", ok); ok ? vus.add(c.dataset.ep) : vus.delete(c.dataset.ep); S.agir("episodes", { cle, episodes: [c.dataset.ep], val: ok }, { toast: false, sansRendu: true }); });
       } catch (e) { eps.innerHTML = `<div class="vide petit">${esc(e.horsLigne ? "Hors ligne" : e.message)}</div>`; }
     };
@@ -427,41 +480,33 @@ P.personne = async (vue, args) => {
   const age = (n, m) => { if (!n) return ""; const f = m ? new Date(m) : new Date(); const a = f.getFullYear() - +n.slice(0, 4) - ((f.getMonth() + 1) * 100 + f.getDate() < +n.slice(5, 7) * 100 + +n.slice(8, 10) ? 1 : 0); return `${a} ans`; };
   const ongletP = S.filtresMemo["pers_o_" + pid] = S.filtresMemo["pers_o_" + pid] || "filmo";
   const vusN = cLong.v + cDocu.v + cSerie.v, totN = cLong.n + cDocu.n + cSerie.n;
+  const notesP = mesNotes.map(x => S.monTitre(x.cle).note);
+  const moyP = notesP.length ? Math.round(moyenne(notesP) * 10) / 10 : null;
+  const ligneCompte = (lib, c) => c.n ? `<dt>${lib}</dt><dd><b>${c.v}</b> sur ${c.n}</dd>` : "";
   vue.innerHTML = `
-    <div class="page-film" style="padding-bottom:40px">
-    <header class="film-tete apparait">
-      <div class="film-affiche">${S.portrait(d.profile_path, d.name)}</div>
-      <div class="film-titres">
-        <h1>${esc(d.name)}</h1>
-        <div class="film-ligne"><span>${esc(DEPT[d.known_for_department] || d.known_for_department || "")}</span>${d.birthday ? `<span>${d.deathday ? d.birthday.slice(0, 4) + "–" + d.deathday.slice(0, 4) : age(d.birthday)}</span>` : ""}</div>
-        <div class="flex" style="margin-top:12px"><button class="bouton ${fav ? "actif" : ""}" data-fav>${ico(fav ? "coeur-plein" : "coeur")} ${fav ? "Favori" : "Favori ?"}</button></div>
-      </div>
+    <div class="pers-page">
+    <header class="pers-tete">
+      <div class="pers-photo">${S.portrait(d.profile_path, d.name)}</div>
+      <div style="min-width:0"><h1>${esc(d.name)}</h1>
+        <div class="pers-sous">${[DEPT[d.known_for_department] || d.known_for_department || "", d.birthday ? (d.deathday ? d.birthday.slice(0, 4) + "–" + d.deathday.slice(0, 4) : age(d.birthday)) : ""].filter(Boolean).join(", ")}</div></div>
     </header>
-    <section class="film-note apparait" style="--i:1">
-      <div data-anneau-p></div>
-      <div class="cartes-film">
-        ${totN ? `<div class="carte-stat"><span>Vus</span><b>${vusN}/${totN}</b><div class="jauge" style="margin-top:8px;height:5px"><i style="width:${100 * vusN / totN}%"></i></div></div>` : ""}
-        ${cLong.n ? `<div class="carte-stat"><span>Longs</span><b>${cLong.v}/${cLong.n}</b></div>` : ""}
-        ${cCourt.n ? `<div class="carte-stat"><span>Courts</span><b>${cCourt.v}/${cCourt.n}</b></div>` : ""}
-        ${cDocu.n ? `<div class="carte-stat"><span>Documentaires</span><b>${cDocu.v}/${cDocu.n}</b></div>` : ""}
-        ${cSerie.n ? `<div class="carte-stat"><span>Séries</span><b>${cSerie.v}/${cSerie.n}</b></div>` : ""}
-      </div>
+    <section class="panneau pers-panneau">
+      <div class="pan-etats deux"><button data-fav class="${fav ? "actif" : ""}" style="--c:#f0505f">Favori</button><div class="pan-moy"><span>Ta moyenne</span><b>${moyP == null ? "–" : S.fmtNote(moyP)}</b></div></div>
+      ${totN ? `<dl class="pers-compte"><dt>Vus</dt><dd><b>${vusN}</b> sur ${totN}</dd>${ligneCompte("Longs métrages", cLong)}${ligneCompte("Courts métrages", cCourt)}${ligneCompte("Documentaires", cDocu)}${ligneCompte("Séries", cSerie)}</dl>` : ""}
     </section>
-    <div class="onglets onglets-film" style="margin-top:22px">${[["filmo", "Filmo"], ["classement", "Classement"], ["courbe", "Courbe"], ["prix", "Prix"], ["collab", "Collaborateurs"]].map(([k, l]) => `<button data-op="${k}" class="${ongletP === k ? "actif" : ""}">${l}</button>`).join("")}</div>
+    ${d.biography ? `<p class="prog-synopsis" data-bio>${esc(d.biography)}</p>` : ""}
+    <div class="onglets onglets-film" style="margin-top:26px">${[["filmo", "Filmographie"], ["classement", "Classement"], ["courbe", "Courbe"], ["prix", "Prix"], ["collab", "Collaborateurs"]].map(([k, l]) => `<button data-op="${k}" class="${ongletP === k ? "actif" : ""}">${l}</button>`).join("")}</div>
     <div data-panneau="filmo"><div class="onglets">${depts.map(dp => `<button data-dept="${esc(dp)}" class="${dp === st.dept ? "actif" : ""}">${esc(DEPT[dp] || dp)}</button>`).join("")}</div>
       <div class="filtres"><div class="segments" data-vu><button data-v="tous">Tous</button><button data-v="vus">Vus</button><button data-v="pasvus">Pas vus</button></div></div>
-      <div class="grille" data-filmo></div>
-      ${d.biography ? `<button class="bouton" data-bio-ouvrir style="margin-top:18px;width:100%">${ico("texte")} Biographie</button>` : ""}</div>
-    <div data-panneau="classement">${ordre.length ? `<div class="lignes classement" data-classement>${ordre.map((c, i) => `<div class="ligne" data-cle="${c}"><span class="rang">${i + 1}</span>${S.affiche(S.info(c) || {}, { taille: "w92" })}<a class="corps" href="#/titre/${c}"><b>${esc(S.nomTitre(S.info(c)))}</b><span>${S.info(c)?.a || ""}</span></a><span class="note-txt">${S.fmtNote(S.monTitre(c).note)}</span><span class="poignee">${ico("poignee")}</span></div>`).join("")}</div><p class="mini discret">Glisse les poignées pour réordonner.</p>` : S.vide("Aucun titre vu")}</div>
-    <div data-panneau="courbe">${mesNotes.length > 1 ? `<div data-courbe></div><a class="bouton" data-labo href="#/labo" style="margin-top:12px">${ico("labo")} Comparer dans le labo</a>` : S.vide("Note au moins deux titres")}</div>
+      <div class="grille" data-filmo></div></div>
+    <div data-panneau="classement">${ordre.length ? `<div class="lignes classement" data-classement>${ordre.map((c, i) => `<div class="ligne" data-cle="${c}"><span class="rang">${i + 1}</span>${S.affiche(S.info(c) || {}, { taille: "w92" })}<a class="corps" href="#/titre/${c}"><b>${esc(S.nomTitre(S.info(c)))}</b><span>${S.info(c)?.a || ""}</span></a><span class="note-txt">${S.fmtNote(S.monTitre(c).note)}</span><span class="poignee" aria-label="Déplacer"></span></div>`).join("")}</div>` : S.vide("Aucun titre vu")}</div>
+    <div data-panneau="courbe">${mesNotes.length > 1 ? `<div data-courbe></div><a class="lien-souligne" data-labo href="#/labo">Comparer dans le labo</a>` : S.vide("Note au moins deux titres")}</div>
     <div data-panneau="prix"><div data-prix>${S.chargement()}</div></div>
     <div data-panneau="collab"><div data-collab></div></div>
     </div>`;
   const montrerP = k => { S.filtresMemo["pers_o_" + pid] = k; $$("[data-op]", vue).forEach(b => b.classList.toggle("actif", b.dataset.op === k)); $$("[data-panneau]", vue).forEach(x => x.classList.toggle("cache", x.dataset.panneau !== k)); if (k === "courbe") dessinerCourbe(); };
   $$("[data-op]", vue).forEach(b => b.onclick = () => montrerP(b.dataset.op));
-  const notesP = mesNotes.map(x => S.monTitre(x.cle).note);
-  $("[data-anneau-p]", vue).append(S.anneau(notesP.length ? Math.round(moyenne(notesP) * 10) / 10 : null, null, { lecture: true, libelle: "ta moyenne" }));
-  const bo = $("[data-bio-ouvrir]", vue); if (bo) bo.onclick = () => S.ouvrirModale({ titre: d.name, corps: `<p class="synopsis" style="font-size:15.5px">${esc(d.biography)}</p>` });
+  const bio = $("[data-bio]", vue); if (bio) bio.onclick = () => bio.classList.toggle("ouvert");
   let courbeFaite = false;
   const dessinerCourbe = () => {
     const cz = $("[data-courbe]", vue); if (!cz || courbeFaite) return; courbeFaite = true;
@@ -472,7 +517,7 @@ P.personne = async (vue, args) => {
   };
   const remplirFilmo = () => {
     const l = filmo.filter(f => st.vu === "tous" || (st.vu === "vus" ? vus.has(f.cle) : !vus.has(f.cle)));
-    $("[data-filmo]", vue).innerHTML = l.map(f => S.vignette(f.cle, { vu: vus.has(f.cle), sous: [f.date ? f.date.slice(0, 4) : "à venir", [...f.roles][0] && st.dept === "Acting" ? [...f.roles][0] : ""].filter(Boolean).join(" · ") })).join("") || S.vide("Rien ici");
+    $("[data-filmo]", vue).innerHTML = l.map(f => S.vignette(f.cle, { vu: vus.has(f.cle), info: f.date ? f.date.slice(0, 4) : "à venir" })).join("") || S.vide("Rien ici");
     $$("[data-vu] button", vue).forEach(b => b.classList.toggle("actif", b.dataset.v === st.vu));
   };
   $$("[data-vu] button", vue).forEach(b => b.onclick = () => { st.vu = b.dataset.v; remplirFilmo(); });
@@ -501,7 +546,7 @@ P.personne = async (vue, args) => {
     if (!r.prix.length) { pz.innerHTML = S.vide("Aucun prix connu"); return; }
     const grands = r.prix.filter(p => /oscar|academy award|palme|césar|cesar|lion d|ours d|golden|bafta|prix d'interprétation|grand prix|goya|emmy/i.test(p.prix));
     const l = (grands.length ? grands : r.prix).slice(0, 30);
-    pz.innerHTML = `<div class="lignes">${l.map(p => `<div class="ligne" style="padding:7px 2px"><span class="jour"><b style="font-size:14px">${p.annee || ""}</b></span><div class="corps"><b style="white-space:normal">${esc(p.prix)}</b>${p.oeuvre ? `<span>${p.cle ? `<a href="#/titre/${p.cle}" style="color:var(--accent)">${esc(p.oeuvre)}</a>` : esc(p.oeuvre)}</span>` : ""}</div></div>`).join("")}</div>`;
+    pz.innerHTML = `<div class="lignes">${l.map(p => `<div class="ligne prix-ligne"><span class="annee-prix">${p.annee || ""}</span><div class="corps"><b style="white-space:normal">${esc(p.prix)}</b>${p.oeuvre ? `<span>${p.cle ? `<a href="#/titre/${p.cle}">${esc(p.oeuvre)}</a>` : esc(p.oeuvre)}</span>` : ""}</div></div>`).join("")}</div>`;
   }).catch(() => { pz.innerHTML = S.vide("Hors ligne"); });
   // collaborateurs (d'après les films vus)
   const collab = new Map();
@@ -512,6 +557,6 @@ P.personne = async (vue, args) => {
   }
   const tops = [...collab.values()].filter(e => e.films.size >= 2).sort((a, b) => b.films.size - a.films.size).slice(0, 12);
   $("[data-collab]", vue).innerHTML = S.vide("Pas encore assez de titres vus");
-  if (tops.length) { $("[data-collab]", vue).innerHTML = `<div class="classement-p">${tops.map(e => { const p = S.base.pers[e.id] || {}; const notes = [...e.films].map(c => S.monTitre(c).note).filter(n => n != null); return `<a href="#/personne/${e.id}"><span class="n"></span>${S.portrait(p.ph, p.n)}<span><b style="font-weight:550">${esc(p.n || "")}</b><br><span class="mini discret">${[...e.roles].map(r => S.METIERS[r]).join(", ")} · ${e.films.size} titres ensemble</span></span><span class="valeurs"><span class="note-txt">${S.fmtNote(moyenne(notes))}</span><small>ta moyenne</small></span></a>`; }).join("")}</div>`; }
+  if (tops.length) { $("[data-collab]", vue).innerHTML = `<div class="classement-p">${tops.map(e => { const p = S.base.pers[e.id] || {}; const notes = [...e.films].map(c => S.monTitre(c).note).filter(n => n != null); return `<a href="#/personne/${e.id}"><span class="n"></span>${S.portrait(p.ph, p.n)}<span><b style="font-weight:550">${esc(p.n || "")}</b><br><span class="mini discret">${[...e.roles].map(r => S.METIERS[r]).join(", ")}, ${e.films.size} titres ensemble</span></span><span class="valeurs"><span class="note-txt">${S.fmtNote(moyenne(notes))}</span><small>ta moyenne</small></span></a>`; }).join("")}</div>`; }
 };
 })();

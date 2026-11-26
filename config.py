@@ -22,6 +22,7 @@ API_GITHUB = os.environ.get("SILENCIO_GITHUB") or "https://api.github.com"
 WIKIDATA = os.environ.get("SILENCIO_WIKIDATA") or "https://query.wikidata.org/sparql"
 IMDB_NOTES = os.environ.get("SILENCIO_IMDB") or "https://datasets.imdbws.com/title.ratings.tsv.gz"
 IMDB_VOTES_MIN = 30                    # on garde les notes IMDb des titres d'au moins 30 votes
+API_REFRACT = os.environ.get("SILENCIO_REFRACT") or "https://getrefract.app/v1"
 NOMINATIM = os.environ.get("SILENCIO_NOMINATIM") or "https://nominatim.openstreetmap.org/search"
 REGION = "FR"                           # « où le regarder » et dates de sortie
 LANGUE = "fr-FR"

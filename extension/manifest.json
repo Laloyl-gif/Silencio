@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Silencio Sync",
+  "version": "1.1.0",
+  "description": "Recopie ton journal Silencio (vus, notes, coups de cœur, watchlist, listes, critiques publiques) sur Letterboxd et IMDb, avec tes sessions déjà ouvertes dans Firefox.",
+  "icons": { "48": "icone-48.png", "96": "icone-96.png", "128": "icone-128.png" },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "silencio-sync@silencio.app",
+      "strict_min_version": "128.0",
+      "data_collection_permissions": { "required": ["none"] }
+    },
+    "gecko_android": { "strict_min_version": "128.0" }
+  },
+  "background": { "scripts": ["background.js"] },
+  "permissions": ["storage", "alarms", "tabs", "scripting", "cookies", "webRequest"],
+  "host_permissions": [
+    "https://letterboxd.com/*",
+    "https://www.imdb.com/*",
+    "https://m.imdb.com/*",
+    "https://api.graphql.imdb.com/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "action": { "default_title": "Silencio Sync", "default_popup": "popup.html", "default_icon": { "48": "icone-48.png", "96": "icone-96.png" } },
+  "options_ui": { "page": "popup.html", "open_in_tab": true }
+}

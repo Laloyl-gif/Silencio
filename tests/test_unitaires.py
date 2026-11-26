@@ -18,6 +18,7 @@ sys.path.insert(0, ICI)
 DOSSIER = tempfile.mkdtemp(prefix="silencio_test_")
 PORT = 9912
 os.environ.update(SILENCIO_DONNEES=DOSSIER, SILENCIO_TMDB=f"http://127.0.0.1:{PORT}/tmdb/3",
+                  SILENCIO_REFRACT=f"http://127.0.0.1:{PORT}/refract/v1",
                   SILENCIO_TMDB_IMG=f"http://127.0.0.1:{PORT}/img/", SILENCIO_GITHUB=f"http://127.0.0.1:{PORT}/github",
                   SILENCIO_WIKIDATA=f"http://127.0.0.1:{PORT}/wikidata", SILENCIO_IMDB=f"http://127.0.0.1:{PORT}/imdb.tsv.gz")
 
@@ -237,6 +238,178 @@ verifier(imdb.note("tt0166924") == (7.9, 390000) and imdb.note("tt9999999") is N
 p = wiki.palmares("palme")
 verifier([f["cle"] for f in p["films"]] == ["m:1235", "m:290", "m:496243"], "palmarès Wikidata")
 verifier(wiki.prix_personne(5602)[1]["cle"] == "m:1018", "prix d'une personne")
+
+# ---------------------------------------------------------------- Silencio maître : miroirs Letterboxd, IMDb, Refract
+import miroir  # noqa: E402
+from refract import Refract  # noqa: E402
+mdoss = tempfile.mkdtemp(prefix="silencio_miroir_")
+ms = Stock(mdoss)
+ms.choisir_profil("etienne", "Etienne")
+ms.action("journal", {"entree": {"cle": "m:1018", "date": "2024-03-01", "note": 9, "coeur": True, "critique": "Rêve",
+                                 "critique_privee": False}})
+ms.action("journal", {"entree": {"cle": "m:793", "date": "2019", "note": 7.5}})
+ms.action("journal", {"entree": {"cle": "m:638", "date": "2023-05-05", "note": 8, "critique": "Secret"}})
+ms.action("titre", {"cle": "m:6977", "champs": {"prive": True}})
+ms.action("journal", {"entree": {"cle": "m:6977", "date": "2024-02-02", "note": 6}})
+ms.action("watchlist", {"cle": "m:490", "val": True})
+ms.action("watchlist", {"cle": "t:1920", "val": True})
+ms.action("liste", {"liste": {"id": "lA", "nom": "Lynch", "items": ["m:1018", "m:793", "t:1920"], "classee": True}})
+ms.action("liste", {"liste": {"id": "lB", "nom": "Secrète", "items": ["m:638"], "privee": True}})
+ms.action("episodes", {"cle": "t:1920", "episodes": ["1x1", "1x2"], "val": True})
+lb = miroir.souhaite(ms.doc, "lb")
+jids = {e["cle"]: k for k, e in ms.doc["journal"].items()}
+verifier(lb[f"vu|{jids['m:1018']}"] == {"date": "2024-03-01", "rewatch": False} and lb["marque|m:793"] == 1, "miroir Letterboxd : journal daté, vu sans date")
+verifier(lb["note|m:1018"] == 4.5 and lb["note|m:793"] == 4.0 and lb["like|m:1018"] == 1 and lb["wl|m:490"] == 1, "miroir Letterboxd : notes en étoiles, coup de cœur, watchlist")
+verifier(not any("m:6977" in k for k in lb) and "liste|lB" not in lb and "wl|t:1920" not in lb, "miroir : films cachés, listes privées et séries jamais envoyés à Letterboxd")
+verifier(lb["item|lA|m:1018"] == 1 and lb["item|lA|m:793"] == 2 and "item|lA|t:1920" not in lb, "miroir : liste classée (films seulement sur Letterboxd)")
+meta = lambda c: {"m:1018": {"im": "tt0166924", "t": "Mulholland Drive"}, "m:793": {"im": "tt0090756"}, "m:638": {"im": "tt0116922"},
+                  "m:490": {"im": "tt0050976"}, "t:1920": {"im": "tt0098936"}, "m:155": {"im": "tt0468569"}}.get(c, {})
+o = miroir.operations(ms.doc, "lb", meta)
+sortes = [x["sorte"] for x in o["ops"]]
+verifier(sortes[0] == "liste" and "item" not in sortes and o["en_attente"] == 2, "opérations : la liste d'abord, ses films attendent qu'elle existe")
+vu = next(x for x in o["ops"] if x["cle"] == f"vu|{jids['m:1018']}")
+verifier(vu["extra"] == {"note": 4.5, "like": True, "critique": "Rêve"} and vu["tmdb"] == 1018, "opération journal : note, coup de cœur et critique publique")
+vu2 = next(x for x in o["ops"] if x["cle"] == f"vu|{jids['m:638']}")
+verifier(vu2["extra"]["critique"] == "", "critique privée par défaut : jamais envoyée")
+res = [{"cle": x["cle"], "id": x["id"], "action": x["action"], "valeur": x["valeur"], "etat": "ok",
+        "ref": "https://letterboxd.com/etienne/list/lynch/" if x["sorte"] == "liste" else None} for x in o["ops"]]
+miroir.appliquer_resultats(ms, "lb", res)
+o = miroir.operations(ms.doc, "lb", meta)
+verifier([x["sorte"] for x in o["ops"]] == ["item", "item"] and o["ops"][0]["ref"].endswith("/lynch/"), "après création de la liste : ses films partent")
+miroir.appliquer_resultats(ms, "lb", [dict(x, etat="ok") for x in o["ops"]])
+verifier(miroir.operations(ms.doc, "lb", meta)["ops"] == [], "tout envoyé : plus rien à faire")
+ms.action("watchlist", {"cle": "m:490", "val": False})
+ms.action("noter", {"cle": "m:1018", "note": 7})
+o = miroir.operations(ms.doc, "lb", meta)
+verifier({(x["sorte"], x["action"]) for x in o["ops"]} == {("note", "poser")} and o["ops"][0]["valeur"] == 3.5,
+         "Letterboxd : la note modifiée part, le retrait de la watchlist ne touche jamais Letterboxd")
+miroir.appliquer_resultats(ms, "lb", [{"cle": o["ops"][0]["cle"], "id": o["ops"][0]["id"], "etat": "echec", "erreur": "x"}])
+verifier(miroir.operations(ms.doc, "lb", meta, ms.appareil["miroir_echecs"]["lb"])["ops"] == [] and
+         len(miroir.operations(ms.doc, "lb", meta, ms.appareil["miroir_echecs"]["lb"], forcer=True)["ops"]) == 1, "un échec est mis en pause")
+ms.action("watchlist", {"cle": "m:155", "val": True})
+im = miroir.souhaite(ms.doc, "imdb")
+verifier(im["note|m:1018"] == 7 and im["note|m:793"] == 8 and im["fav|m:155"] == 1 and "fav|t:1920" not in im and f"critique|{jids['m:1018']}" in im and
+         f"critique|{jids['m:638']}" not in im, "miroir IMDb : notes entières, watchlist vers Favoris, critiques publiques seules")
+o = miroir.operations(ms.doc, "imdb", meta)
+fav = next((x for x in o["ops"] if x["cle"] == "liste|_favoris"), None)
+verifier(fav and fav["valeur"].get("watchlist") and not any(x["sorte"] == "fav" for x in o["ops"]), "IMDb : la watchlist IMDb est retrouvée avant d'y ranger la watchlist Silencio")
+pub, priv = separer(ms.doc)
+verifier(pub["miroirs"] == {} and len(priv["miroirs"]) > 5, "miroirs : jamais dans la partie publique")
+# import Letterboxd : ce qui y est déjà est noté présent
+# départ : ce qui est déjà dans Silencio au moment de relier ne part pas, seuls les ajouts suivants
+md = Stock(tempfile.mkdtemp(prefix="silencio_depart_"))
+md.choisir_profil("e", "E")
+md.action("watchlist", {"cle": "m:550", "val": True})
+miroir.poser_depart(md, "imdb", miroir.souhaite(md.doc, "imdb"))
+md.poser_miroirs({"imdb|liste|_favoris": {"nom": "Favoris", "ref": "ls1"}})
+md.action("watchlist", {"cle": "m:155", "val": True})
+md.action("watchlist", {"cle": "m:550", "val": False})
+o = miroir.operations(md.doc, "imdb", meta)["ops"]
+verifier([(x["cle"], x["action"]) for x in o] == [("fav|m:155", "poser")], "IMDb : seul l'ajout part, rien n'est retiré de la liste")
+# Refract par son API officielle
+faux_services.REFRACT.clear()
+rf = Refract(ms, meta)
+ms.appareil["refract"] = {"cle": "rfk_test"}
+presence, a_importer = rf.point_de_depart()
+verifier(presence == {"wl|m:490": 1} and "m:490" in a_importer, "Refract : sa watchlist entre dans Silencio")
+miroir.poser_depart(ms, "rf", presence)
+ms.action("watchlist", {"cle": "m:603", "val": True})
+bilan = rf.passage()
+ecrits = [(m, p) for m, p, _, _ in faux_services.REFRACT if m != "GET"]
+verifier(("POST", "/history/movies") in ecrits and ("PUT", "/watchlist/rf-m-155") in ecrits and
+         ("PUT", "/history/episodes/rf-s-1920/1/1") in ecrits and ("DELETE", "/watchlist/rf-m-490") in ecrits, "Refract : films vus, watchlist, épisodes, retrait")
+films = [c for m, p, c, _ in faux_services.REFRACT if p == "/history/movies"]
+verifier(all(f["watched_at"].endswith("T20:00:00Z") for f in films) and not any(f["movie_id"] == "rf-m-6977" for f in films) and
+         any(f["watched_at"].startswith("2019-01-01") for f in films), "Refract : dates (même partielles), films cachés exclus")
+reste = miroir.operations(ms.doc, "rf", meta, limite=1000)["ops"]
+verifier(bilan["echec"] == 0 and reste and all(o["sorte"] == "note" for o in reste), "Refract : 409 IN_LIBRARY accepté, seules les notes attendent")
+verifier(not any("/ratings" in p for _, p, _, _ in faux_services.REFRACT), "Refract : aucune note envoyée tant que l'API ne les accepte pas")
+# Refract ouvre les notes : Silencio le lit dans openapi.json et envoie les notes en attente
+faux_services.REFRACT_NOTES = True
+rf.capacites(forcer=True)
+faux_services.REFRACT.clear()
+bilan = rf.passage()
+notes = {p: c for m, p, c, _ in faux_services.REFRACT if p.startswith("/ratings/")}
+verifier(notes and all(m == "PUT" for m, p, _, _ in faux_services.REFRACT if p.startswith("/ratings/")) and
+         all(isinstance(c["rating"], int) and 1 <= c["rating"] <= 10 for c in notes.values()), "Refract : notes envoyées dès que l'API les accepte (échelle 1-10)")
+verifier(miroir.operations(ms.doc, "rf", meta)["ops"] == [], "Refract : plus rien à faire")
+faux_services.REFRACT_NOTES = False
+idem = [i for m, p, _, i in faux_services.REFRACT if p == "/history/movies"]
+verifier(all(idem) and len(set(idem)) == len(idem), "Refract : une clé d'idempotence par visionnage")
+shutil.rmtree(mdoss, ignore_errors=True)
+
+# ---------------------------------------------------------------- comptes : identifiant + mot de passe
+import types  # noqa: E402
+import compte  # noqa: E402
+
+
+def appareil_neuf(nom, jeton=None):
+    st_ = Stock(os.path.join(DOSSIER, nom))
+    st_.appareil["github"] = {"depot": "test/silencio", "branche": "profils", **({"jeton": jeton} if jeton else {})}
+    return types.SimpleNamespace(stock=st_, synchro=Synchro(st_))
+
+
+a1 = appareil_neuf("compte1", "jeton-etienne")
+pid = compte.creer(a1, {"nom": "Etienne", "identifiant": "haika", "mot_de_passe": "silencio-2026!",
+                        "letterboxd_pseudo": "Haikazan", "imdb_pseudo": "Haika", "refract_cle": "rfk_test",
+                        "imdb_watchlist": "https://www.imdb.com/user/p.x/watchlist"})
+a1.stock.action("titre", {"cle": "m:9426", "champs": {"vu": True, "note": 7, "prive": True}})
+a1.stock.action("noter", {"cle": "m:1018", "note": 9})
+verifier(a1.synchro.cycle(), "compte : première synchro " + a1.synchro.etat["erreur"])
+brut = faux_services.DEPOT["fichiers"][("profils", "profils/haika.prive")][1]
+pub = faux_services.DEPOT["fichiers"][("profils", "profils/haika.json.gz")][1]
+verifier(b"rfk_test" not in brut and b"rfk_test" not in pub and b"silencio-2026" not in brut + pub and
+         b"Haikazan" not in pub, "compte : ni clé Refract, ni mot de passe, ni pseudos en clair sur GitHub")
+verifier("silencio-2026" not in json.dumps(a1.stock.appareil), "compte : le mot de passe n'est pas gardé sur l'appareil")
+try:
+    compte.creer(appareil_neuf("compte_x", "jeton-lily"), {"nom": "X", "identifiant": "haika", "mot_de_passe": "0123456789"})
+    verifier(False, "compte : identifiant déjà pris refusé")
+except ValueError:
+    verifier(True, "compte : identifiant déjà pris refusé")
+a2 = appareil_neuf("compte2")                                     # nouvel appareil, rien d'enregistré
+try:
+    compte.connexion(a2, {"identifiant": "haika", "mot_de_passe": "mauvais-mot"})
+    verifier(False, "compte : mauvais mot de passe refusé")
+except ValueError as e:
+    verifier("incorrect" in str(e) and not a2.stock.doc, "compte : mauvais mot de passe refusé")
+compte.connexion(a2, {"identifiant": "haika", "mot_de_passe": "silencio-2026!"})
+ap2 = a2.stock.appareil
+verifier(a2.stock.titre("m:9426").get("note") == 7 and a2.stock.titre("m:1018").get("note") == 9,
+         "compte : films (même cachés) retrouvés en se connectant")
+verifier(ap2.get("letterboxd_pseudo") == "Haikazan" and ap2.get("imdb_pseudo") == "Haika" and
+         (ap2.get("refract") or {}).get("cle") == "rfk_test" and ap2["github"].get("jeton") == "jeton-etienne",
+         "compte : pseudos, clé Refract et jeton GitHub suivent le compte")
+verifier(compte.connecte(a2.stock) and a2.synchro.cycle(), "compte : le nouvel appareil reste connecté et synchronise")
+# un pseudo changé sur le 2e appareil arrive sur le 1er
+compte.poser_secrets(a2.stock, {"letterboxd_pseudo": "Haikazan2"})
+a2.synchro.cycle()
+a1.synchro.cycle()
+verifier(a1.stock.appareil.get("letterboxd_pseudo") == "Haikazan2", "compte : réglages du compte partagés entre appareils")
+# changement de mot de passe : l'autre appareil ne réécrit rien par-dessus et demande de se reconnecter
+compte.changer_mot_de_passe(a1, {"ancien": "silencio-2026!", "nouveau": "nouveau-mdp-42"})
+a1.synchro.cycle()
+a2.stock.action("noter", {"cle": "m:550", "note": 8})
+a2.synchro.cycle()
+verifier("reconnecte" in a2.synchro.etat["erreur"], "compte : mot de passe changé ailleurs, reconnexion demandée")
+a3 = appareil_neuf("compte3")
+compte.connexion(a3, {"identifiant": "haika", "mot_de_passe": "nouveau-mdp-42"})
+verifier(a3.stock.titre("m:9426").get("note") == 7, "compte : connexion avec le nouveau mot de passe")
+# déconnexion : plus de profil, plus de clés ; le profil n'est plus ouvrable sans mot de passe
+compte.deconnexion(a3)
+verifier(not a3.stock.doc and not a3.stock.pid and not a3.stock.appareil.get("refract") and
+         not a3.stock.appareil["github"].get("jeton") and not os.path.exists(os.path.join(DOSSIER, "compte3", "profils", "haika.json")),
+         "compte : déconnexion propre")
+# un profil existant devient un compte (même identifiant, mêmes films)
+a4 = appareil_neuf("compte4", "jeton-lily")
+a4.stock.choisir_profil("lily2", "Lily")
+a4.stock.action("noter", {"cle": "m:1018", "note": 6})
+a4.stock.appareil["github"]["phrase"] = "ancienne"
+a4.synchro.cycle()
+compte.creer(a4, {"mot_de_passe": "lily-lily-lily", "convertir": True})
+verifier(a4.synchro.cycle() and a4.stock.pid == "lily2" and a4.stock.titre("m:1018")["note"] == 6, "compte : profil existant converti")
+a5 = appareil_neuf("compte5")
+compte.connexion(a5, {"identifiant": "lily2", "mot_de_passe": "lily-lily-lily"})
+verifier(a5.stock.titre("m:1018")["note"] == 6, "compte : profil converti accessible par connexion")
 
 print(f"{OK} vérifications réussies")
 shutil.rmtree(DOSSIER, ignore_errors=True)

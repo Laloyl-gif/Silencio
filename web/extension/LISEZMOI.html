@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Installer Silencio Sync</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #121212; color: rgba(255,255,255,.92); font: 16px/1.55 Roboto, "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size: 28px; margin: 0 0 6px; }
+  h2 { font-size: 18px; margin: 34px 0 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,.12); }
+  p, li { color: rgba(255,255,255,.8); }
+  ol { padding-left: 22px; }
+  li { margin: 8px 0; }
+  b { color: #fff; }
+  a { color: #fff; text-underline-offset: 3px; }
+  code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; background: rgba(255,255,255,.08); padding: 1px 5px; }
+  .bouton { display: inline-block; margin: 10px 0; padding: 11px 18px; background: #fff; color: #121212; font-weight: 700; text-decoration: none; border-radius: 2px; }
+  .note { padding: 12px 14px; border-left: 2px solid rgba(255,255,255,.35); background: rgba(255,255,255,.04); }
+</style>
+</head>
+<body>
+<main>
+<h1>Installer Silencio Sync</h1>
+<p>L'extension recopie ce que tu fais dans Silencio sur Letterboxd et IMDb, dans Firefox, avec tes sessions déjà ouvertes. Elle passe au démarrage de Firefox, puis toutes les 15 minutes tant qu'il est ouvert.</p>
+<a class="bouton" href="silencio-sync.zip" download>Télécharger l'extension (silencio-sync.zip)</a>
+
+<h2>1. La faire signer par Mozilla (une seule fois, gratuit)</h2>
+<p>Firefox n'installe durablement que les extensions signées par Mozilla. Pour une extension personnelle, la signature est automatique et l'extension reste privée.</p>
+<ol>
+  <li>Va sur <a href="https://addons.mozilla.org/developers/" target="_blank" rel="noopener">addons.mozilla.org/developers</a> et connecte-toi avec un compte Mozilla (en créer un si besoin).</li>
+  <li>Clique sur <b>Soumettre une nouvelle extension</b>, puis choisis <b>Sur votre propre site</b> (extension non listée, visible par toi seul).</li>
+  <li>Envoie le fichier <code>silencio-sync.zip</code> que tu viens de télécharger (dans ton dossier Téléchargements).</li>
+  <li>Quand la vérification automatique est finie (quelques minutes), télécharge le fichier <b>.xpi signé</b> proposé sur la page de la version.</li>
+</ol>
+
+<h2>2. Sur ton PC</h2>
+<ol>
+  <li>Dans Firefox, ouvre le menu (les trois traits en haut à droite), puis <b>Extensions et thèmes</b>.</li>
+  <li>Clique sur la roue dentée, puis <b>Installer un module depuis un fichier</b>, et choisis le <code>.xpi</code> signé.</li>
+  <li>La fenêtre de Silencio Sync s'ouvre. Mets l'adresse <code>http://127.0.0.1:8642</code> et le <b>code d'appairage</b> affiché dans Silencio (Réglages, Letterboxd IMDb Refract), puis <b>Enregistrer</b> et <b>Tester</b>.</li>
+  <li>Connecte-toi une fois sur <a href="https://letterboxd.com/sign-in/" target="_blank" rel="noopener">letterboxd.com</a> et sur <a href="https://www.imdb.com/registration/signin" target="_blank" rel="noopener">imdb.com</a> dans ce Firefox, en cochant « rester connecté ».</li>
+</ol>
+
+<h2>3. Sur ton téléphone (Firefox pour Android)</h2>
+<ol>
+  <li>Copie le <code>.xpi</code> signé sur ton téléphone (par exemple dans Téléchargements).</li>
+  <li>Dans Firefox : <b>Paramètres</b>, <b>À propos de Firefox</b>, touche 5 fois le logo Firefox, puis reviens aux Paramètres.</li>
+  <li>Touche <b>Installer une extension depuis un fichier</b> et choisis le <code>.xpi</code>.</li>
+  <li>Ouvre l'appli Silencio (l'extension lui parle pendant qu'elle est ouverte), puis dans Firefox : <b>Extensions</b>, <b>Silencio Sync</b>, <b>Paramètres</b>. Mets <code>http://127.0.0.1:8642</code> et le même code d'appairage.</li>
+  <li>Connecte-toi une fois sur letterboxd.com et imdb.com dans Firefox sur le téléphone.</li>
+</ol>
+
+<h2>4. Ce qui part, et ce qui ne part jamais</h2>
+<ul>
+  <li>Au premier passage de l'extension, tout ce qui est déjà dans Silencio est considéré comme réglé. Ensuite, seuls tes <b>ajouts et changements</b> faits dans Silencio partent : un visionnage, une note, un coup de cœur, un film en watchlist (ta watchlist IMDb), un film dans une liste, une critique publique.</li>
+  <li><b>Rien n'est jamais retiré</b> de Letterboxd ni d'IMDb : si ta watchlist IMDb compte 1 000 films et que tu en ajoutes un dans Silencio, elle en comptera 1 001.</li>
+  <li>Les films cachés, les visionnages cachés, les listes privées et les critiques privées (par défaut) restent dans Silencio.</li>
+</ul>
+<h2>5. Trois façons d'envoyer, site par site</h2>
+<p>Dans Silencio (Réglages, Letterboxd IMDb Refract, ligne « Envoi ») :</p>
+<ul>
+  <li><b>Automatique et discret</b> : l'extension envoie toute seule, au rythme décrit plus bas. Réglage par défaut pour Letterboxd.</li>
+  <li><b>Un clic par action</b> : l'extension prépare tout, et la liste « À reporter » de sa fenêtre te propose chaque action avec un bouton <b>Envoyer</b>. C'est toi qui déclenches chaque envoi. Réglage par défaut pour IMDb.</li>
+  <li><b>À la main, avec les liens</b> : aucune requête de l'extension. Pour chaque action, <b>Ouvrir</b> t'amène sur la bonne page, tu fais le geste toi-même, puis <b>C'est fait</b>.</li>
+</ul>
+<h2>6. Discret par construction</h2>
+<ul>
+  <li>L'extension profite d'abord d'un onglet Letterboxd ou IMDb que tu as déjà ouvert. Sinon, elle n'ouvre un onglet en arrière-plan qu'une fois toutes les 2 à 4 heures.</li>
+  <li>3 à 6 actions par passage, espacées de 5 à 13 secondes, 40 au plus par jour et par site, à des heures irrégulières.</li>
+  <li>Une adresse qui marche est retenue ; les autres ne sont essayées qu'une fois par jour. Au moindre refus du site, l'extension se met en pause 12 à 24 heures.</li>
+</ul>
+<h2>Bon à savoir</h2>
+<p class="note">Letterboxd et IMDb n'ont pas d'API ouverte : l'extension agit comme toi, avec ta session, à un rythme humain. Ce n'est pas illégal, mais leurs conditions d'utilisation n'aiment pas l'automatisation : le risque, pour ton compte, est faible à ce rythme, il n'est pas nul. IMDb n'autorise les robots qu'avec un accord écrit ; sa réponse automatique (les fichiers de données non commerciaux) n'en est pas un. D'où le mode « un clic par action » par défaut pour IMDb, et « à la main » si tu veux rester au plus près de ses conditions.</p>
+<ul>
+  <li>Les <b>critiques IMDb</b> se publient à la main : l'extension copie le texte et ouvre la bonne page, tu n'as qu'à coller.</li>
+  <li>Les <b>listes Letterboxd</b> attendent un calibrage. Comme toute action qui échoue avec « calibre cette action » : dans l'extension, démarre l'<b>Enregistreur</b>, fais l'action une fois toi-même sur le site, copie le rapport et envoie-le pour que l'extension soit corrigée.</li>
+  <li>Si Letterboxd ou IMDb changent leurs pages, une action peut se mettre à échouer : elle est réessayée toute seule toutes les 6 heures, et listée dans Silencio.</li>
+</ul>
+</main>
+</body>
+</html>

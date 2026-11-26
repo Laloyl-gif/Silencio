@@ -59,14 +59,22 @@ partagés avec tes amis.
 | Service | Ce que fait Silencio |
 |---|---|
 | **TMDB** | Lecture de toutes les infos, et **écriture** sur ton compte : notes, watchlist, coups de cœur, listes de films. Les modifications attendent le retour du réseau. |
-| **Letterboxd** | Pas d'API ouverte (accès sur demande seulement) : import de ton export .zip ; export d'un fichier à importer sur letterboxd.com/import ; bouton pour demander l'API à Letterboxd. |
-| **IMDb** | Pas d'API gratuite : import de ton export CSV ; notes IMDb lues dans les fichiers publics d'IMDb (une fois par semaine). |
-| **Refract** | Pas d'API : Refract importe depuis Letterboxd, donc même fichier d'export. |
+| **Letterboxd** | Par l'extension Firefox **Silencio Sync** (PC et téléphone), avec ta session : visionnages, notes, coups de cœur, watchlist. Seulement des ajouts et changements, jamais de retrait. Import de ton export .zip possible. |
+| **IMDb** | Par la même extension : notes, watchlist Silencio vers ta watchlist IMDb, listes ; critiques publiques à coller à la main. Jamais de retrait. Par défaut, chaque envoi se fait d'un clic dans la fenêtre de l'extension (IMDb n'autorise pas les robots sans accord écrit). Notes IMDb publiques lues dans les fichiers d'IMDb. |
+| **Refract** | Par son **API officielle** (clé personnelle rfk_…) : films vus, épisodes, watchlist, tout seul. Les notes attendent : Silencio relit chaque jour la description de l'API Refract et les envoie dès qu'elle les accepte. |
 | **Twin Picks** | Import des notes d'un profil Twin Picks (fichier profils.json). |
 | **Amis** | Par un dépôt GitHub : chacun écrit son profil avec son propre compte et lit ceux des autres. |
 
-Tes **films cachés** et **critiques privées** ne sont jamais lisibles par tes amis. Avec une phrase secrète (Réglages), ils
-sont chiffrés pour passer sur tes autres appareils ; sans phrase secrète, ils restent sur l'appareil.
+## Compte
+
+Un compte, c'est un **identifiant** et un **mot de passe**. Le mot de passe n'est enregistré nulle part : il sert à
+chiffrer la partie privée de ton profil sur GitHub (films cachés, critiques privées) et les réglages du compte (pseudos
+Letterboxd et IMDb, clé Refract, jeton GitHub). Un appareil reste connecté jusqu'à « Se déconnecter » (Réglages, Compte).
+Sur un nouvel appareil : **Se connecter**, et tout revient. Un nouveau compte n'a aucun lien avec les tiens.
+
+Un profil d'avant les comptes devient un compte dans Réglages, Compte : même identifiant, mêmes films.
+
+Tes **films cachés** et **critiques privées** ne sont jamais lisibles par tes amis.
 
 ## Installation
 
@@ -91,7 +99,7 @@ sont chiffrés pour passer sur tes autres appareils ; sans phrase secrète, ils 
 ### 2. Sur le téléphone
 
 Télécharge `silencio.apk` (Releases du dépôt), ouvre-le et autorise l'installation. Au premier lancement :
-« Retrouver les profils de tes amis » → dépôt `TON_COMPTE/silencio-profils` + ton jeton → choisis ton profil (ou crée-le).
+**Se connecter** avec ton identifiant et ton mot de passe (ou **Créer un compte**).
 L'application se met à jour toute seule ; quand l'application elle-même change, elle propose la nouvelle version.
 
 ### 3. Sur le PC (Windows)
@@ -114,7 +122,7 @@ Réglages :
 
 - **Connecter mon compte TMDB** ;
 - importer ton export **Letterboxd** (.zip), **IMDb** (.csv), ton compte **TMDB** ou un profil **Twin Picks** ;
-- régler la **synchronisation GitHub** (dépôt des profils, jeton, phrase secrète).
+- relier **Letterboxd, IMDb, Refract** et installer l'extension Silencio Sync.
 
 ## Pour les curieux
 
@@ -122,13 +130,18 @@ Réglages :
 - `serveur.py` : sert l'interface (`web/`) et l'API.
 - `stockage.py` : profils fusionnables, partie privée chiffrée, annulation.
 - `synchro.py` : synchronisation GitHub.
+- `compte.py` : comptes (identifiant, mot de passe, clé dérivée, réglages chiffrés qui suivent le compte).
+- `miroir.py`, `refract.py`, `extension/` : Silencio maître de Letterboxd, IMDb et Refract.
 - `tmdb.py` : lecture avec cache, file d'écriture, fiches compactes pour les stats.
 - `imdb.py`, `wiki.py` : notes IMDb et Wikidata.
 - `imports.py` : imports et exports.
+- `miroir.py` : ce qui doit partir vers Letterboxd, IMDb et Refract (Silencio est le maître).
+- `refract.py` : l'API officielle de Refract.
+- `extension/` : l'extension Firefox Silencio Sync (à faire signer sur addons.mozilla.org, guide dans `web/extension/LISEZMOI.html`).
 - `decouverte.py` : recommandations, sorties, notifications.
-- `web/` : l'interface, en JavaScript sans framework (+ d3 pour les graphiques), avec les polices embarquées pour l'hors ligne.
+- `web/` : l'interface, en JavaScript sans framework (+ d3 pour les graphiques).
 - `android/` : l'application Android (Chaquopy et WebView).
-- `tests/` : `python tests/test_unitaires.py` (fusion, chiffrement, imports…) et `python tests/test_interface.py` (parcours complet dans Chromium, avec de faux TMDB, GitHub, IMDb et Wikidata).
+- `tests/` : `python tests/test_unitaires.py` (fusion, chiffrement, imports, miroirs, Refract…), `python tests/test_extension.py` (scripts de l'extension contre un faux Letterboxd et un faux IMDb) et `python tests/test_interface.py` (parcours complet dans Chromium, avec de faux TMDB, GitHub, IMDb et Wikidata).
 
 Ce produit utilise l'API TMDB sans être approuvé ni certifié par TMDB. Plateformes : JustWatch (via TMDB). Notes IMDb :
 datasets.imdbws.com, usage personnel et non commercial.

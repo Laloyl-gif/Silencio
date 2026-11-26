@@ -49,10 +49,10 @@ S.son = (type, valeur) => {
 
 // ------------------------------------------------------------------ la note : rangée 1 à 10 (un appui = la note, deux appuis rapides = moins 0,5)
 S.rangee = (valeur, onChange, o = {}) => {
-  const w = el(`<div class="rangee-note ${o.grande ? "grande" : ""}" role="radiogroup" aria-label="Ta note">${Array.from({ length: 10 }, (_, i) => `<button type="button" class="case-note" data-n="${i + 1}" aria-label="${i + 1}">${i + 1}</button>`).join("")}<button type="button" class="effacer-note" aria-label="Retirer la note">${ico("x")}</button></div>`);
+  const w = el(`<div class="rangee-note ${o.grande ? "grande" : ""}" role="radiogroup" aria-label="Ta note">${Array.from({ length: 10 }, (_, i) => `<button type="button" class="case-note" data-n="${i + 1}" aria-label="${i + 1}">${i + 1}</button>`).join("")}<button type="button" class="effacer-note" aria-label="Retirer la note">×</button></div>`);
   let v = valeur ?? null, dernier = { n: 0, t: 0 }, minuteur = null;
   const peindre = () => {
-    $$(".case-note", w).forEach(b => { const n = +b.dataset.n; b.classList.toggle("pleine", v != null && n <= v); b.classList.toggle("moitie", v != null && n === Math.ceil(v) && v % 1 !== 0); });
+    $$(".case-note", w).forEach(b => { const n = +b.dataset.n; b.classList.toggle("pleine", v != null && n <= v); b.classList.toggle("moitie", v != null && n === Math.ceil(v) && v % 1 !== 0); b.classList.toggle("choisie", v != null && n === Math.ceil(v)); });
     $(".effacer-note", w).style.visibility = v == null ? "hidden" : "visible";
   };
   const changer = nv => { v = nv; peindre(); S.son("note", v); clearTimeout(minuteur); minuteur = setTimeout(() => onChange && onChange(v), o.delai ?? 380); };
@@ -125,7 +125,7 @@ S.ouvrirAjout = (cle, ex) => {
   const peindre = () => $$(".ligne", res).forEach((l, i) => l.classList.toggle("sel", i === sel));
   const afficher = liste => {
     cles = liste;
-    res.innerHTML = liste.map(c => { const mm = S.info(c) || {}; const t = S.monTitre(c); return `<div class="ligne" data-cle="${c}">${S.affiche(mm, { taille: "w154" })}<div class="corps"><b>${esc(S.nomTitre(mm))}</b><span>${[mm.a, c[0] === "t" ? "Série" : ""].filter(Boolean).join(" · ")}</span></div>${t.note != null ? `<span class="note-txt">${S.fmtNote(t.note)}</span>` : t.vu ? `<span class="discret">${ico("ok")}</span>` : ""}</div>`; }).join("");
+    res.innerHTML = liste.map(c => { const mm = S.info(c) || {}; const t = S.monTitre(c); return `<div class="ligne" data-cle="${c}">${S.affiche(mm, { taille: "w154" })}<div class="corps"><b>${esc(S.nomTitre(mm))}</b><span>${[mm.a, c[0] === "t" ? "Série" : ""].filter(Boolean).join(", ")}</span></div>${t.note != null ? `<span class="note-txt">${S.fmtNote(t.note)}</span>` : t.vu ? `<span class="etat-txt">vu</span>` : ""}</div>`; }).join("");
     sel = 0; peindre();
     $$(".ligne", res).forEach(l => l.onclick = () => formulaire(m, corps, l.dataset.cle));
   };
@@ -147,7 +147,7 @@ function formulaire(modale, corps, cle, ex) {
   const m = S.info(cle) || {};
   const t = S.monTitre(cle);
   const dejaVu = !!(t.vu || S.journalDe(cle).length);
-  const e = Object.assign({ cle, date: S.aujourdhui(), note: t.note ?? null, coeur: !!t.coeur, revision: dejaVu, critique: "", critique_privee: false, prive: false, ou: null, prix: null, avec: [], version: "" }, ex || {});
+  const e = Object.assign({ cle, date: S.aujourdhui(), note: t.note ?? null, coeur: !!t.coeur, revision: dejaVu, critique: "", critique_privee: true, prive: false, ou: null, prix: null, avec: [], version: "" }, ex || {});
   const detail = Object.assign({}, t.detail || {});
   $("h2", modale).textContent = ex ? "Modifier" : "J'ai vu";
   const mesCinemas = [...new Map(Object.values(S.vivants(S.moi.journal)).filter(j => j.ou?.type === "cinema" && j.ou.cinema).sort((a, b) => (b.date || "").localeCompare(a.date || "")).map(j => [j.ou.cinema, j.ou])).values()].slice(0, 6);
@@ -155,36 +155,47 @@ function formulaire(modale, corps, cle, ex) {
   const moment = e.date === S.aujourdhui() ? "auj" : e.date === S.hier() ? "hier" : "autre";
   let cinema = e.ou?.type === "cinema" ? { nom: e.ou.cinema || "", salle: e.ou.salle || "" } : null;
   corps.innerHTML = `
-    <div class="ajout-entete">${S.affiche(m, { taille: "w154" })}<div style="min-width:0"><h3>${esc(S.nomTitre(m))}</h3><div class="muet petit">${m.a || ""}${dejaVu && !ex ? ` · <span style="color:var(--accent)">${ico("revision")} revu</span>` : ""}</div></div><button class="coeur ${e.coeur ? "actif" : ""}" data-coeur aria-label="Coup de cœur">${ico(e.coeur ? "coeur-plein" : "coeur")}</button></div>
-    <div class="zone-note" data-note></div>
-    <div class="mini discret centre" style="margin-top:4px">deux appuis rapides = demi-point en dessous</div>
-    <div class="ligne-champ"><span class="libelle-champ">Quand</span><div class="segments plein-l" data-moment><button data-v="auj">Aujourd'hui</button><button data-v="hier">Hier</button><button data-v="autre">Autre</button></div></div>
-    <div class="ligne-champ cache" data-autre><span class="libelle-champ"></span><div style="flex:1"><div class="segments plein-l" data-precision><button data-v="jour">Jour</button><button data-v="mois">Mois</button><button data-v="annee">Année</button></div><div style="margin-top:8px" data-saisie-date></div></div></div>
-    <div class="ligne-champ"><span class="libelle-champ">Version</span><div class="segments plein-l" data-version><button data-v="VO">VO</button><button data-v="VF">VF</button></div></div>
-    <div class="ligne-champ"><span class="libelle-champ">Au cinéma</span><label class="interrupteur"><input type="checkbox" data-cine ${cinema ? "checked" : ""}><span></span></label></div>
-    <div class="bloc-cine ${cinema ? "" : "cache"}" data-bloc-cine>
-      <div class="puces" data-mes-cines>${mesCinemas.map(c => `<button class="puce ${cinema?.nom === c.cinema ? "actif" : ""}" data-cine-nom="${esc(c.cinema)}">${esc(c.cinema)}</button>`).join("")}</div>
-      <input class="champ" data-cine-recherche placeholder="${mesCinemas.length ? "Un autre cinéma…" : "Nom du cinéma"}" value="${cinema && !mesCinemas.some(c => c.cinema === cinema.nom) ? esc(cinema.nom) : ""}" autocomplete="off" style="margin-top:8px">
-      <div class="res-recherche" data-cine-res></div>
-      <div class="grille-2" style="margin-top:8px"><label class="champ-prefixe"><span>Salle</span><input class="champ" data-salle value="${esc(cinema?.salle || "")}" inputmode="numeric"></label><label class="champ-prefixe"><span>Prix €</span><input class="champ" data-prix type="number" step="0.1" min="0" inputmode="decimal" value="${e.prix ?? ""}"></label></div>
+    <div class="aj-film">${S.affiche(m, { taille: "w154" })}<div style="min-width:0"><h3>${esc(S.nomTitre(m))}</h3><div class="aj-sous">${[m.a, dejaVu && !ex ? "déjà dans ton journal" : ""].filter(Boolean).join(", ")}</div>${!ex ? `<button class="aj-changer" data-retour>Changer de film</button>` : ""}</div></div>
+    <section class="panneau aj-panneau">
+      <div class="pan-etats deux"><button data-coeur class="${e.coeur ? "actif" : ""}" style="--c:#f0505f">Coup de cœur</button><button data-rev class="${e.revision ? "actif" : ""}" style="--c:#4cc46f">Revisionnage</button></div>
+      <div class="prog-note"><div class="pan-tete"><span>Ta note</span><b data-chiffre-aj></b></div><div data-note></div></div>
+    </section>
+    <div class="aj-lignes">
+      <div class="aj-ligne"><span>Date</span><div class="aj-choix" data-moment><button data-v="auj">Aujourd'hui</button><button data-v="hier">Hier</button><button data-v="autre">Autre</button></div></div>
+      <div class="aj-ligne aj-sous-ligne cache" data-autre><span></span><div><div class="aj-choix" data-precision><button data-v="jour">Jour</button><button data-v="mois">Mois</button><button data-v="annee">Année</button></div><div data-saisie-date></div></div></div>
+      <div class="aj-ligne"><span>Version</span><div class="aj-choix" data-version><button data-v="VO">VO</button><button data-v="VF">VF</button></div></div>
+      <div class="aj-ligne"><span>Au cinéma</span><label class="interrupteur"><input type="checkbox" data-cine ${cinema ? "checked" : ""}><span></span></label></div>
+      <div class="bloc-cine ${cinema ? "" : "cache"}" data-bloc-cine>
+        ${mesCinemas.length ? `<div class="aj-tags" data-mes-cines>${mesCinemas.map(c => `<button class="${cinema?.nom === c.cinema ? "actif" : ""}" data-cine-nom="${esc(c.cinema)}">${esc(c.cinema)}</button>`).join("")}</div>` : ""}
+        <input class="aj-champ" data-cine-recherche placeholder="${mesCinemas.length ? "Un autre cinéma" : "Nom du cinéma"}" value="${cinema && !mesCinemas.some(c => c.cinema === cinema.nom) ? esc(cinema.nom) : ""}" autocomplete="off">
+        <div class="res-recherche" data-cine-res></div>
+        <label class="aj-ligne"><span>Salle</span><input class="aj-valeur" data-salle value="${esc(cinema?.salle || "")}" inputmode="numeric" placeholder="–"></label>
+        <label class="aj-ligne"><span>Prix du billet</span><span class="aj-euros"><input class="aj-valeur" data-prix type="number" step="0.1" min="0" inputmode="decimal" value="${e.prix ?? ""}" placeholder="–"> €</span></label>
+      </div>
+      ${Object.keys(S.amis).length ? `<div class="aj-ligne aj-avec"><span>Avec</span><div class="aj-tags">${Object.entries(S.amis).map(([id, a]) => `<button class="${(e.avec || []).includes(id) ? "actif" : ""}" data-ami="${esc(id)}">${esc((a.profil?.nom || id).split(" ")[0])}</button>`).join("")}</div></div>` : ""}
     </div>
-    ${Object.keys(S.amis).length ? `<div class="ligne-champ"><span class="libelle-champ">Avec</span><div class="avatars-choix">${Object.entries(S.amis).map(([id, a]) => `<button class="avatar-choix ${(e.avec || []).includes(id) ? "actif" : ""}" data-ami="${esc(id)}" title="${esc(a.profil?.nom || id)}">${S.avatar(id, a.profil?.nom)}<span>${esc((a.profil?.nom || id).split(" ")[0])}</span></button>`).join("")}</div></div>` : ""}
     <div class="plus-details" data-plus>
-      <button type="button">${ico("bas")} Plus</button>
+      <button type="button" class="aj-plus">Critique et notes détaillées</button>
       <div class="cache" data-details>
-        <label class="case"><input type="checkbox" data-revision ${e.revision ? "checked" : ""}> ${ico("revision")} Revisionnage</label>
-        <textarea class="champ" data-critique placeholder="Ta critique" style="margin-top:6px">${esc(e.critique || "")}</textarea>
-        <label class="case"><input type="checkbox" data-critique-privee ${e.critique_privee ? "checked" : ""}> Critique privée</label>
-        <label class="case"><input type="checkbox" data-prive ${e.prive ? "checked" : ""}> ${ico("cadenas")} Visionnage caché à tes amis</label>
-        <input class="champ" data-avec-libre placeholder="Avec d'autres (séparés par des virgules)" value="${esc((e.avec || []).filter(x => !S.amis[x]).join(", "))}" style="margin-top:6px">
-        <div class="mini-notes" style="margin-top:12px">${[["scenario", "Scénario"], ["realisation", "Mise en scène"], ["jeu", "Jeu"], ["image", "Image"], ["musique", "Musique"], ["son", "Son"]].map(([k, lib]) => `<span class="petit muet">${lib}</span><div class="points10" data-detail="${k}">${Array.from({ length: 10 }, (_, i) => `<button class="${(detail[k] || 0) >= i + 1 ? "ok" : ""}" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>`).join("")}</div>
+        <textarea class="aj-champ aj-critique" data-critique placeholder="Ta critique">${esc(e.critique || "")}</textarea>
+        <div class="aj-lignes">
+          <div class="aj-ligne"><span>Critique privée</span><label class="interrupteur"><input type="checkbox" data-critique-privee ${e.critique_privee ? "checked" : ""}><span></span></label></div>
+          <div class="aj-ligne"><span>Cacher ce visionnage à tes amis</span><label class="interrupteur"><input type="checkbox" data-prive ${e.prive ? "checked" : ""}><span></span></label></div>
+        </div>
+        <input class="aj-champ" data-avec-libre placeholder="Avec d'autres personnes, séparées par des virgules" value="${esc((e.avec || []).filter(x => !S.amis[x]).join(", "))}">
+        <div class="mini-notes">${[["scenario", "Scénario"], ["realisation", "Mise en scène"], ["jeu", "Jeu"], ["image", "Image"], ["musique", "Musique"], ["son", "Son"]].map(([k, lib]) => `<span>${lib}</span><div class="points10" data-detail="${k}">${Array.from({ length: 10 }, (_, i) => `<button class="${(detail[k] || 0) >= i + 1 ? "ok" : ""}" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>`).join("")}</div>
       </div>
     </div>`;
-  const pied = el(`<div class="pied-m">${ex ? `<button class="bouton danger" data-suppr aria-label="Supprimer">${ico("poubelle")}</button>` : `<button class="bouton" data-retour aria-label="Retour">${ico("retour")}</button>`}<button class="bouton principal grand" data-ok>${ex ? "Enregistrer" : "Ajouter"}</button></div>`);
+  const pied = el(`<div class="pied-m">${ex ? `<button class="aj-supprimer" data-suppr>Supprimer</button>` : ""}<button class="bouton principal grand" data-ok>${ex ? "Enregistrer" : "Ajouter au journal"}</button></div>`);
   $(".pied-m", modale)?.remove(); modale.append(pied);
-  const rangee = S.rangee(e.note, v => { e.note = v; }, { grande: true, delai: 0 });
-  $("[data-note]", corps).append(rangee);
-  $("[data-coeur]", corps).onclick = ev => { e.coeur = !e.coeur; ev.currentTarget.classList.toggle("actif", e.coeur); ev.currentTarget.innerHTML = ico(e.coeur ? "coeur-plein" : "coeur"); };
+  const chiffreAj = $("[data-chiffre-aj]", corps);
+  const ecrireNote = () => { chiffreAj.textContent = e.note == null ? "" : S.fmtNote(e.note); };
+  let rev = !!e.revision;
+  $("[data-rev]", corps).onclick = ev => { rev = !rev; ev.currentTarget.classList.toggle("actif", rev); };
+  const rangee = S.rangee(e.note, v => { e.note = v; ecrireNote(); }, { grande: true, delai: 0 });
+  rangee.addEventListener("click", () => { e.note = rangee.valeur(); ecrireNote(); });
+  $("[data-note]", corps).append(rangee); ecrireNote();
+  $("[data-coeur]", corps).onclick = ev => { e.coeur = !e.coeur; ev.currentTarget.classList.toggle("actif", e.coeur); };
   // date : aujourd'hui / hier / autre (jour exact, mois ou année)
   let mo = moment, precision = precisionInit, date = e.date;
   const saisie = () => {
@@ -212,7 +223,7 @@ function formulaire(modale, corps, cle, ex) {
   const blocCine = $("[data-bloc-cine]", corps);
   $("[data-cine]", corps).onchange = ev => { blocCine.classList.toggle("cache", !ev.target.checked); cinema = ev.target.checked ? (cinema || { nom: mesCinemas[0]?.cinema || "", salle: "" }) : null; peindreCines(); };
   const peindreCines = () => $$("[data-cine-nom]", corps).forEach(b => b.classList.toggle("actif", cinema?.nom === b.dataset.cineNom));
-  $$("[data-cine-nom]", corps).forEach(b => b.onclick = () => { cinema = { nom: b.dataset.cineNom, salle: $("[data-salle]", corps).value }; $("[data-cine-recherche]", corps).value = ""; peindreCines(); });
+  $$("[data-cine-nom]", corps).forEach(b => b.onclick = ev => { ev.preventDefault(); cinema = { nom: b.dataset.cineNom, salle: $("[data-salle]", corps).value }; $("[data-cine-recherche]", corps).value = ""; peindreCines(); });
   const rech = $("[data-cine-recherche]", corps), resC = $("[data-cine-res]", corps);
   rech.oninput = S.debounce(async () => {
     const q = rech.value.trim(); cinema = { nom: q, salle: $("[data-salle]", corps).value }; peindreCines();
@@ -220,7 +231,7 @@ function formulaire(modale, corps, cle, ex) {
     try {
       const r = (await S.api("/api/cinemas?q=" + encodeURIComponent(q))).r;
       resC.innerHTML = r.map(c => `<div class="ligne" data-n="${esc(c.nom)}"><div class="corps"><b>${esc(c.nom)}</b><span>${esc(c.ville)}</span></div></div>`).join("");
-      $$(".ligne", resC).forEach(l => l.onclick = () => { cinema = { nom: l.dataset.n, salle: $("[data-salle]", corps).value }; rech.value = l.dataset.n; resC.innerHTML = ""; });
+      $$(".ligne", resC).forEach(l => l.onclick = () => { cinema = { nom: l.dataset.n, salle: $("[data-salle]", corps).value }; rech.value = mesCinemas.some(c => c.cinema === l.dataset.n) ? "" : l.dataset.n; resC.innerHTML = ""; peindreCines(); });
     } catch { resC.innerHTML = ""; }
   }, 350);
   if (cinema && mesCinemas.some(c => c.cinema === cinema.nom)) peindreCines();
@@ -233,7 +244,13 @@ function formulaire(modale, corps, cle, ex) {
     const ou = cinema && cinema.nom !== undefined && $("[data-cine]", corps).checked ? { type: "cinema", cinema: cinema.nom, salle: $("[data-salle]", corps).value.trim() } : (ex?.ou && ex.ou.type !== "cinema" ? ex.ou : null);
     const avec = [...$$("[data-ami].actif", corps).map(b => b.dataset.ami), ...$("[data-avec-libre]", corps).value.split(",").map(s => s.trim()).filter(Boolean)];
     const prix = ou?.type === "cinema" && $("[data-prix]", corps).value !== "" ? +$("[data-prix]", corps).value : null;
-    const entree = { id: ex?.id, cle, date: (mo === "autre" ? date : mo === "hier" ? S.hier() : S.aujourdhui()), note: e.note, coeur: e.coeur, revision: $("[data-revision]", corps).checked, critique: $("[data-critique]", corps).value.trim(), critique_privee: $("[data-critique-privee]", corps).checked, prive: $("[data-prive]", corps).checked, ou, prix, avec, version };
+    const critique = $("[data-critique]", corps).value.trim(), privee = $("[data-critique-privee]", corps).checked;
+    const dejaPublique = ex && ex.critique_privee === false && (ex.critique || "").trim() === critique;
+    if (critique && !privee && !dejaPublique) {
+      const oui = await S.demander("Critique publique", "Cette critique sera visible par tes amis et publiée sur Letterboxd et IMDb. Tu confirmes ?", "Publier", "La garder privée");
+      if (!oui) { $("[data-critique-privee]", corps).checked = true; return; }
+    }
+    const entree = { id: ex?.id, cle, date: (mo === "autre" ? date : mo === "hier" ? S.hier() : S.aujourdhui()), note: e.note, coeur: e.coeur, revision: rev, critique: $("[data-critique]", corps).value.trim(), critique_privee: $("[data-critique-privee]", corps).checked, prive: $("[data-prive]", corps).checked, ou, prix, avec, version };
     $("[data-ok]", pied).disabled = true;
     try {
       await S.agir("journal", { entree }, { toast: ex ? "Modifié" : "Ajouté au journal", sansRendu: true });
@@ -244,12 +261,12 @@ function formulaire(modale, corps, cle, ex) {
     } catch { $("[data-ok]", pied).disabled = false; }
   };
   $("[data-ok]", pied).onclick = valider;
-  const ret = $("[data-retour]", pied); if (ret) ret.onclick = () => { S.fermerModale(); setTimeout(() => S.ouvrirAjout(), 320); };
+  const ret = $("[data-retour]", corps); if (ret) ret.onclick = () => { S.fermerModale(); setTimeout(() => S.ouvrirAjout(), 320); };
   const sup = $("[data-suppr]", pied); if (sup) sup.onclick = async () => { await S.agir("suppr_journal", { id: ex.id }, { toast: "Supprimé", sansRendu: true }); S.fermerModale(); S.rafraichir(true); };
   const clavier = ev => {
     if (ev.target.matches("textarea, input:not([type=checkbox])")) { if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) valider(); return; }
-    if (/^[0-9]$/.test(ev.key)) { e.note = ev.key === "0" ? 10 : +ev.key; rangee.fixer(e.note); S.son("note", e.note); ev.preventDefault(); }
-    if (ev.key === "." || ev.key === ",") { if (e.note) { e.note = Math.max(.5, e.note - .5); rangee.fixer(e.note); } ev.preventDefault(); }
+    if (/^[0-9]$/.test(ev.key)) { e.note = ev.key === "0" ? 10 : +ev.key; rangee.fixer(e.note); ecrireNote(); S.son("note", e.note); ev.preventDefault(); }
+    if (ev.key === "." || ev.key === ",") { if (e.note) { e.note = Math.max(.5, e.note - .5); rangee.fixer(e.note); ecrireNote(); } ev.preventDefault(); }
     if (ev.key === "Enter") { ev.preventDefault(); valider(); }
   };
   corps.onkeydown = clavier;

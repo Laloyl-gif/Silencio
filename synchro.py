@@ -18,6 +18,7 @@ import time
 import config
 from reseau import ErreurHTTP, HorsLigne, requete
 from stockage import chiffrer, dechiffrer, fusionner, separer, SECTIONS, maintenant
+import compte
 
 DOSSIER = "profils"
 
@@ -177,17 +178,22 @@ class Synchro:
             distant = json.loads(gzip.decompress(self._lire(f_pub)).decode("utf-8"))
             self.stock.integrer(distant)
             memo["sha_pub"] = sha_pub
-        phrase = g.get("phrase") or ""
+        cpt = self.stock.appareil.get("compte") or {}
+        phrase = cpt.get("cle") if cpt.get("id") == pid else (g.get("phrase") or "")
         if phrase and sha_priv and sha_priv != memo.get("sha_priv"):
             env = json.loads(gzip.decompress(self._lire(f_priv)).decode("utf-8"))
             priv = dechiffrer(env, phrase, pid)
             if priv is None:
-                self.etat["erreur"] = "phrase secrète différente de celle de tes autres appareils"
-            else:
-                self.stock.integrer(priv)
-                memo["sha_priv"] = sha_priv
+                self.etat["erreur"] = ("mot de passe changé sur un autre appareil : reconnecte-toi" if cpt.get("cle")
+                                       else "phrase secrète différente de celle de tes autres appareils")
+                return True                       # surtout ne rien réécrire par-dessus
+            compte.recevoir_secrets(self.stock, priv.pop("compte", None))
+            self.stock.integrer(priv)
+            memo["sha_priv"] = sha_priv
         with self.stock.verrou:
             pub, priv = separer(self.stock.doc)
+        if cpt.get("cle") and cpt.get("id") == pid:
+            priv["compte"] = compte.secrets(self.stock)          # réglages du compte, chiffrés avec le reste
         nom_aff = (self.stock.doc.get("profil") or {}).get("nom", pid)
         try:
             if _empreinte(pub) != memo.get("emp_pub") or not sha_pub:
