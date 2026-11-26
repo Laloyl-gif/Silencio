@@ -111,16 +111,16 @@ def _lire_csv(texte):
 def _liste_lb(texte):
     """Un fichier de liste Letterboxd : un en-tête de liste, puis « Position,Name,Year,URL,Description »."""
     lignes = texte.splitlines()
-    nom, description, url = "", "", ""
+    nom, description = "", ""
     entete = csv.reader(io.StringIO("\n".join(lignes[:4])))
     tout = list(entete)
     for i, l in enumerate(tout):
         if l and l[0] == "Date" and i + 1 < len(tout):
             info = dict(zip(l, tout[i + 1]))
-            nom, description, url = info.get("Name", ""), info.get("Description", ""), info.get("URL", "")
+            nom, description = info.get("Name", ""), info.get("Description", "")
     debut = next((i for i, l in enumerate(lignes) if l.startswith("Position,") or l.startswith("Name,Year")), None)
     films = _lire_csv("\n".join(lignes[debut:])) if debut is not None else []
-    return nom, description, films, url
+    return nom, description, films
 
 
 def import_letterboxd(tache, tmdb, octets):
@@ -137,7 +137,7 @@ def import_letterboxd(tache, tmdb, octets):
         if any(n.endswith("likes/films.csv") for n in z.namelist()) else []
     listes = [_liste_lb(z.read(n).decode("utf-8-sig")) for n in z.namelist()
               if "lists/" in n and n.endswith(".csv") and not n.endswith("likes/films.csv")]
-    tous = diary + ratings + watched + reviews + watchlist + likes + [f for _, _, fs, _ in listes for f in fs]
+    tous = diary + ratings + watched + reviews + watchlist + likes + [f for _, _, fs in listes for f in fs]
     if not tous:
         raise ValueError("Ce fichier ne ressemble pas à un export Letterboxd (diary.csv, ratings.csv…).")
 
@@ -184,12 +184,11 @@ def import_letterboxd(tache, tmdb, octets):
         c = assoc.get(k(e))
         if c and not titres.get(c, {}).get("vu"):
             wl[c] = {"ajout": e.get("Date") or _maintenant()}
-    for nom, desc, films, url in listes:
-        items = [i for i in (assoc.get(k(f)) for f in films) if i]
+    for nom, desc, films in listes:
+        items = [assoc.get(k(f)) for f in films]
         lid = "lb" + uuid.uuid5(uuid.NAMESPACE_URL, nom).hex[:10]
-        classee = any(f.get("Position") for f in films)
-        ls[lid] = {"nom": nom or "Liste Letterboxd", "description": desc, "items": items,
-                   "classee": classee, "privee": False, "cree": _maintenant()}
+        ls[lid] = {"nom": nom or "Liste Letterboxd", "description": desc, "items": [i for i in items if i],
+                   "classee": any(f.get("Position") for f in films), "privee": False, "cree": _maintenant()}
     return {"titres": titres, "journal": journal, "watchlist": wl, "listes": ls}
 
 

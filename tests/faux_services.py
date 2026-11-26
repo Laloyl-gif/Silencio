@@ -288,34 +288,10 @@ class H(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         return json.loads(self.rfile.read(n) or b"{}") if n else {}
 
-    def refract(self, methode, p, q):
-        """Faux Refract (API v1) : clé « rfk_test »."""
-        if self.headers.get("Authorization") != "Bearer rfk_test":
-            return self.envoyer(401, {"type": "about:blank", "code": "unauthorized"})
-        n = int(self.headers.get("Content-Length") or 0)
-        corps = json.loads(self.rfile.read(n) or b"{}") if n else {}
-        REFRACT.append((methode, p, corps, self.headers.get("Idempotency-Key")))
-        if p == "/me":
-            return self.envoyer(200, {"data": {"username": "etienne"}})
-        m = re.fullmatch(r"/search/(tmdb|imdb)/([^/]+)", p)
-        if m:
-            if m.group(2) in ("999999",):
-                return self.envoyer(200, {"data": []})
-            t = "s" if q.get("type") == "show" else "m"
-            return self.envoyer(200, {"data": [{"ids": {"refract": f"rf-{t}-{m.group(2)}", "tmdb": m.group(2)}}]})
-        if p == "/watchlist" and methode == "GET":
-            return self.envoyer(200, {"data": [{"ids": {"refract": "rf-m-490", "tmdb": 490}, "type": "movie"}],
-                                      "has_more": False})
-        if re.fullmatch(r"/watchlist/[^/]+", p) and methode == "PUT" and p.endswith("rf-m-603"):
-            return self.envoyer(409, {"code": "IN_LIBRARY"})
-        return self.envoyer(200 if methode != "POST" else 201, {"ok": True})
-
     def do_GET(self):
         u = urllib.parse.urlsplit(self.path)
         q = dict(urllib.parse.parse_qsl(u.query))
         p = u.path
-        if p.startswith("/refract/v1"):
-            return self.refract("GET", p[11:], q)
         time.sleep(0.01)
         if p.startswith("/img/"):
             return self.envoyer(200, image("/" + p.split("/", 3)[3], p.split("/")[2]), "image/jpeg")
@@ -419,8 +395,6 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         u = urllib.parse.urlsplit(self.path)
-        if u.path.startswith("/refract/v1"):
-            return self.refract("POST", u.path[11:], {})
         if u.path.startswith("/github"):
             return self.github("POST", u.path[7:], {})
         corps = self.corps()
@@ -432,15 +406,11 @@ class H(BaseHTTPRequestHandler):
         self.envoyer(201, {"success": True})
 
     def do_DELETE(self):
-        if self.path.startswith("/refract/v1"):
-            return self.refract("DELETE", urllib.parse.urlsplit(self.path).path[11:], {})
         ECRITURES.append(("DELETE", self.path, {}))
         self.envoyer(200, {"success": True})
 
     def do_PUT(self):
         u = urllib.parse.urlsplit(self.path)
-        if u.path.startswith("/refract/v1"):
-            return self.refract("PUT", u.path[11:], {})
         return self.github("PUT", u.path[7:], {})
 
     def github(self, methode, p, q):
@@ -497,7 +467,6 @@ class H(BaseHTTPRequestHandler):
 
 
 ECRITURES = []
-REFRACT = []
 
 
 def lancer(port):

@@ -20,10 +20,7 @@ import uuid
 import config
 
 FORMAT = 1
-SECTIONS = ("titres", "journal", "watchlist", "listes", "classements", "favoris", "series", "graphiques", "annees",
-            "miroirs")
-# miroirs : ce que Silencio sait avoir déjà envoyé sur Letterboxd, IMDb et Refract (« lb|note|m:603 » → valeur).
-# Toujours dans la partie privée : rien de tout ça n'est montré aux amis.
+SECTIONS = ("titres", "journal", "watchlist", "listes", "classements", "favoris", "series", "graphiques", "annees")
 CHAMPS_TITRE = {"note", "coeur", "vu", "etiquettes", "citations", "detail", "collection", "prive"}
 CHAMPS_JOURNAL = {"cle", "date", "note", "revision", "critique", "critique_privee", "ou", "prix", "avec", "version",
                   "prive", "coeur"}
@@ -102,8 +99,6 @@ def fusionner(a, b):
 
 # ---------------------------------------------------------------- partie privée
 def _est_cache(doc, s, k, v):
-    if s == "miroirs":
-        return True
     if v.get("x"):
         return False
     if s == "titres":
@@ -122,9 +117,6 @@ def separer(doc):
     priv = {"format": FORMAT, "id": doc.get("id")}
     for s in SECTIONS:
         pub[s], priv[s] = {}, {}
-        if s == "miroirs":                      # rien dans la partie publique, pas même les clés
-            priv[s] = copy.deepcopy(doc.get(s) or {})
-            continue
         for k, v in (doc.get(s) or {}).items():
             if _est_cache(doc, s, k, v):
                 priv[s][k] = v
@@ -332,19 +324,6 @@ class Stock:
         self.sauver()
         self.version += 1
         return {"modifs": modifs, "tmdb": tmdb, "libelle": libelle}
-
-    def poser_miroirs(self, entrees):
-        """Note ce qui est désormais présent (valeur) ou absent (None) sur une plateforme. Hors historique d'annulation."""
-        with self.verrou:
-            if not self.doc or not entrees:
-                return
-            m = self.doc.setdefault("miroirs", {})
-            t = maintenant()
-            for k, v in entrees.items():
-                ancien = m.get(k) or {}
-                maj = max(t, ancien.get("maj", 0) + 0.001)
-                m[k] = {"x": True, "maj": maj} if v is None else {"v": v, "maj": maj}
-            self.sauver()
 
     def journal_recent(self):
         return [{"libelle": l, "quand": q, "n": len(t)} for l, t, q in reversed(self.historique[-30:])]

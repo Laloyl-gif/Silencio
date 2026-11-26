@@ -18,8 +18,6 @@ import imports
 import wiki
 from reseau import ErreurHTTP, HorsLigne, requete
 from stockage import SECTIONS, Stock, lire_json, slug
-import miroir
-from refract import Refract
 from synchro import Synchro
 from tmdb import TMDB, cle_titre, decouper
 
@@ -48,7 +46,6 @@ class App:
         self._ancien_profil = self.stock.pid
         self._verrou_osm = threading.Lock()
         self._osm_dernier = 0
-        self.refract = Refract(self.stock, self._meta)
 
     # ---- arrière-plan
     def demarrer(self):
@@ -67,9 +64,6 @@ class App:
                 if tour % 60 == 0 and not imdb.a_jour():
                     imdb.mettre_a_jour()
                 self.notifs.verifier()
-                if tour % 2 == 0 and self.refract.cle:
-                    if self.refract.passage():
-                        self.synchro.demander(5)
             except Exception:  # noqa: BLE001
                 traceback.print_exc()
             tour += 1
@@ -168,8 +162,7 @@ class App:
         app = self.stock.appareil
         g = self.synchro.reglages
         return {
-            "version": self.stock.version, "app": config.VERSION,
-            "profil": {k: v for k, v in self.stock.doc.items() if k != "miroirs"} if self.stock.doc else None,
+            "version": self.stock.version, "app": config.VERSION, "profil": self.stock.doc,
             "amis": self.stock.amis,
             "appareil": {"profil": self.stock.pid, "tmdb": {"connecte": bool(self.tmdb.session),
                                                            "nom": (app.get("tmdb") or {}).get("nom", "")},
@@ -181,70 +174,7 @@ class App:
             "file_tmdb": self.tmdb.etat_file, "imdb": imdb.etat(), "en_ligne": self.tmdb.en_ligne,
             "notifs": sum(1 for n in self.notifs.d["liste"] if not n["lu"]),
             "historique": self.stock.journal_recent(),
-            "plateformes": self.etat_plateformes(),
         }
-
-    # ---- Letterboxd, IMDb (par l'extension Firefox) et Refract (par son API) : Silencio est le maître
-    def jeton_extension(self):
-        app = self.stock.appareil
-        if not app.get("jeton_ext"):
-            import secrets
-            app["jeton_ext"] = secrets.token_hex(12)
-            self.stock.sauver_appareil()
-        return app["jeton_ext"]
-
-    def etat_plateformes(self):
-        app = self.stock.appareil
-        doc = self.stock.doc
-        if not doc:
-            return {}
-        passages = app.get("miroir_passages") or {}
-        echecs = app.get("miroir_echecs") or {}
-        r = {}
-        for p, nom in miroir.PLATEFORMES.items():
-            r[p] = dict(miroir.compter(doc, p), nom=nom, passage=passages.get(p),
-                        echecs=[dict(v, cle=k) for k, v in (echecs.get(p) or {}).items()][:50],
-                        depuis=(app.get("miroir_depart") or {}).get(p))
-        r["rf"].update(connecte=bool(self.refract.cle), nom_compte=(app.get("refract") or {}).get("nom", ""),
-                       erreur=self.refract.etat["erreur"])
-        r["lb"]["pseudo"] = app.get("letterboxd_pseudo", "")
-        r["imdb"]["favoris"] = app.get("imdb_favoris", "")
-        r["jeton"] = self.jeton_extension()
-        r["extension_vue"] = app.get("extension_vue") or {}
-        return r
-
-    def ext_ops(self, plateforme, n=40, forcer=False):
-        if plateforme not in ("lb", "imdb"):
-            raise ValueError("Plateforme inconnue.")
-        app = self.stock.appareil
-        app.setdefault("extension_vue", {})[plateforme] = time.time()
-        if not (app.get("miroir_depart") or {}).get(plateforme):
-            # première fois que l'extension passe : tout ce qui est déjà dans Silencio est considéré comme réglé ;
-            # seuls les ajouts et les changements faits à partir de maintenant partiront
-            self.depart(plateforme)
-        echecs = (app.get("miroir_echecs") or {}).get(plateforme) or {}
-        r = miroir.operations(self.stock.doc, plateforme, self._meta, echecs, limite=n, forcer=forcer)
-        r.update(pseudo=app.get("letterboxd_pseudo", ""), favoris=app.get("imdb_favoris", ""), depart=True)
-        return r
-
-    def ext_resultats(self, corps):
-        p = corps.get("plateforme")
-        if p not in ("lb", "imdb"):
-            raise ValueError("Plateforme inconnue.")
-        bilan = miroir.appliquer_resultats(self.stock, p, corps.get("resultats") or [])
-        self.synchro.demander(5)
-        return bilan
-
-    def depart(self, plateforme, vide=False):
-        """Point de départ sans export : soit « tout ce qui est dans Silencio est déjà là-bas », soit « mon compte
-        là-bas est vide, envoie tout »."""
-        if plateforme not in miroir.PLATEFORMES:
-            raise ValueError("Plateforme inconnue.")
-        app = self.stock.appareil
-        n = 0 if vide else miroir.poser_depart(self.stock, plateforme, miroir.souhaite(self.stock.doc, plateforme))
-        app.setdefault("miroir_depart", {})[plateforme] = time.time()
-        self.stock.sauver_appareil()
-        return n
 
     # ---- actions
     def action(self, corps):
@@ -349,50 +279,9 @@ class App:
             app["github"] = g
         if "twin_picks" in corps:
             app["twin_picks"] = corps["twin_picks"] or ""
-        if "letterboxd_pseudo" in corps:
-            app["letterboxd_pseudo"] = re.sub(r"[^A-Za-z0-9_]", "", corps["letterboxd_pseudo"] or "")[:40]
-        if "imdb_favoris" in corps:
-            m = re.search(r"ls\d+", corps["imdb_favoris"] or "")
-            app["imdb_favoris"] = m.group(0) if m else ""
-            if m:
-                self.stock.poser_miroirs({f"imdb|liste|{miroir.FAVORIS}": {"nom": "Favoris", "classee": False,
-                                          "description": "Ma watchlist Silencio", "ref": m.group(0)}})
-        if "nouveau_jeton" in corps:
-            app.pop("jeton_ext", None)
-            self.jeton_extension()
-        if "refract_cle" in corps:
-            cle = (corps["refract_cle"] or "").strip()
-            if not cle:
-                app.pop("refract", None)
-            elif cle != "••••":
-                if not cle.startswith("rfk_"):
-                    raise ValueError("Une clé Refract commence par rfk_ (elle se crée dans l'appli Refract).")
-                app["refract"] = {"cle": cle}
-                try:
-                    moi = self.refract.moi() or {}
-                    app["refract"]["nom"] = (moi.get("data") or moi).get("username") or (moi.get("data") or moi).get("name") or ""
-                except ErreurHTTP as e:
-                    app.pop("refract", None)
-                    self.stock.sauver_appareil()
-                    raise ValueError(f"Refract refuse cette clé ({e.code}).") from None
-                threading.Thread(target=self._depart_refract, daemon=True).start()
         self.stock.sauver_appareil()
         self.synchro.demander(1)
         return self.etat()
-
-    def _depart_refract(self):
-        """Première connexion à Refract : sa watchlist entre dans Silencio, puis Silencio devient le maître."""
-        try:
-            presence, a_importer = self.refract.point_de_depart()
-            if a_importer:
-                self.stock.action("import", {"sections": {"watchlist": a_importer}, "libelle": "Import Refract"})
-            miroir.poser_depart(self.stock, "rf", presence)
-            self.stock.appareil.setdefault("miroir_depart", {})["rf"] = time.time()
-            self.stock.sauver_appareil()
-            self.refract.passage()
-            self.synchro.demander(3)
-        except Exception as e:  # noqa: BLE001
-            self.refract.etat["erreur"] = str(e)[:200]
 
     # ---- pages
     def titre(self, cle):
@@ -678,17 +567,6 @@ def fabriquer_handler(app):
             self.end_headers()
 
         def _api_get(self, r, q):
-            if r.startswith("ext/"):
-                if not self._jeton_ok():
-                    return self._envoyer(403, {"erreur": "jeton d'appairage invalide"})
-                if r == "ext/ops":
-                    return self._envoyer(200, app.ext_ops(q.get("p", ""), min(80, int(q.get("n") or 40)),
-                                                          q.get("forcer") == "1"))
-                if r == "ext/bonjour":
-                    return self._envoyer(200, {"ok": True, "profil": app.stock.pid, "app": config.VERSION,
-                                               "pseudo": app.stock.appareil.get("letterboxd_pseudo", ""),
-                                               "favoris": app.stock.appareil.get("imdb_favoris", "")})
-                return self._envoyer(404, {"erreur": "inconnu"})
             if r == "etat":
                 return self._envoyer(200, app.etat())
             if r == "version":
@@ -795,26 +673,7 @@ def fabriquer_handler(app):
             self._envoyer(200, corps, type_ + "; charset=utf-8",
                           {"Content-Disposition": f'attachment; filename="{fichier}"'})
 
-        def _jeton_ok(self):
-            return self.headers.get("X-Silencio-Jeton") == app.jeton_extension()
-
         def _api_post(self, r, q):
-            if r.startswith("ext/"):
-                if not self._jeton_ok():
-                    return self._envoyer(403, {"erreur": "jeton d'appairage invalide"})
-                if r == "ext/resultats":
-                    return self._envoyer(200, app.ext_resultats(self._json()))
-                return self._envoyer(404, {"erreur": "inconnu"})
-            if r == "plateformes/depart":
-                c = self._json()
-                return self._envoyer(200, {"n": app.depart(c.get("plateforme"), bool(c.get("vide")))})
-            if r == "plateformes/reessayer":
-                p = self._json().get("plateforme")
-                (app.stock.appareil.get("miroir_echecs") or {}).pop(p, None)
-                app.stock.sauver_appareil()
-                if p == "rf":
-                    threading.Thread(target=app.refract.passage, daemon=True).start()
-                return self._envoyer(200, app.etat())
             if r == "action":
                 return self._envoyer(200, app.action(self._json()))
             if r == "profil/choisir":

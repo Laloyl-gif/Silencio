@@ -35,7 +35,7 @@ S.langue = c => { if (!c) return ""; try { const n = nomsLangues ? nomsLangues.o
 S.GENRES = { 28: "Action", 12: "Aventure", 16: "Animation", 35: "Comédie", 80: "Crime", 99: "Documentaire", 18: "Drame", 10751: "Familial", 14: "Fantastique", 36: "Histoire", 27: "Horreur", 10402: "Musique", 9648: "Mystère", 10749: "Romance", 878: "Science-fiction", 10770: "Téléfilm", 53: "Thriller", 10752: "Guerre", 37: "Western", 10759: "Action & aventure", 10762: "Jeunesse", 10763: "Actualités", 10764: "Télé-réalité", 10765: "SF & fantastique", 10766: "Feuilleton", 10767: "Talk-show", 10768: "Guerre & politique" };
 S.FORMATS = { long: "Long métrage", court: "Court métrage", docu: "Documentaire", telefilm: "Téléfilm", serie: "Série", mini: "Mini-série", docu_serie: "Série documentaire" };
 S.METIERS = { real: "Réalisation", scen: "Scénario", image: "Image", musique: "Musique", montage: "Montage", decors: "Décors", costumes: "Costumes", prod: "Production", casting: "Casting", son: "Son", vfx: "Effets visuels", createur: "Création", acteur: "Interprétation" };
-S.COULEURS = ["#5b8cff", "#e76624", "#00a888", "#d28e05", "#e24d8b", "#0aac23", "#9887ef", "#eb6263"];
+S.COULEURS = ["#338ced", "#e76624", "#00a888", "#d28e05", "#e24d8b", "#0aac23", "#9887ef", "#eb6263"];
 S.couleurProfil = id => { let h = 0; for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return ["#8796ff", "#f2a65a", "#4fd1b5", "#e98bb5", "#c3a6ff", "#f2c14e", "#7fc8f8", "#ef7d7d"][h % 8]; };
 S.initiales = nom => (nom || "?").split(/\s+/).map(m => m[0]).join("").slice(0, 2).toUpperCase();
 S.avatar = (id, nom, taille) => `<span class="avatar" style="background:${S.couleurProfil(id)}${taille ? `;width:${taille}px;height:${taille}px;font-size:${taille * .42}px` : ""}">${esc(S.initiales(nom))}</span>`;
@@ -82,7 +82,7 @@ S.chargerEtat = chargerEtat;
 let baseEnCours = null;
 S.chargerBase = (forcer) => {
   if (S.base && !forcer) return Promise.resolve(S.base);
-  if (!baseEnCours) baseEnCours = api("/api/base").then(b => { S.base = b; baseEnCours = null; S.statsCache = null; setTimeout(() => S.majChrome && S.majChrome(), 0); return b; }).catch(e => { baseEnCours = null; throw e; });
+  if (!baseEnCours) baseEnCours = api("/api/base").then(b => { S.base = b; baseEnCours = null; S.statsCache = null; return b; }).catch(e => { baseEnCours = null; throw e; });
   return baseEnCours;
 };
 
@@ -111,24 +111,24 @@ S.affiche = (m, o = {}) => {
   const t = S.nomTitre(m);
   const src = m && m.af ? S.img(m.af, o.taille || "w342") : "";
   const marques = [];
-  return `<div class="affiche"${o.vt ? ` style="view-transition-name:${o.vt}"` : ""}>${src ? `<img loading="lazy" src="${src}" alt="" onload="this.classList.add('ok')" onerror="this.remove()">` : ""}<div class="sans"${src ? ' style="z-index:-1"' : ""}>${esc(t)}</div>${o.vu ? `<span class="vu-coin">Vu</span>` : ""}${marques.length ? `<div class="marques">${marques.join("")}</div>` : ""}</div>`;
+  if (o.note != null) marques.push(`<span class="note-coin">${S.fmtNote(o.note)}</span>`);
+  if (o.coeur) marques.push(ico("coeur-plein", "coeur-coin"));
+  return `<div class="affiche"${o.vt ? ` style="view-transition-name:${o.vt}"` : ""}>${src ? `<img loading="lazy" src="${src}" alt="" onload="this.classList.add('ok')" onerror="this.remove()">` : ""}<div class="sans"${src ? ' style="z-index:-1"' : ""}>${esc(t)}</div>${o.vu ? `<span class="vu-coin">${ico("ok")}</span>` : ""}${marques.length ? `<div class="marques">${marques.join("")}</div>` : ""}</div>`;
 };
 S.vignette = (cle, o = {}) => {
   const m = S.info(cle) || { t: "…" };
   const t = S.monTitre(cle);
   const note = o.note !== undefined ? o.note : (o.sansNote ? null : t.note);
-  const coeur = o.coeur ?? t.coeur;
-  const bas = [note != null ? `<em class="${coeur ? "cc" : ""}">${S.fmtNote(note)}</em>` : "", o.info ? esc(o.info) : ""].filter(Boolean).join(" ");
-  return `<a class="vignette" href="#/titre/${cle}" data-cle="${cle}">${S.affiche(m, { vu: o.vu })}${o.legende === false ? "" : `<div class="legende"><b>${esc(S.nomTitre(m))}</b>${bas ? `<span>${bas}</span>` : ""}</div>`}</a>`;
+  return `<a class="vignette" href="#/titre/${cle}" data-cle="${cle}">${S.affiche(m, { note, coeur: o.coeur ?? t.coeur, vu: o.vu })}${o.legende === false ? "" : `<div class="legende"><b>${esc(S.nomTitre(m))}</b>${o.info ? `<span>${esc(o.info)}</span>` : ""}</div>`}</a>`;
 };
 S.portrait = (chemin, nom) => `<div class="portrait">${chemin ? `<img loading="lazy" src="${S.img(chemin, "w185")}" alt="" onload="this.classList.add('ok')" onerror="this.remove()">` : ""}<span class="initiales" style="z-index:-1">${esc(S.initiales(nom))}</span></div>`;
 S.ligneTitre = (cle, o = {}) => {
   const m = S.info(cle) || { t: "…" };
   const t = S.monTitre(cle);
-  const sous = o.sous ?? [m.a, S.FORMATS[m.fmt] && m.fmt !== "long" ? S.FORMATS[m.fmt] : (m.ty === "t" ? "série" : "")].filter(Boolean).join(", ");
-  const droite = o.droite ?? (t.note != null ? `<span class="note-txt ${t.coeur ? "cc" : ""}">${S.fmtNote(t.note)}</span>` : S.dansWatchlist(cle) ? `<span class="etat-txt">à voir</span>` : t.vu ? `<span class="etat-txt">vu</span>` : "");
+  const sous = o.sous ?? [m.a, S.FORMATS[m.fmt] && m.fmt !== "long" ? S.FORMATS[m.fmt] : (m.ty === "t" ? "Série" : "")].filter(Boolean).join(" · ");
+  const droite = o.droite ?? `${t.coeur ? `<span style="color:var(--rouge)">${ico("coeur-plein")}</span>` : ""}${t.note != null ? `<span class="note-txt">${S.fmtNote(t.note)}</span>` : S.dansWatchlist(cle) ? `<span style="color:var(--accent)">${ico("watchlist-plein")}</span>` : ""}`;
   const ligne = `<a class="ligne" href="#/titre/${cle}" data-cle="${cle}">${o.avant || ""}${S.affiche(m, { taille: "w154" })}<div class="corps"><b>${esc(S.nomTitre(m))}</b><span>${esc(sous)}</span></div><div class="droite">${droite}</div></a>`;
-  return o.glisse === false ? ligne : `<div class="glisse"><div class="fond-g">Vu</div><div class="fond-d">À voir</div>${ligne}</div>`;
+  return o.glisse === false ? ligne : `<div class="glisse"><div class="fond-g">${ico("oeil")} Vu</div><div class="fond-d">Watchlist ${ico("watchlist")}</div>${ligne}</div>`;
 };
 S.vide = (titre, texte = "") => `<div class="vide"><b>${esc(titre)}</b>${texte}</div>`;
 S.chargement = () => `<div class="chargement"></div>`;
@@ -175,7 +175,7 @@ S.toast = toast;
 
 const pile = [];
 S.ouvrirModale = ({ titre = "", corps = "", pied = "", large = false, fermer } = {}) => {
-  const m = el(`<div class="modale ${large ? "large" : ""}" role="dialog"><div class="poignee-m"></div><div class="tete-m"><h2>${esc(titre)}</h2><span class="espace"></span><button class="fermer-m" data-fermer>Fermer</button></div><div class="corps-m"></div>${pied !== null ? `<div class="pied-m"></div>` : ""}</div>`);
+  const m = el(`<div class="modale ${large ? "large" : ""}" role="dialog"><div class="poignee-m"></div><div class="tete-m"><h2>${esc(titre)}</h2><span class="espace"></span><button class="icone-bouton" data-fermer aria-label="Fermer">${ico("x")}</button></div><div class="corps-m"></div>${pied !== null ? `<div class="pied-m"></div>` : ""}</div>`);
   const c = $(".corps-m", m);
   typeof corps === "string" ? (c.innerHTML = corps) : c.append(corps);
   if (pied && $(".pied-m", m)) typeof pied === "string" ? ($(".pied-m", m).innerHTML = pied) : $(".pied-m", m).append(pied);
@@ -201,16 +201,6 @@ S.fermerModale = (depuisHistorique) => {
   m.fermerCb && m.fermerCb();
   if (!depuisHistorique) { ignorerPop = true; history.back(); }
 };
-// petite question oui / non, par-dessus ce qui est ouvert : renvoie une promesse (true / false)
-S.demander = (titre, texte, oui = "Oui", non = "Non") => new Promise(ok => {
-  let fini = false;
-  const finir = v => { if (fini) return; fini = true; ok(v); };
-  const pied = el(`<div class="pied-question"><button class="bouton" data-non>${esc(non)}</button><button class="bouton principal" data-oui>${esc(oui)}</button></div>`);
-  const m = S.ouvrirModale({ titre, corps: `<p class="question-texte">${texte}</p>`, pied, fermer: () => finir(false) });
-  m.classList.add("question");
-  $("[data-oui]", m).onclick = () => { finir(true); S.fermerModale(); };
-  $("[data-non]", m).onclick = () => { finir(false); S.fermerModale(); };
-});
 let ignorerPop = false, navRetour = false;
 window.addEventListener("popstate", () => {
   if (ignorerPop) { ignorerPop = false; return; }
@@ -304,21 +294,16 @@ function majChrome() {
   const b = $("[data-badge]"); if (b) { b.textContent = e.notifs; b.classList.toggle("cache", !e.notifs); }
   const pied = $("[data-pied]");
   if (pied) {
-    const s = e.sync || {}, f = e.file_tmdb || {};
-    const heure = s.derniere ? new Date(s.derniere * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "";
-    const lignes = [];
-    if (e.en_ligne === false) lignes.push(`<span class="alerte">Hors ligne</span>`);
-    if (!s.active) lignes.push("Synchro GitHub non réglée");
-    else if (s.erreur) lignes.push(`<span class="alerte" title="${esc(s.erreur)}">Synchro en échec</span>`);
-    else lignes.push(heure ? `Synchronisé à ${heure}` : "Synchro en attente");
-    if (e.appareil?.tmdb?.connecte && f.attente) lignes.push(`${S.pluriel(f.attente, "envoi")} TMDB en attente`);
-    const nom = S.moi?.profil?.nom || "";
-    pied.innerHTML = `${S.moi ? `<a href="#/profil" class="lat-profil">${S.avatar(e.appareil?.profil || "moi", nom, 32)}<span><b>${esc(nom)}</b><small>${lignes.join("<br>")}</small></span></a>` : `<small>${lignes.join("<br>")}</small>`}`;
+    const s = e.sync || {};
+    const etatSync = !s.active ? `<span><span class="pastille"></span>Synchro GitHub non réglée</span>` : s.erreur ? `<span title="${esc(s.erreur)}"><span class="pastille erreur"></span>${esc(s.erreur)}</span>` : `<span><span class="pastille ok"></span>Synchro ${s.derniere ? "à " + new Date(s.derniere * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "en attente"}</span>`;
+    const f = e.file_tmdb || {};
+    const etatTmdb = e.appareil?.tmdb?.connecte ? (f.attente ? `<span><span class="pastille attente"></span>TMDB : ${f.attente} en attente</span>` : `<span><span class="pastille ok"></span>TMDB à jour</span>`) : "";
+    pied.innerHTML = etatSync + etatTmdb + (e.en_ligne === false ? `<span><span class="pastille attente"></span>Hors ligne</span>` : "");
   }
   const ep = $("[data-epinglees]");
   if (ep && S.moi) {
     const l = Object.entries(S.vivants(S.moi.listes)).filter(([, v]) => v.epinglee);
-    ep.innerHTML = l.map(([id, v]) => { const items = v.items || []; const m = items.map(c => S.info(c)).find(x => x?.af) || {}; return `<a href="#/liste/${id}" class="lat-liste"><span class="lat-vignette">${m.af ? `<img src="${S.img(m.af, "w92")}" alt="">` : ""}</span><span class="coupe"><b class="coupe">${esc(v.nom)}</b><small>${S.pluriel(items.length, "titre")}</small></span></a>`; }).join("");
+    ep.innerHTML = l.map(([id, v]) => `<a href="#/liste/${id}">${ico("listes")}<span class="coupe">${esc(v.nom)}</span></a>`).join("");
     $("[data-epinglees-titre]").classList.toggle("cache", !l.length);
   }
 }
@@ -372,7 +357,122 @@ S.rechercheTMDB = async q => {
 // ------------------------------------------------------------------ ajout rapide d'un visionnage
 const PLATEFORMES = ["Netflix", "Prime Video", "Disney+", "Canal+", "MUBI", "Arte", "Max", "Apple TV+", "Paramount+", "France.tv", "OCS", "YouTube"];
 const SUPPORTS = ["Blu-ray", "4K UHD", "DVD", "VHS", "Fichier", "Télévision"];
-// le formulaire d'ajout est dans ui.js
+S.ouvrirAjout = (cle, entreeExistante) => {
+  const corps = el(`<div></div>`);
+  const m = S.ouvrirModale({ titre: entreeExistante ? "Modifier le visionnage" : "Ajouter", corps, pied: null });
+  if (cle) return formulaireAjout(m, corps, cle, entreeExistante);
+  corps.innerHTML = `<input class="champ" type="search" placeholder="Titre d'un film ou d'une série…" autocomplete="off" enterkeyhint="search"><div class="res-recherche" style="margin-top:10px"></div><p class="mini discret" style="margin-top:14px">Astuce : <b>Entrée</b> choisit le premier résultat, <b>↑ ↓</b> pour se déplacer.</p>`;
+  const champ = $("input", corps), res = $(".res-recherche", corps);
+  let sel = 0, cles = [];
+  const peindre = () => { $$(".ligne", res).forEach((l, i) => l.classList.toggle("sel", i === sel)); };
+  const afficher = (liste) => {
+    cles = liste;
+    res.innerHTML = liste.map(c => { const mm = S.info(c) || {}; const t = S.monTitre(c); return `<div class="ligne" data-cle="${c}">${S.affiche(mm, { taille: "w154" })}<div class="corps"><b>${esc(S.nomTitre(mm))}</b><span>${[mm.a, c[0] === "t" ? "Série" : "Film", t.vu ? "déjà vu" : S.dansWatchlist(c) ? "dans ta watchlist" : ""].filter(Boolean).join(" · ")}</span></div>${t.note != null ? `<span class="note-txt">${S.fmtNote(t.note)}</span>` : ""}</div>`; }).join("") || (champ.value ? `<div class="vide petit">Rien trouvé</div>` : "");
+    sel = 0; peindre();
+    $$(".ligne", res).forEach(l => l.onclick = () => formulaireAjout(m, corps, l.dataset.cle));
+  };
+  const chercher = S.debounce(async () => {
+    const q = champ.value.trim(); if (!q) return afficher([]);
+    const locaux = S.rechercheLocale(q, 4); afficher(locaux);
+    try {
+      const r = await S.rechercheTMDB(q);
+      const distants = r.map(x => S.retenir(x)).filter(Boolean);
+      afficher([...new Set([...locaux, ...distants])].slice(0, 12));
+    } catch (e) { if (e.name !== "AbortError" && e.horsLigne) res.insertAdjacentHTML("beforeend", `<div class="mini discret" style="padding:8px">Hors ligne : seuls tes films connus apparaissent.</div>`); }
+  }, 160);
+  champ.addEventListener("input", chercher);
+  champ.addEventListener("keydown", e => {
+    if (e.key === "ArrowDown") { sel = Math.min(cles.length - 1, sel + 1); peindre(); e.preventDefault(); }
+    if (e.key === "ArrowUp") { sel = Math.max(0, sel - 1); peindre(); e.preventDefault(); }
+    if (e.key === "Enter" && cles[sel]) { e.preventDefault(); formulaireAjout(m, corps, cles[sel]); }
+  });
+  champ.focus({ preventScroll: true });
+  setTimeout(() => champ.focus({ preventScroll: true }), 80);
+};
+
+function formulaireAjout(modale, corps, cle, ex) {
+  const m = S.info(cle) || {};
+  const t = S.monTitre(cle);
+  const dejaVu = !!(t.vu || S.journalDe(cle).length);
+  const e = Object.assign({ cle, date: S.aujourdhui(), note: t.note ?? null, coeur: !!t.coeur, revision: dejaVu, critique: "", critique_privee: false, prive: false, ou: null, prix: null, avec: [], version: "" }, ex || {});
+  const detail = Object.assign({}, t.detail || {});
+  $("h2", modale).textContent = ex ? "Modifier le visionnage" : "J'ai vu…";
+  const anciensCinemas = [...new Set(Object.values(S.vivants(S.moi.journal)).filter(j => j.ou?.type === "cinema" && j.ou.cinema).map(j => j.ou.cinema))];
+  const amis = Object.entries(S.amis);
+  corps.innerHTML = `
+    <div class="ajout-entete">${S.affiche(m, { taille: "w154" })}<div><h3>${esc(S.nomTitre(m))}</h3><div class="muet petit">${[m.a, S.autreTitre(m)].filter(Boolean).map(esc).join(" · ")}</div>${dejaVu && !ex ? `<div class="mini" style="color:var(--accent);margin-top:4px">${ico("revision")} Tu l'as déjà vu</div>` : ""}</div></div>
+    <label class="etiquette">Vu le</label>
+    <div class="flex" style="flex-wrap:wrap"><div class="segments" data-jour><button data-v="auj">Aujourd'hui</button><button data-v="hier">Hier</button><button data-v="autre">Autre date</button></div><input class="champ" type="date" data-date style="width:auto;height:38px" value="${e.date}" max="${S.aujourdhui()}"></div>
+    <label class="etiquette">Ta note</label>
+    <div class="flex" style="flex-wrap:wrap;gap:6px 12px"><div data-etoiles></div><button class="coeur ${e.coeur ? "actif" : ""}" data-coeur title="Coup de cœur">${ico(e.coeur ? "coeur-plein" : "coeur")}</button></div>
+    <div class="flex" style="margin-top:8px;flex-wrap:wrap"><label class="case"><input type="checkbox" data-revision ${e.revision ? "checked" : ""}> Revisionnage</label></div>
+    <div class="plus-details" data-plus>
+      <button type="button">${ico("bas")} Plus de détails <span class="mini discret" style="margin-left:auto">où, avec qui, critique…</span></button>
+      <div class="cache" data-details>
+        <label class="etiquette">Où ?</label>
+        <div class="segments" data-ou><button data-v="">—</button><button data-v="cinema">${ico("ticket")} Cinéma</button><button data-v="plateforme">${ico("play")} Plateforme</button><button data-v="support">${ico("disque")} Support</button></div>
+        <div data-ou-cinema class="cache"><div class="grille-2"><div><label class="etiquette">Cinéma</label><input class="champ" data-cinema list="liste-cinemas" placeholder="Le Champo…" value="${esc(e.ou?.cinema || "")}"><datalist id="liste-cinemas">${anciensCinemas.map(c => `<option value="${esc(c)}">`).join("")}</datalist></div><div><label class="etiquette">Salle</label><input class="champ" data-salle placeholder="Salle 2" value="${esc(e.ou?.salle || "")}"></div></div><label class="etiquette">Prix du billet (€)</label><input class="champ" data-prix type="number" step="0.1" min="0" inputmode="decimal" style="width:140px" value="${e.prix ?? ""}"></div>
+        <div data-ou-plateforme class="cache"><label class="etiquette">Plateforme</label><div class="puces">${PLATEFORMES.map(p => `<button class="puce ${e.ou?.nom === p ? "actif" : ""}" data-plat="${esc(p)}">${esc(p)}</button>`).join("")}</div></div>
+        <div data-ou-support class="cache"><label class="etiquette">Support</label><div class="puces">${SUPPORTS.map(p => `<button class="puce ${e.ou?.nom === p ? "actif" : ""}" data-sup="${esc(p)}">${esc(p)}</button>`).join("")}</div></div>
+        <label class="etiquette">Avec qui</label>
+        <div class="puces" data-avec>${amis.map(([id, a]) => `<button class="puce ${(e.avec || []).includes(id) ? "actif" : ""}" data-ami="${esc(id)}">${esc(a.profil?.nom || id)}</button>`).join("")}<input class="champ" data-avec-libre placeholder="Autres (séparés par des virgules)" style="height:30px;width:220px;border-radius:15px;font-size:13px" value="${esc((e.avec || []).filter(x => !S.amis[x]).join(", "))}"></div>
+        <label class="etiquette">Version</label>
+        <div class="segments" data-version>${["", "VOST", "VF", "VO", "Version longue"].map(v => `<button data-v="${v}" class="${(e.version || "") === v ? "actif" : ""}">${v || "—"}</button>`).join("")}</div>
+        <label class="etiquette">Critique</label>
+        <textarea class="champ" data-critique placeholder="Ce que tu en as pensé…">${esc(e.critique || "")}</textarea>
+        <label class="case"><input type="checkbox" data-critique-privee ${e.critique_privee ? "checked" : ""}> Critique privée (tes amis voient seulement la note)</label>
+        <label class="case"><input type="checkbox" data-prive ${e.prive ? "checked" : ""}> ${ico("cadenas")} Visionnage caché (compte dans tes stats, invisible pour tes amis)</label>
+        <label class="etiquette">Notes détaillées</label>
+        <div class="mini-notes">${[["scenario", "Scénario"], ["realisation", "Mise en scène"], ["jeu", "Jeu"], ["image", "Image"], ["musique", "Musique"], ["son", "Son"]].map(([k, lib]) => `<span class="petit muet">${lib}</span><div class="points10" data-detail="${k}">${Array.from({ length: 10 }, (_, i) => `<button class="${(detail[k] || 0) >= i + 1 ? "ok" : ""}" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>`).join("")}</div>
+      </div>
+    </div>`;
+  const pied = el(`<div class="pied-m">${ex ? `<button class="bouton danger" data-suppr>${ico("poubelle")}</button>` : `<button class="bouton" data-retour>${ico("retour")}</button>`}<button class="bouton principal" data-ok>${ex ? "Enregistrer" : "Ajouter au journal"}</button></div>`);
+  $(".pied-m", modale)?.remove(); modale.append(pied);
+  const champDate = $("[data-date]", corps);
+  const majJour = () => { const v = champDate.value; $$("[data-jour] button", corps).forEach(b => b.classList.toggle("actif", (b.dataset.v === "auj" && v === S.aujourdhui()) || (b.dataset.v === "hier" && v === S.hier()) || (b.dataset.v === "autre" && v !== S.aujourdhui() && v !== S.hier()))); champDate.style.display = (v !== S.aujourdhui() && v !== S.hier()) ? "" : "none"; };
+  $$("[data-jour] button", corps).forEach(b => b.onclick = () => { if (b.dataset.v === "auj") champDate.value = S.aujourdhui(); else if (b.dataset.v === "hier") champDate.value = S.hier(); else { champDate.style.display = ""; champDate.showPicker?.(); } majJour(); if (b.dataset.v === "autre") { champDate.style.display = ""; $$("[data-jour] button", corps).forEach(x => x.classList.toggle("actif", x === b)); } });
+  champDate.onchange = majJour; majJour();
+  const etoiles = S.etoiles(e.note, v => { e.note = v; }, { compact: true });
+  $("[data-etoiles]", corps).append(etoiles);
+  $("[data-coeur]", corps).onclick = ev => { e.coeur = !e.coeur; ev.currentTarget.classList.toggle("actif", e.coeur); ev.currentTarget.innerHTML = ico(e.coeur ? "coeur-plein" : "coeur"); };
+  const plus = $("[data-plus]", corps);
+  $("button", plus).onclick = () => { plus.classList.toggle("ouvert"); $("[data-details]", plus).classList.toggle("cache"); };
+  if (ex && (ex.ou || ex.critique || (ex.avec || []).length || ex.version || ex.prive)) $("button", plus).click();
+  let ouType = e.ou?.type || "", plat = e.ou?.type === "plateforme" ? e.ou.nom : "", sup = e.ou?.type === "support" ? e.ou.nom : "";
+  const majOu = () => { $$("[data-ou] button", corps).forEach(b => b.classList.toggle("actif", b.dataset.v === ouType)); ["cinema", "plateforme", "support"].forEach(k => $(`[data-ou-${k}]`, corps).classList.toggle("cache", ouType !== k)); };
+  $$("[data-ou] button", corps).forEach(b => b.onclick = () => { ouType = b.dataset.v; majOu(); });
+  majOu();
+  $$("[data-plat]", corps).forEach(b => b.onclick = () => { plat = plat === b.dataset.plat ? "" : b.dataset.plat; $$("[data-plat]", corps).forEach(x => x.classList.toggle("actif", x.dataset.plat === plat)); });
+  $$("[data-sup]", corps).forEach(b => b.onclick = () => { sup = sup === b.dataset.sup ? "" : b.dataset.sup; $$("[data-sup]", corps).forEach(x => x.classList.toggle("actif", x.dataset.sup === sup)); });
+  $$("[data-ami]", corps).forEach(b => b.onclick = () => b.classList.toggle("actif"));
+  let version = e.version || "";
+  $$("[data-version] button", corps).forEach(b => b.onclick = () => { version = b.dataset.v; $$("[data-version] button", corps).forEach(x => x.classList.toggle("actif", x === b)); });
+  $$("[data-detail]", corps).forEach(g => $$("button", g).forEach(b => b.onclick = () => { const k = g.dataset.detail; const v = +b.dataset.v; detail[k] = detail[k] === v ? null : v; $$("button", g).forEach(x => x.classList.toggle("ok", detail[k] != null && +x.dataset.v <= detail[k])); }));
+  const valider = async () => {
+    const ou = ouType === "cinema" ? { type: "cinema", cinema: $("[data-cinema]", corps).value.trim(), salle: $("[data-salle]", corps).value.trim() } : ouType === "plateforme" ? { type: "plateforme", nom: plat } : ouType === "support" ? { type: "support", nom: sup } : null;
+    const avec = [...$$("[data-ami].actif", corps).map(b => b.dataset.ami), ...$("[data-avec-libre]", corps).value.split(",").map(s => s.trim()).filter(Boolean)];
+    const prix = ouType === "cinema" && $("[data-prix]", corps).value !== "" ? +$("[data-prix]", corps).value : null;
+    const entree = { id: ex?.id, cle, date: champDate.value || S.aujourdhui(), note: e.note, coeur: e.coeur, revision: $("[data-revision]", corps).checked, critique: $("[data-critique]", corps).value.trim(), critique_privee: $("[data-critique-privee]", corps).checked, prive: $("[data-prive]", corps).checked, ou, prix, avec, version };
+    $("[data-ok]", pied).disabled = true;
+    try {
+      await S.agir("journal", { entree }, { toast: ex ? "Visionnage modifié" : `« ${S.nomTitre(m)} » ajouté au journal`, sansRendu: true });
+      const d = Object.fromEntries(Object.entries(detail).filter(([, v]) => v != null));
+      if (JSON.stringify(d) !== JSON.stringify(t.detail || {})) await S.agir("titre", { cle, champs: { detail: d } }, { toast: false, sansRendu: true });
+      S.fermerModale(); S.rafraichir(true);
+    } catch { $("[data-ok]", pied).disabled = false; }
+  };
+  $("[data-ok]", pied).onclick = valider;
+  const ret = $("[data-retour]", pied); if (ret) ret.onclick = () => { S.fermerModale(); setTimeout(() => S.ouvrirAjout(), 320); };
+  const sup2 = $("[data-suppr]", pied); if (sup2) sup2.onclick = async () => { await S.agir("suppr_journal", { id: ex.id }, { toast: "Visionnage supprimé", sansRendu: true }); S.fermerModale(); S.rafraichir(true); };
+  corps.onkeydown = ev => {
+    if (ev.target.matches("textarea, input:not([type=checkbox])")) { if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) valider(); return; }
+    if (/^[0-9]$/.test(ev.key)) { e.note = ev.key === "0" ? 10 : +ev.key; etoiles.fixer(e.note); ev.preventDefault(); }
+    if (ev.key === "." || ev.key === ",") { if (e.note && e.note < 10) { e.note = Math.floor(e.note) + .5; etoiles.fixer(e.note); } ev.preventDefault(); }
+    if (ev.key === "Enter") { ev.preventDefault(); valider(); }
+  };
+  corps.tabIndex = -1; corps.focus({ preventScroll: true }); setTimeout(() => { if (!corps.contains(document.activeElement)) corps.focus({ preventScroll: true }); }, 50);
+  modale.clavier = corps.onkeydown;                 // touches reçues hors du formulaire (focus perdu)
+}
 
 // ajouter à une liste
 S.choisirListe = cle => {
@@ -397,7 +497,6 @@ document.addEventListener("keydown", e => {
   else if (e.key === "z") S.agir("annuler", {}, { toast: "Annulé" });
 });
 $$("[data-ajout]").forEach(b => b.onclick = () => S.ouvrirAjout());
-{ const f = $("[data-lat-recherche]"); if (f) f.onsubmit = ev => { ev.preventDefault(); const q = $("input", f).value.trim(); if (q) S.aller("#/recherche?q=" + encodeURIComponent(q)); }; }
 
 // ------------------------------------------------------------------ démarrage et mises à jour
 S.demarrer = async () => {

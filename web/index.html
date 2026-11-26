@@ -61,42 +61,33 @@
 </svg>
 
 <nav id="lateral" class="nav">
-  <a class="logo" href="#/"><img src="icone.png" alt=""><b>Silencio</b></a>
-  <form class="lat-recherche" data-lat-recherche role="search"><input type="search" placeholder="Rechercher" autocomplete="off" aria-label="Rechercher"></form>
-  <button class="ajout" data-ajout><span class="carre-plus">+</span>Ajouter un visionnage</button>
-  <div class="lat-groupe">
-    <a href="#/" data-nav="accueil">Accueil</a>
-    <a href="#/decouvrir" data-nav="decouvrir">Découvrir</a>
-    <a href="#/stats" data-nav="stats">Stats</a>
-    <a href="#/profil" data-nav="profil">Profil</a>
-  </div>
-  <div class="lat-groupe">
-    <h2 class="lat-titre">Ta bibliothèque</h2>
-    <a href="#/journal" data-nav="journal">Journal</a>
-    <a href="#/watchlist" data-nav="watchlist">Watchlist</a>
-    <a href="#/listes" data-nav="listes">Listes</a>
-    <a href="#/labo" data-nav="labo">Labo</a>
-    <a href="#/amis" data-nav="amis">Amis</a>
-  </div>
-  <div class="lat-groupe lat-listes cache" data-epinglees-titre>
-    <h2 class="lat-titre">Listes épinglées</h2>
-    <div data-epinglees></div>
-  </div>
-  <div class="lat-bas">
-    <a href="#/notifs" data-nav="notifs">Notifications<span class="lat-compte cache" data-badge></span></a>
-    <a href="#/reglages" data-nav="reglages">Réglages</a>
-    <div class="lat-moi" data-pied></div>
-  </div>
+  <a class="logo" href="#/"><img src="icone.svg" alt=""><b>Silencio</b></a>
+  <button class="ajout" data-ajout><svg><use href="#i-plus"/></svg>Ajouter un film</button>
+  <a href="#/" data-nav="accueil"><svg><use href="#i-accueil"/></svg>Accueil</a>
+  <a href="#/recherche" data-nav="recherche"><svg><use href="#i-recherche"/></svg>Recherche</a>
+  <a href="#/journal" data-nav="journal"><svg><use href="#i-journal"/></svg>Journal</a>
+  <a href="#/stats" data-nav="stats"><svg><use href="#i-stats"/></svg>Stats</a>
+  <a href="#/labo" data-nav="labo"><svg><use href="#i-labo"/></svg>Labo</a>
+  <a href="#/decouvrir" data-nav="decouvrir"><svg><use href="#i-decouvrir"/></svg>Découvrir</a>
+  <a href="#/listes" data-nav="listes"><svg><use href="#i-listes"/></svg>Listes</a>
+  <a href="#/watchlist" data-nav="watchlist"><svg><use href="#i-watchlist"/></svg>Watchlist</a>
+  <a href="#/amis" data-nav="amis"><svg><use href="#i-amis"/></svg>Amis</a>
+  <a href="#/profil" data-nav="profil"><svg><use href="#i-profil"/></svg>Profil</a>
+  <a href="#/notifs" data-nav="notifs"><svg><use href="#i-cloche"/></svg>Notifications<span class="badge cache" data-badge></span></a>
+  <a href="#/reglages" data-nav="reglages"><svg><use href="#i-reglages"/></svg>Réglages</a>
+  <div class="nav-titre" data-epinglees-titre>Listes épinglées</div>
+  <div data-epinglees></div>
+  <div class="lateral-pied" data-pied></div>
 </nav>
 
 <main id="principal"><div id="vue"></div></main>
 
 <nav id="barre-bas">
-  <a href="#/" data-nav="accueil">Accueil</a>
-  <a href="#/decouvrir" data-nav="decouvrir">Découvrir</a>
-  <button class="plus" data-ajout aria-label="Ajouter"><span>+</span></button>
-  <a href="#/stats" data-nav="stats">Stats</a>
-  <a href="#/profil" data-nav="profil">Profil</a>
+  <a href="#/" data-nav="accueil"><svg><use href="#i-accueil"/></svg>Accueil</a>
+  <a href="#/decouvrir" data-nav="decouvrir"><svg><use href="#i-decouvrir"/></svg>Découvrir</a>
+  <button class="plus" data-ajout aria-label="Ajouter"><span><svg><use href="#i-plus"/></svg></span></button>
+  <a href="#/stats" data-nav="stats"><svg><use href="#i-stats"/></svg>Stats</a>
+  <a href="#/profil" data-nav="profil"><svg><use href="#i-profil"/></svg>Profil</a>
 </nav>
 
 <div id="voile"></div>
