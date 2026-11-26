@@ -6,6 +6,7 @@ Ce que Silencio envoie (API v1, vérifiée dans https://getrefract.app/v1/openap
 Jamais DELETE /v1/library/{id} : il effacerait aussi les visionnages et la note chez Refract.
 """
 import hashlib
+import json
 import time
 import urllib.parse
 
@@ -16,11 +17,11 @@ from reseau import ErreurHTTP, HorsLigne, requete
 AGENT = "Silencio/" + config.VERSION
 
 
-class Ralentir(Exception):
+class Ralentir(ErreurHTTP):
     """Refract demande d'attendre (429) : on s'arrête là, rien n'est compté comme raté."""
 
     def __init__(self, secondes):
-        super().__init__(f"Refract demande d'attendre {secondes} s")
+        super().__init__(429, f"Refract demande d'attendre {secondes} s")
         self.secondes = secondes
 
 
@@ -188,11 +189,22 @@ class Refract:
                     self.etat["erreur"] = ""          # normal : on reprend tout seul un peu plus tard
                     break
                 except ErreurHTTP as e:
-                    if e.code in (401, 403):
+                    if e.code == 401:
                         self.etat["erreur"] = "clé Refract refusée : crée-en une nouvelle dans l'appli Refract"
                         break
+                    if e.code == 403:
+                        self.etat["erreur"] = ("ta clé Refract n'a pas le droit d'écrire : recrée-la dans Refract (Accès et "
+                                               "applications connectées) en cochant l'écriture de l'historique, de la "
+                                               "bibliothèque et des notes, puis colle-la dans Silencio")
+                        break
                     etat, ref = "echec", None
-                    op["erreur"] = f"Refract a répondu {e.code}"
+                    detail = ""
+                    try:
+                        j = json.loads((e.corps or b"{}").decode("utf-8", "replace"))
+                        detail = " ".join(str(j.get(k) or "") for k in ("code", "detail", "title") if j.get(k))
+                    except ValueError:
+                        pass
+                    op["erreur"] = f"Refract a répondu {e.code}" + (f" ({detail[:120]})" if detail else "")
                 r = {"cle": op["cle"], "id": op["id"], "action": op["action"], "valeur": op["valeur"], "ref": ref,
                      "etat": "ok" if etat in ("ok", "deja") else ("echec" if etat != "attente" else "attente"),
                      "erreur": op.get("erreur") or ("titre introuvable chez Refract" if etat == "introuvable" else ""),

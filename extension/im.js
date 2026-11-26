@@ -12,24 +12,27 @@
   const hasard = (a, b) => a + Math.random() * (b - a);
   class Bloque extends Error {}
   let session = "";
-  let parFond = false;                     // l'appel depuis la page a échoué une fois : on passe par l'extension
+  let parPage = false;                     // l'appel par l'extension a échoué mais celui de la page marche : on garde la page
 
   async function gql(query, variables, operationName) {
     const h = { "content-type": "application/json", "accept": "application/graphql+json, application/json" };
     if (session) h["x-amzn-sessionid"] = session;
     const corps = JSON.stringify({ query, operationName, variables });
-    let r;
-    try {
-      if (parFond) throw new TypeError("par l'extension");
-      r = await F(GQL, { method: "POST", credentials: "include", headers: h, body: corps });
-    } catch (e) {
-      // Firefox refuse parfois l'appel depuis la page (« NetworkError ») : l'extension le fait elle-même,
-      // toujours avec ta session IMDb
-      if (!(e instanceof TypeError) || !B || !B.runtime) throw e;
-      const x = await B.runtime.sendMessage({ type: "imdb-gql", corps, entetes: h });
-      if (!x || x.erreur) throw new Error(x && x.erreur || "IMDb injoignable");
-      parFond = true;
-      r = { status: x.status, json: async () => JSON.parse(x.texte) };
+    let r = null, raison = "";
+    // 1) par l'extension elle-même (avec ta session IMDb) : Firefox refuse souvent l'appel fait depuis la page
+    if (B && B.runtime && B.runtime.sendMessage && !parPage) {
+      const x = await B.runtime.sendMessage({ type: "imdb-gql", corps, entetes: h }).catch(e => ({ erreur: String(e && e.message || e) }));
+      if (x && !x.erreur) r = { status: x.status, json: async () => JSON.parse(x.texte) };
+      else raison = x && x.erreur || "";
+    }
+    // 2) sinon depuis la page imdb.com
+    if (!r) {
+      try {
+        r = await F(GQL, { method: "POST", credentials: "include", headers: h, body: corps });
+        if (raison) parPage = true;
+      } catch (e) {
+        throw new Error(`IMDb injoignable${raison ? ` (${raison})` : ""} : vérifie dans la fenêtre de Silencio Sync que l'accès aux sites est autorisé.`);
+      }
     }
     if (r.status === 401 || r.status === 403) throw new Bloque("session IMDb refusée : reconnecte-toi sur imdb.com dans Firefox.");
     if (r.status === 429) throw new Bloque("IMDb demande de ralentir : nouvel essai au prochain passage.");

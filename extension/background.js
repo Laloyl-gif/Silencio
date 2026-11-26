@@ -3,7 +3,8 @@
 "use strict";
 const B = globalThis.browser;
 const NOM = { lb: "Letterboxd", imdb: "IMDb" };
-const SITE = { lb: "https://letterboxd.com/", imdb: "https://www.imdb.com/" };
+// pages légères, sans redirection, pour l'onglet discret
+const SITE = { lb: "https://letterboxd.com/about/", imdb: "https://www.imdb.com/robots.txt" };
 const SCRIPT = { lb: "lb.js", imdb: "im.js" };
 const DEFAUT = {
   adresse: "http://127.0.0.1:8642", jeton: "", actif: true, intervalle: 15,
@@ -54,16 +55,18 @@ async function autorisationsManquantes() {
 
 // injecte le script du site puis lui parle (avec quelques essais : la page peut encore se charger)
 async function parler(onglet, message) {
-  await attendreChargement(onglet.id, 30000);
-  try {
-    await B.scripting.executeScript({ target: { tabId: onglet.id }, files: [SCRIPT[message.p]] });
-  } catch (e) {
-    if (/host permission/i.test(e.message)) throw new Error("accès au site refusé par Firefox : ouvre la fenêtre de Silencio Sync et clique « Autoriser l'accès aux sites ».");
-    throw e;
-  }
   let derniere;
-  for (let i = 0; i < 4; i++) {
-    try { return await B.tabs.sendMessage(onglet.id, message); } catch (e) { derniere = e; await new Promise(r => setTimeout(r, 700 * (i + 1))); }
+  // la page peut se recharger (redirection vers /fr/, etc.) juste après l'injection : on réinjecte et on recommence
+  for (let essai = 0; essai < 3; essai++) {
+    await attendreChargement(onglet.id, 30000);
+    await new Promise(r => setTimeout(r, 800 + essai * 1500));
+    try {
+      await B.scripting.executeScript({ target: { tabId: onglet.id }, files: [SCRIPT[message.p]] });
+    } catch (e) {
+      if (/host permission/i.test(e.message)) throw new Error("accès au site refusé par Firefox : ouvre la fenêtre de Silencio Sync et clique « Autoriser l'accès aux sites ».");
+      derniere = e; continue;
+    }
+    try { return await B.tabs.sendMessage(onglet.id, message); } catch (e) { derniere = e; }
   }
   throw new Error(/Receiving end/i.test(derniere?.message || "") ? "la page du site ne répond pas (rechargée pendant l'envoi ?) : nouvel essai au prochain passage." : (derniere?.message || "le script n'a pas répondu"));
 }
@@ -143,7 +146,7 @@ async function plateforme(p, aBlanc, motif, modes) {
   }
   const ctx = await contexte(p, r, c);
   if (!ctx.connecte) {
-    await noter(`${NOM[p]} : tu n'es pas connecté dans Firefox. Ouvre ${SITE[p]} et connecte-toi une fois (coche « rester connecté »).`, "erreur");
+    await noter(`${NOM[p]} : tu n'es pas connecté dans Firefox. Ouvre ${p === "lb" ? "letterboxd.com" : "imdb.com"} et connecte-toi une fois (coche « rester connecté »).`, "erreur");
     return { bloque: "connexion" };
   }
   const onglet = await ongletPour(p, motif);
@@ -358,6 +361,8 @@ B.runtime.onMessage.addListener(async m => {
   if (m?.type === "veille") { await veille(); return { ok: true }; }
   if (m?.type === "imdb-gql") {
     try {
+      const tous = await B.cookies.getAll({ domain: "imdb.com" }).catch(() => []);
+      cookiesImdb = tous.map(k => `${k.name}=${k.value}`).join("; ");
       const r = await fetch("https://api.graphql.imdb.com/", { method: "POST", credentials: "include", headers: m.entetes || {}, body: m.corps });
       return { status: r.status, texte: await r.text() };
     } catch (e) { return { erreur: "IMDb injoignable (" + e.message + ")" }; }

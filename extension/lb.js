@@ -105,32 +105,34 @@
     return { etat: "echec", erreur: (dernier && dernier.message) || "adresse inconnue : calibre cette action avec l'enregistreur" };
   }
 
-  // ---- journal : vérifie d'abord que ce visionnage n'y est pas déjà (PC et téléphone peuvent passer tous les deux)
-  async function dejaAuJournal(f, date) {
-    if (!pseudo) return false;
+  // ---- ton journal Letterboxd pour un film (page /<pseudo>/film/<slug>/diary/) : dates et identifiants des entrées
+  async function entreesLb(f) {
+    if (!pseudo) return null;
     const r = await F(`/${pseudo}/film/${f.slug}/diary/`, { credentials: "include" });
-    if (r.status === 404) return false;
+    if (r.status === 404) return [];
     verifier(r);
     if (!r.ok) throw new Error(`journal Letterboxd illisible (${r.status})`);
     const html = await r.text();
-    const [a, m, j] = date.split("-");
-    return new RegExp(`/for/${a}/${m}/${j}/`).test(html) || new RegExp(`${a}-${m}-${j}`).test(html.replace(/\s+/g, " ").match(/diary-table[\s\S]*$/)?.[0] || "");
-  }
-
-  // l'identifiant d'une entrée du journal, lu sur ta page /<pseudo>/film/<slug>/diary/ (pour une entrée créée
-  // avant que Silencio ne garde son identifiant)
-  async function trouverEntree(f, date) {
-    if (!pseudo || !date) return "";
-    const r = await F(`/${pseudo}/film/${f.slug}/diary/`, { credentials: "include" });
-    if (!r.ok) return "";
-    const html = await r.text();
-    const [a, m, j] = date.split("-");
-    for (const ligne of html.split(/<tr\b/i).slice(1)) {
-      if (!new RegExp(`/for/${a}/${m}/${j}/|${a}-${m}-${j}`).test(ligne)) continue;
-      const x = ligne.match(/data-(?:viewing-id|log-entry-id|object-id|lid)="([^"]+)"/i) || ligne.match(/viewing:(\w+)/);
-      if (x) return x[1];
+    const liste = [];
+    for (const bloc of html.split(/diary-entry-row/).slice(1)) {
+      const d = bloc.match(/data-viewing-date="(\d{4}-\d{2}-\d{2})"/) || bloc.match(/\/for\/(\d{4})\/(\d{2})\/(\d{2})\//);
+      const date = d ? (d.length === 2 ? d[1] : `${d[1]}-${d[2]}-${d[3]}`) : "";
+      const id = (bloc.match(/data-(?:viewing-id|log-entry-id|object-id|lid)="([^"]+)"/i) || bloc.match(/viewing:(\w+)/) || [])[1] || "";
+      if (date || id) liste.push({ date, id });
     }
-    return "";
+    if (!liste.length) {                       // autre présentation : seulement les liens de dates
+      for (const m of html.matchAll(/\/for\/(\d{4})\/(\d{2})\/(\d{2})\//g)) liste.push({ date: `${m[1]}-${m[2]}-${m[3]}`, id: "" });
+    }
+    return liste;
+  }
+  async function dejaAuJournal(f, date) {
+    const l = await entreesLb(f);
+    return !!(l && l.some(e => e.date === date));
+  }
+  async function trouverEntree(f, date) {
+    const l = await entreesLb(f);
+    const e = l && l.find(x => x.date === date);
+    return e ? e.id : "";
   }
 
   const ENTETES_JSON = () => ({ "Content-Type": "application/json", "Accept": "application/json", "X-Requested-With": "XMLHttpRequest", "X-CSRF-TOKEN": csrf });
@@ -160,7 +162,11 @@
   async function journal(op, f) {
     const v = op.valeur || {};
     if (op.ref || (op.avant && op.avant.date)) return modifierJournal(op, f);
-    if (await dejaAuJournal(f, v.date)) return { etat: "deja", ref: await trouverEntree(f, v.date) || undefined };
+    const deja = await entreesLb(f);
+    const meme = deja && deja.find(e => e.date === v.date);
+    if (meme) return { etat: "deja", ref: meme.id || undefined };
+    // jamais de doublon : si Letterboxd a déjà autant d'entrées pour ce film que Silencio, on n'en ajoute pas
+    if (deja && deja.length >= (op.nb || 1)) return { etat: "deja", ref: deja.length === 1 && deja[0].id ? deja[0].id : undefined };
     const corps = corpsJournal(op);
     if (!corps.rating) delete corps.rating;
     for (const [chemin, champ] of ADRESSES_JOURNAL) {
@@ -183,10 +189,16 @@
 
   // modifier une entrée existante (date, note, like, critique, revisionnage)
   async function modifierJournal(op, f) {
-    const ref = op.ref || await trouverEntree(f, op.avant && op.avant.date);
+    let ref = op.ref;
     if (!ref) {
-      if (await dejaAuJournal(f, (op.valeur || {}).date)) return { etat: "deja" };
-      return journal({ ...op, ref: undefined, avant: undefined }, f);     // entrée introuvable : on la crée
+      const l = await entreesLb(f) || [];
+      const e = l.find(x => x.date === (op.avant && op.avant.date)) || l.find(x => x.date === (op.valeur || {}).date) || (l.length === 1 ? l[0] : null);
+      ref = e && e.id;
+      if (!ref) {
+        // entrée introuvable : on n'en crée pas une deuxième ; si Letterboxd n'en a aucune, on la crée
+        if (l.length >= (op.nb || 1)) return { etat: "manuel", erreur: "entrée du journal introuvable : modifie-la toi-même", lien: `https://letterboxd.com/${pseudo}/film/${f.slug}/diary/` };
+        return journal({ ...op, ref: undefined, avant: undefined }, f);
+      }
     }
     const corps = corpsJournal(op);
     const variantes = ADRESSES_JOURNAL.flatMap(([c]) => [["PATCH", `${c}/${ref}`], ["PUT", `${c}/${ref}`]]);

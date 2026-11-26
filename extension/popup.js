@@ -3,9 +3,18 @@ const B = globalThis.browser;
 const $ = s => document.querySelector(s);
 const envoyer = m => B.runtime.sendMessage(m);
 const heure = t => new Date(t).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 const NOMS = { lb: "Letterboxd", imdb: "IMDb" };
+// construit les éléments sans innerHTML (le texte vient de Silencio et des sites : jamais interprété comme du HTML)
+function h(tag, attrs = {}, ...enfants) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === "class") e.className = v; else if (k.startsWith("on")) e[k] = v; else e.setAttribute(k, v);
+  }
+  for (const x of enfants.flat()) if (x != null && x !== false) e.append(x instanceof Node ? x : String(x));
+  return e;
+}
 function libelle(o, p) {
   const v = o.valeur;
   if (o.action === "retirer") return o.sorte === "vu" ? "Retirer cette entrée du journal" : "Retirer";
@@ -50,37 +59,35 @@ async function peindre() {
   $("[data-intervalle]").value = String(c.intervalle);
   $("[data-dernier]").textContent = c.enCours ? "en cours…" : (c.dernier ? heure(c.dernier.quand) : "jamais") + (c.prochain > Date.now() ? `, prochain vers ${new Date(c.prochain).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}` : "");
   $("[data-sync]").disabled = $("[data-blanc]").disabled = c.enCours;
-  $("[data-journal]").innerHTML = c.journal.slice(0, 40).map(l => `<div class="${l.niveau}"><time>${heure(l.t)}</time>${esc(l.texte)}</div>`).join("") || "<div>Rien pour l'instant.</div>";
+  const lignes = c.journal.slice(0, 40).map(l => h("div", { class: l.niveau }, h("time", {}, heure(l.t)), l.texte));
+  $("[data-journal]").replaceChildren(...(lignes.length ? lignes : [h("div", {}, "Rien pour l'instant.")]));
   const items = ["lb", "imdb"].flatMap(p => (c.attente[p] || []).map(o => ({ o, p })));
   $("[data-reporter-bloc]").hidden = !items.length;
   const modes = c.modes || {};
   $("[data-reporter-intro]").textContent = ["lb", "imdb"].filter(p => (c.attente[p] || []).length).map(p =>
     `${NOMS[p]} : ${modes[p] === "liens" ? "fais-le toi-même sur le site, puis « C'est fait »" : "un clic par action"}`).join(". ");
-  $("[data-reporter]").innerHTML = items.slice(0, 30).map(({ o, p }) => `<div class="manuel"><b>${esc(o.titre || o.cle)}</b><span>${NOMS[p]}, ${esc(libelle(o, p))}</span>
-    <div class="boutons">${modes[p] !== "liens" || o.sorte === "liste" ? `<button class="principal" data-un="${p}|${esc(o.id)}">Envoyer</button>` : ""}<button data-ouvre="${p}|${esc(o.id)}">Ouvrir</button>${modes[p] === "liens" && o.sorte !== "liste" ? `<button data-main="${p}|${esc(o.id)}">C'est fait</button>` : ""}</div></div>`).join("");
-  const trouver = v => { const [p, id] = v.split("|"); return { p, id, o: (c.attente[p] || []).find(x => x.id === id) }; };
-  document.querySelectorAll("[data-un]").forEach(b => b.onclick = async () => {
-    const { p, id } = trouver(b.dataset.un); b.disabled = true; b.textContent = "…";
-    const r = await envoyer({ type: "executer-un", p, id });
-    if (r.manuel) { if (r.manuel.texte) await navigator.clipboard.writeText(r.manuel.texte).catch(() => {}); B.tabs.create({ url: r.manuel.lien }); }
-    if (!r.ok) { b.disabled = false; b.textContent = "Réessayer"; b.title = r.erreur || ""; alert(r.erreur || "Échec"); }
-    peindre();
-  });
-  document.querySelectorAll("[data-ouvre]").forEach(b => b.onclick = async () => {
-    const { p, o } = trouver(b.dataset.ouvre);
-    if (o.sorte === "critique" && o.valeur) await navigator.clipboard.writeText(o.valeur).catch(() => {});
-    B.tabs.create({ url: lien(o, p) });
-  });
-  document.querySelectorAll("[data-main]").forEach(b => b.onclick = async () => { const { p, id } = trouver(b.dataset.main); await envoyer({ type: "fait-main", p, id }); peindre(); });
+  $("[data-reporter]").replaceChildren(...items.slice(0, 30).map(({ o, p }) => {
+    const envoyerUn = async ev => {
+      const b = ev.currentTarget; b.disabled = true; b.textContent = "…";
+      const r = await envoyer({ type: "executer-un", p, id: o.id });
+      if (r.manuel) { if (r.manuel.texte) await navigator.clipboard.writeText(r.manuel.texte).catch(() => {}); B.tabs.create({ url: r.manuel.lien }); }
+      if (!r.ok) { b.disabled = false; b.textContent = "Réessayer"; b.title = r.erreur || ""; alert(r.erreur || "Échec"); }
+      peindre();
+    };
+    const ouvrir = async () => { if (o.sorte === "critique" && o.valeur) await navigator.clipboard.writeText(o.valeur).catch(() => {}); B.tabs.create({ url: lien(o, p) }); };
+    const fait = async () => { await envoyer({ type: "fait-main", p, id: o.id }); peindre(); };
+    return h("div", { class: "manuel" }, h("b", {}, o.titre || o.cle), h("span", {}, `${NOMS[p]}, ${libelle(o, p)}`),
+      h("div", { class: "boutons" },
+        modes[p] !== "liens" || o.sorte === "liste" ? h("button", { class: "principal", onclick: envoyerUn }, "Envoyer") : null,
+        h("button", { onclick: ouvrir }, "Ouvrir"),
+        modes[p] === "liens" && o.sorte !== "liste" ? h("button", { onclick: fait }, "C'est fait") : null));
+  }));
   $("[data-manuels-bloc]").hidden = !c.manuels.length;
-  $("[data-manuels]").innerHTML = c.manuels.map(m => `<div class="manuel"><b>${esc(m.titre || m.cle)}</b><span>${m.plateforme === "imdb" ? "Critique à publier sur IMDb" : esc(m.erreur)}</span>
-    <div class="boutons"><button data-ouvrir="${esc(m.id)}">Copier le texte et ouvrir</button><button data-fait="${esc(m.id)}">C'est fait</button></div></div>`).join("");
-  document.querySelectorAll("[data-ouvrir]").forEach(b => b.onclick = async () => {
-    const m = c.manuels.find(x => x.id === b.dataset.ouvrir);
-    if (m.texte) await navigator.clipboard.writeText(m.texte).catch(() => {});
-    B.tabs.create({ url: m.lien });
-  });
-  document.querySelectorAll("[data-fait]").forEach(b => b.onclick = async () => { await envoyer({ type: "manuel-fait", id: b.dataset.fait }); peindre(); });
+  $("[data-manuels]").replaceChildren(...c.manuels.map(m => h("div", { class: "manuel" }, h("b", {}, m.titre || m.cle),
+    h("span", {}, m.plateforme === "imdb" ? "Critique à publier sur IMDb" : (m.erreur || "")),
+    h("div", { class: "boutons" },
+      h("button", { onclick: async () => { if (m.texte) await navigator.clipboard.writeText(m.texte).catch(() => {}); B.tabs.create({ url: m.lien }); } }, m.texte ? "Copier le texte et ouvrir" : "Ouvrir"),
+      h("button", { onclick: async () => { await envoyer({ type: "manuel-fait", id: m.id }); peindre(); } }, "C'est fait")))));
   const enr = c.enregistreurJusqua > Date.now();
   $("[data-rec]").textContent = enr ? `Enregistre jusqu'à ${new Date(c.enregistreurJusqua).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}` : "Démarrer (3 minutes)";
   $("[data-rapport]").textContent = c.enregistrements.length ? JSON.stringify(c.enregistrements, null, 1) : "";

@@ -134,6 +134,16 @@ def main():
         verifier("__csrf=csrf-2" in wl[2], "le nouveau jeton CSRF renvoyé par le site est réutilisé")
         verifier(rep["cache"]["1018"] == {"slug": "mulholland-drive", "filmId": "51561", "lid": "2a8i"}, "fiches mises en cache")
         verifier(rep["adresses"] == {"note": 0, "wl-": 0}, "les adresses qui marchent sont retenues (pas de rafale d'essais ensuite)")
+        # jamais de doublon : Blue Velvet a déjà une entrée sur Letterboxd (autre date), Silencio n'en a qu'une
+        avant = len([r for r in RECU if r[0] == "/api/v0/production-log-entries"])
+        rep = pg.evaluate("""async ops => await window.__ecoutes[0]({ type: "silencio-executer", ops, ctx: { csrf: "c", pseudo: "etienne", rapide: true } })""", [
+            {"id": "d1", "cle": "vu|jd1", "sorte": "vu", "action": "poser", "tmdb": 793, "nb": 1,
+             "valeur": {"cle": "m:793", "date": "2026-11-20", "rewatch": True, "note": 4, "like": False, "critique": ""}},
+            {"id": "d2", "cle": "vu|jd2", "sorte": "vu", "action": "poser", "tmdb": 793, "nb": 2,
+             "valeur": {"cle": "m:793", "date": "2026-11-21", "rewatch": True, "note": 4, "like": False, "critique": ""}}])
+        et = {r["id"]: r["etat"] for r in rep["resultats"]}
+        nouveaux = len([r for r in RECU if r[0] == "/api/v0/production-log-entries"]) - avant
+        verifier(et == {"d1": "deja", "d2": "ok"} and nouveaux == 1, "Letterboxd : pas de doublon d'un film déjà au journal ; une vraie deuxième vision passe")
         # plusieurs films ajoutés d'un coup : chacun a son entrée de journal
         avant = len([r for r in RECU if r[0] == "/api/v0/production-log-entries"])
         rep = pg.evaluate("""async ops => await window.__ecoutes[0]({ type: "silencio-executer", ops, ctx: { csrf: "c", pseudo: "etienne", rapide: true } })""", [

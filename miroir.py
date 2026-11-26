@@ -166,6 +166,11 @@ def operations(doc, plateforme, meta, echecs=None, limite=60, forcer=False):
     journal = doc.get("journal") or {}
     titres = doc.get("titres") or {}
     ops, en_attente = [], 0
+    nb_entrees = {}                               # Letterboxd : combien d'entrées de journal Silencio a pour ce film
+    if plateforme == "lb":
+        for k, v in voulu.items():
+            if k.startswith("vu|") and isinstance(v, dict):
+                nb_entrees[v.get("cle")] = nb_entrees.get(v.get("cle"), 0) + 1
 
     def ref_liste(lid):
         v = fait.get(f"liste|{lid}")
@@ -187,6 +192,7 @@ def operations(doc, plateforme, meta, echecs=None, limite=60, forcer=False):
             op.update(infos(e.get("cle", "")))
             if sorte == "vu" and plateforme == "lb":
                 op["extra"] = {"note": v.get("note"), "like": v.get("like"), "critique": v.get("critique")}
+                op["nb"] = nb_entrees.get(v.get("cle"), 1)
                 if isinstance(fait.get(k), dict) and fait[k].get("ref"):
                     op["ref"] = fait[k]["ref"]        # l'entrée existe déjà : on la modifie
         elif sorte == "liste":
