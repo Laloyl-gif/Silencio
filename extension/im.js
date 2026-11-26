@@ -55,13 +55,14 @@
 
   const deja = msg => /already|exist|duplicate|déjà/i.test(msg || "");
 
+  let maWatchlist = "";
   async function executer(ops, ctx, aBlanc) {
     session = ctx.session || "";
     vitesse = ctx.rapide ? 0.005 : 1;
     if (!aBlanc) await pause(hasard(2000, 6000));
     const resultats = [];
     let bloque = "";
-    for (const op of ops) {
+    for (let op of ops) {
       const base = { id: op.id, cle: op.cle, action: op.action, valeur: op.valeur, titre: op.titre };
       const poser = op.action === "poser";
       try {
@@ -85,6 +86,14 @@
             r = lid ? { etat: "ok", ref: lid } : { etat: "echec", erreur: x.erreur || "liste non créée" };
           }
         } else if (op.sorte === "item" || op.sorte === "fav") {
+          let ref = op.ref || (op.sorte === "fav" ? maWatchlist : "");
+          if (!ref && op.sorte === "fav") {
+            const x = await gql(WATCHLIST, {}, "Watchlist");
+            ref = maWatchlist = (x.data && x.data.predefinedList && x.data.predefinedList.id) || "";
+            if (!ref) throw new Error(x.erreur || "watchlist IMDb introuvable (es-tu connecté sur imdb.com ?)");
+            resultats.push({ id: "watchlist", cle: "liste|_favoris", action: "poser", valeur: { nom: "Watchlist", watchlist: true }, ref, etat: "ok" });
+          }
+          op = { ...op, ref };
           if (poser) {
             const x = await gql(AJOUTER, { input: { listId: op.ref, item: { itemElementId: op.imdb } } }, "AddItemToList");
             r = !x.erreur ? { etat: "ok" } : deja(x.erreur) ? { etat: "deja" } : { etat: "echec", erreur: x.erreur };

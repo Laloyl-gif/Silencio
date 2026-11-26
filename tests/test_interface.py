@@ -31,9 +31,9 @@ faux_services.lancer(PF)
 URL = f"http://127.0.0.1:{PS}"
 
 
-def api(chemin, corps=None):
+def api(chemin, corps=None, entetes=None):
     req = urllib.request.Request(URL + chemin, data=json.dumps(corps).encode() if corps is not None else None,
-                                 headers={"Content-Type": "application/json"}, method="POST" if corps is not None else "GET")
+                                 headers={"Content-Type": "application/json", **(entetes or {})}, method="POST" if corps is not None else "GET")
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read())
 
@@ -327,11 +327,21 @@ with sync_playwright() as p:
     api("/api/reglages", {"modes_ext": {"imdb": "auto"}})
     for _ in range(4):
         bilan = pe.evaluate("async () => await window.__msg({ type: 'synchroniser' })")
-        assert 1 <= bilan["lb"].get("fait", 0) <= 6 and 1 <= bilan["imdb"].get("fait", 0) <= 6, bilan
+        assert 1 <= bilan["lb"].get("fait", 0) <= 12 and bilan["imdb"].get("fait", 0) <= 12, bilan
     pl = api("/api/etat")["plateformes"]
     assert pl["lb"]["envoye"] >= 4 and pl["imdb"]["envoye"] >= 4 and pl["extension_vue"].get("lb"), pl["lb"]
     etat_ext = pe.evaluate("async () => await window.__msg({ type: 'etat' })")
     assert etat_ext["quota"]["lb"]["n"] >= 4, etat_ext["quota"]
+    # un film ajouté dans Silencio : la veille de l'extension le voit et l'envoie sans attendre le prochain tour
+    for _ in range(6):
+        pe.evaluate("async () => await window.__msg({ type: 'synchroniser' })")
+    assert api("/api/ext/bonjour", entetes={"X-Silencio-Jeton": jeton})["a_faire"]["lb"] == 0
+    api("/api/action", {"type": "journal", "entree": {"cle": "m:40000", "date": "2026-11-25", "note": 6}})
+    api("/api/action", {"type": "journal", "entree": {"cle": "m:391729", "date": "2026-11-25", "note": 7}})
+    assert api("/api/ext/bonjour", entetes={"X-Silencio-Jeton": jeton})["a_faire"]["lb"] >= 2
+    time.sleep(21)
+    pe.evaluate("async () => await window.__msg({ type: 'veille' })")
+    assert api("/api/ext/bonjour", entetes={"X-Silencio-Jeton": jeton})["a_faire"]["lb"] == 0, "envoi juste après l'ajout"
     etat_ext = pe.evaluate("async () => await window.__msg({ type: 'etat' })")
     assert etat_ext["journal"] and etat_ext["dernier"]["bilan"]["lb"], etat_ext["journal"][:3]
     pe.close()

@@ -196,7 +196,9 @@ def operations(doc, plateforme, meta, echecs=None, limite=60, forcer=False):
         elif sorte in ("item", "fav"):
             lid = FAVORIS if sorte == "fav" else parts[1]
             ref = ref_liste(lid)
-            if not ref:
+            if not ref and sorte == "fav":
+                op["watchlist"] = True            # l'extension retrouve elle-même ta watchlist IMDb
+            elif not ref:
                 en_attente += 1
                 continue                          # la liste doit d'abord exister là-bas
             op["liste"], op["ref"] = lid, ref

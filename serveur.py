@@ -437,7 +437,8 @@ class App:
         r = {}
         for p in ("lb", "imdb"):
             if (self.stock.appareil.get("miroir_depart") or {}).get(p):
-                r[p] = miroir.compter(doc, p).get("a_envoyer", 0)
+                echecs = (self.stock.appareil.get("miroir_echecs") or {}).get(p) or {}
+                r[p] = miroir.operations(doc, p, self._meta, echecs, limite=0)["total"]   # sans les échecs en pause
         return r
 
     def _apres_compte(self):

@@ -20,7 +20,8 @@ RECU = []
 
 FILM = """<!DOCTYPE html><html><body><div class="film-poster" data-film-slug="{slug}" data-postered-identifier='{{"lid":"{lid}","uid":"film:{fid}","type":"film"}}'></div>
 <a href="https://www.themoviedb.org/movie/{tmdb}/">TMDB</a></body></html>"""
-FILMS = {"1018": ("mulholland-drive", "2a8i", "51561"), "793": ("blue-velvet", "29xk", "48102")}
+FILMS = {"1018": ("mulholland-drive", "2a8i", "51561"), "793": ("blue-velvet", "29xk", "48102"),
+         "638": ("lost-highway", "1Xa2", "47788"), "985": ("eraserhead", "2bc4", "49001"), "6977": ("no-country-for-old-men", "1fKz", "40102")}
 
 
 class Faux(BaseHTTPRequestHandler):
@@ -133,6 +134,15 @@ def main():
         verifier("__csrf=csrf-2" in wl[2], "le nouveau jeton CSRF renvoyé par le site est réutilisé")
         verifier(rep["cache"]["1018"] == {"slug": "mulholland-drive", "filmId": "51561", "lid": "2a8i"}, "fiches mises en cache")
         verifier(rep["adresses"] == {"note": 0, "wl-": 0}, "les adresses qui marchent sont retenues (pas de rafale d'essais ensuite)")
+        # plusieurs films ajoutés d'un coup : chacun a son entrée de journal
+        avant = len([r for r in RECU if r[0] == "/api/v0/production-log-entries"])
+        rep = pg.evaluate("""async ops => await window.__ecoutes[0]({ type: "silencio-executer", ops, ctx: { csrf: "c", pseudo: "etienne", rapide: true } })""", [
+            {"id": f"p{i}", "cle": f"vu|jp{i}", "sorte": "vu", "action": "poser", "tmdb": int(t), "titre": t,
+             "valeur": {"cle": f"m:{t}", "date": "2026-11-2" + str(i), "rewatch": False, "note": 4, "like": False, "critique": ""}}
+            for i, t in enumerate(("638", "985", "6977"))])
+        posts = [json.loads(r[2]) for r in RECU if r[0] == "/api/v0/production-log-entries"][avant:]
+        verifier(all(x["etat"] == "ok" for x in rep["resultats"]) and sorted(p["productionId"] for p in posts) == sorted(["1Xa2", "2bc4", "1fKz"]),
+                 "plusieurs films d'un coup : trois entrées de journal, chacune pour le bon film")
         # modifier puis supprimer une entrée du journal
         rep = pg.evaluate("""async ops => await window.__ecoutes[0]({ type: "silencio-executer", ops, ctx: { csrf: "c", pseudo: "etienne", rapide: true } })""", [
             {"id": "m", "cle": "vu|j1", "sorte": "vu", "action": "poser", "ref": "x", "tmdb": 1018,
@@ -183,6 +193,13 @@ def main():
         verifier(r["3"]["etat"] == "deja", "IMDb : film déjà dans la liste accepté")
         verifier(r["4"]["etat"] == "manuel" and r["4"]["lien"].endswith("tconst=tt0166924") and r["4"]["texte"] == "Rêve",
                  "IMDb : critique préparée pour une publication à la main")
+        rep2 = pg2.evaluate("""async ops => await window.__ecoutes[0]({ type: "silencio-executer", ops, ctx: { session: "s", rapide: true } })""",
+                            [{"id": "w1", "cle": "fav|m:1018", "sorte": "fav", "action": "poser", "valeur": 1, "imdb": "tt0166924", "ref": None, "watchlist": True},
+                             {"id": "w2", "cle": "fav|m:793", "sorte": "fav", "action": "poser", "valeur": 1, "imdb": "tt0090756", "ref": None, "watchlist": True}])
+        rr = {x["id"]: x for x in rep2["resultats"]}
+        ajouts = [g[0]["variables"]["input"] for g in gql if g[0]["operationName"] == "AddItemToList"][-2:]
+        verifier(rr["watchlist"]["ref"] == "ls0777" and rr["watchlist"]["cle"] == "liste|_favoris" and all(a["listId"] == "ls0777" for a in ajouts) and
+                 sum(1 for g in gql if g[0]["operationName"] == "Watchlist") <= 2, "IMDb : ajout à la watchlist sans étape préalable (watchlist retrouvée une fois)")
         verifier(r["5"]["etat"] == "ok" and r["5"]["ref"] == "ls0777" and not any(g[0]["operationName"] == "CreateList" and g is gql[-1] for g in gql),
                  "IMDb : ta watchlist IMDb est retrouvée, sans rien créer")
         # Firefox refuse l'appel depuis la page (NetworkError) : l'extension le refait elle-même

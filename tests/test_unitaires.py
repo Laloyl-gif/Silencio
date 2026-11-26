@@ -293,7 +293,8 @@ verifier(im["note|m:1018"] == 7 and im["note|m:793"] == 8 and im["fav|m:155"] ==
          f"critique|{jids['m:638']}" not in im, "miroir IMDb : notes entières, watchlist vers Favoris, critiques publiques seules")
 o = miroir.operations(ms.doc, "imdb", meta)
 fav = next((x for x in o["ops"] if x["cle"] == "liste|_favoris"), None)
-verifier(fav and fav["valeur"].get("watchlist") and not any(x["sorte"] == "fav" for x in o["ops"]), "IMDb : la watchlist IMDb est retrouvée avant d'y ranger la watchlist Silencio")
+verifier(fav and fav["valeur"].get("watchlist") and all(x.get("watchlist") and not x.get("ref") for x in o["ops"] if x["sorte"] == "fav"),
+         "IMDb : la watchlist Silencio part vers ta watchlist IMDb (retrouvée par l'extension)")
 pub, priv = separer(ms.doc)
 verifier(pub["miroirs"] == {} and len(priv["miroirs"]) > 5, "miroirs : jamais dans la partie publique")
 # import Letterboxd : ce qui y est déjà est noté présent

@@ -13,7 +13,7 @@ const DEFAUT = {
   sites: { lb: true, imdb: true }, attente: { lb: [], imdb: [] }, modes: { lb: "auto", imdb: "clic" }, vuModif: 0
 };
 const ORIGINES = ["https://letterboxd.com/*", "https://www.imdb.com/*", "https://m.imdb.com/*", "https://api.graphql.imdb.com/*"];
-const QUOTA_JOUR = 40;                       // actions par site et par jour, au plus
+const QUOTA_JOUR = 80;                       // actions par site et par jour, au plus
 const hasard = (a, b) => a + Math.random() * (b - a);
 const aujourdhui = () => new Date().toISOString().slice(0, 10);
 
@@ -88,7 +88,7 @@ async function ongletPour(p, motif) {
   if (pret) return { id: pret.id, cree: false };
   const c = await cfg();
   // juste après un ajout dans Silencio : un onglet discret au plus toutes les 20 à 40 minutes ; sinon toutes les 2 à 4 heures
-  const ecart = motif === "ajout" ? hasard(20, 40) * 60e3 : hasard(2, 4) * 3600e3;
+  const ecart = motif === "ajout" ? 2 * 60e3 : hasard(2, 4) * 3600e3;
   if (motif !== "bouton" && Date.now() - (c.dernierOnglet[p] || 0) < ecart) return null;
   const t = await B.tabs.create({ url: SITE[p], active: false });
   await attendreChargement(t.id);
@@ -121,7 +121,10 @@ async function plateforme(p, aBlanc, motif, modes) {
   if (mode === "coupe") { await poser({ attente: { ...c.attente, [p]: [] } }); return { coupe: true }; }
   if (mode !== "auto" && !aBlanc) {
     const r = await silencio(`/api/ext/ops?p=${p}&n=25`);
+    const avant = (c.attente[p] || []).length;
     await poser({ attente: { ...(await cfg()).attente, [p]: r.ops } });
+    if (r.ops.length && r.ops.length !== avant)
+      await noter(`${NOM[p]} : ${r.ops.length} action(s) attendent ton clic (fenêtre de l'extension, « À reporter »), ou choisis l'envoi automatique dans Silencio.`, "attente");
     return { a_reporter: r.ops.length, mode };
   }
   if ((c.attente[p] || []).length) await poser({ attente: { ...c.attente, [p]: [] } });
@@ -130,7 +133,8 @@ async function plateforme(p, aBlanc, motif, modes) {
   const reste = QUOTA_JOUR - q;
   if (reste <= 0 && !aBlanc) return { quota: true };
   // quelques actions à la fois seulement, jamais le même nombre
-  const n = aBlanc ? 40 : Math.max(1, Math.min(reste, Math.round(hasard(3, 6))));
+  // après un ajout dans Silencio, tout ce qui attend part (jusqu'à 12 à la fois), toujours espacé comme à la main
+  const n = aBlanc ? 40 : Math.max(1, Math.min(reste, motif === "ajout" || motif === "bouton" ? 12 : Math.round(hasard(3, 6))));
   const r = await silencio(`/api/ext/ops?p=${p}&n=${n}`);
   if (!r.ops.length) return { rien: true, attente: r.en_attente || 0 };
   if (p === "lb" && !r.pseudo) {
@@ -194,7 +198,6 @@ async function synchroniser(motif, aBlanc = false) {
   const bilan = {};
   try {
     const b = await silencio("/api/ext/bonjour");
-    if (b.modif) await poser({ vuModif: b.modif });
     if (b.modes) await poser({ modes: b.modes });
     for (const p of ["lb", "imdb"]) {
       if (c.sites && c.sites[p] === false) { bilan[p] = { coupe: true }; continue; }
@@ -210,6 +213,14 @@ async function synchroniser(motif, aBlanc = false) {
     enCours = false;
     await poser({ dernier: { quand: Date.now(), motif, bilan, aBlanc } });
   }
+  // tout est parti : la modification est « vue » ; sinon la veille repassera dans une minute
+  try {
+    const b2 = await silencio("/api/ext/bonjour");
+    const a = b2.a_faire || {}, modes = b2.modes || {};
+    badge(a, modes);
+    const resteAuto = ["lb", "imdb"].some(p => (modes[p] || "auto") === "auto" && c.sites?.[p] !== false && a[p] > 0 && !bilan[p]?.pause && !bilan[p]?.quota && !bilan[p]?.bloque);
+    if (!resteAuto) await poser({ vuModif: b2.modif || 0 });
+  } catch { /* Silencio fermé */ }
   return bilan;
 }
 
@@ -236,18 +247,28 @@ B.alarms.onAlarm.addListener(async a => {
 
 // Toutes les 2 minutes, une question très légère à Silencio (chez toi, rien ne part sur Internet) : « as-tu été
 // modifié ? ». Après un ajout, la synchro passe dans les minutes qui suivent au lieu d'attendre le prochain tour.
-B.alarms.create("veille", { periodInMinutes: 2 });
+(B.alarms.get ? B.alarms.get("veille") : Promise.resolve(null)).then(a => { if (!a) B.alarms.create("veille", { periodInMinutes: 1 }); }).catch(() => {});
 async function veille() {
   const c = await cfg();
   if (!c.actif || !c.jeton || enCours) return;
   let b;
   try { b = await silencio("/api/ext/bonjour"); } catch { return; }
-  if (!b.modif || b.modif <= (c.vuModif || 0)) return;
   const a = b.a_faire || {};
   const auto = p => (b.modes?.[p] || "auto") === "auto" && c.sites?.[p] !== false && a[p] > 0;
-  if (!auto("lb") && !auto("imdb")) { await poser({ vuModif: b.modif }); return; }
-  if (Date.now() - b.modif * 1000 < 45000) return;     // laisse finir la saisie en cours
+  badge(a, b.modes);
+  if (!auto("lb") && !auto("imdb")) return;
+  // une modification récente (ou des envois restés en route) : on y va, après 20 s de calme
+  const recent = b.modif && b.modif > (c.vuModif || 0);
+  if (!recent && Date.now() - (c.dernier?.quand || 0) < 10 * 60e3) return;
+  if (b.modif && Date.now() - b.modif * 1000 < 20000) return;
   await synchroniser("ajout");
+}
+// le nombre d'actions en attente s'affiche sur l'icône de l'extension
+function badge(a, modes) {
+  if (!B.action || !B.action.setBadgeText) return;
+  const n = (a.lb || 0) + (a.imdb || 0);
+  B.action.setBadgeText({ text: n ? String(Math.min(n, 99)) : "" }).catch(() => {});
+  B.action.setBadgeBackgroundColor?.({ color: (modes?.imdb === "clic" && a.imdb) ? "#f0505f" : "#555" })?.catch?.(() => {});
 }
 
 // ---------------------------------------------------------------- enregistreur : pour calibrer une action inconnue
@@ -294,9 +315,10 @@ async function executerUn(p, id) {
     const onglet = await ongletPour(p, "bouton");
     try {
       const rep = await parler(onglet, { type: "silencio-executer", p, ops: [op], ctx });
-      const res = (rep && rep.resultats || [])[0];
-      if (!res || res.etat === "attente") return { ok: false, erreur: "pas encore possible pour ce type d'action" };
-      await silencio("/api/ext/resultats", { method: "POST", body: JSON.stringify({ plateforme: p, resultats: [res] }) });
+      const tous = (rep && rep.resultats || []).filter(x => x.etat !== "attente");
+      const res = tous.find(x => x.id === id);
+      if (!res) return { ok: false, erreur: "pas encore possible pour ce type d'action" };
+      await silencio("/api/ext/resultats", { method: "POST", body: JSON.stringify({ plateforme: p, resultats: tous }) });
       const c2 = await cfg();
       await poser({ attente: { ...c2.attente, [p]: c2.attente[p].filter(o => o.id !== id) },
         adresses: { ...c2.adresses, [p]: rep.adresses || ctx.adresses } });
@@ -333,6 +355,7 @@ B.runtime.onMessage.addListener(async m => {
   }
   if (m?.type === "effacer-journal") { await poser({ journal: [] }); return { ok: true }; }
   if (m?.type === "executer-un") return executerUn(m.p, m.id);
+  if (m?.type === "veille") { await veille(); return { ok: true }; }
   if (m?.type === "imdb-gql") {
     try {
       const r = await fetch("https://api.graphql.imdb.com/", { method: "POST", credentials: "include", headers: m.entetes || {}, body: m.corps });
