@@ -310,7 +310,7 @@ def export_letterboxd(doc, metas):
         m = (metas.get(cle) or {})
         t = titres.get(cle) or {}
         etoiles = "" if note is None else str(max(0.5, min(5.0, int(float(note) + 0.5) / 2)))
-        w.writerow([cle[2:], m.get("im") or "", m.get("o") or m.get("t") or "", m.get("a") or "", date or "",
+        w.writerow([cle[2:], m.get("im") or "", m.get("o") or m.get("t") or "", m.get("a") or "", date if date and len(date) == 10 else "",
                     etoiles, "true" if revision else "", ", ".join(t.get("etiquettes") or []), critique or ""])
     for jid, e in sorted((doc.get("journal") or {}).items(), key=lambda x: x[1].get("date", "")):
         if e.get("x") or not e.get("cle", "").startswith("m:"):

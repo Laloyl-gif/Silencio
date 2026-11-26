@@ -22,6 +22,7 @@ S.fmtNote = n => n == null || n === "" ? "–" : (Math.round(n * 10) / 10).toLoc
 S.fmtNombre = n => (n ?? 0).toLocaleString("fr-FR");
 S.fmtDate = (d, court) => { if (!d) return ""; const [a, m, j] = d.split("-").map(Number); if (!m) return String(a); return `${j ? j + " " : ""}${(court ? MOIS_C : MOIS)[m - 1]} ${a}`; };
 S.aujourdhui = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+S.moisPrecedent = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
 S.hier = () => { const d = new Date(Date.now() - 864e5); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 S.duree = min => { if (!min) return ""; const h = Math.floor(min / 60), m = Math.round(min % 60); return h ? `${h} h ${String(m).padStart(2, "0")}` : `${m} min`; };
 S.argent = n => !n ? "–" : n >= 1e9 ? (n / 1e9).toLocaleString("fr-FR", { maximumFractionDigits: 2 }) + " Md$" : n >= 1e6 ? Math.round(n / 1e6).toLocaleString("fr-FR") + " M$" : Math.round(n / 1e3) + " k$";
@@ -97,7 +98,7 @@ S.agir = async (type, donnees = {}, opts = {}) => {
   try {
     const r = await S.post("/api/action", { type, ...donnees });
     appliquer(r.modifs); S.version = r.version;
-    if (opts.toast !== false && r.modifs?.length) toast(opts.toast || r.libelle || "Enregistré", type === "annuler" ? null : { texte: "Annuler", fn: () => S.agir("annuler", {}, { toast: "Annulé" }) });
+    if (opts.toast !== false && r.modifs?.length) toast(opts.toast || r.libelle || "Enregistré", type === "annuler" || opts.sansAnnuler ? null : { texte: "Annuler", fn: () => S.agir("annuler", {}, { toast: "Annulé" }) });
     const nouveaux = (r.modifs || []).map(m => m[0] === "journal" ? m[2]?.cle : (m[0] === "titres" || m[0] === "watchlist") ? m[1] : null).filter(c => c && !S.base?.titres?.[c]);
     if (nouveaux.length) setTimeout(() => S.chargerBase(true).then(() => S.rafraichir(true)), 2500);
     if (!opts.sansRendu) S.rafraichir(true);
@@ -118,7 +119,7 @@ S.vignette = (cle, o = {}) => {
   const m = S.info(cle) || { t: "…" };
   const t = S.monTitre(cle);
   const note = o.note !== undefined ? o.note : (o.sansNote ? null : t.note);
-  return `<a class="vignette" href="#/titre/${cle}" data-cle="${cle}">${S.affiche(m, { note, coeur: o.coeur ?? t.coeur, vu: o.vu })}${o.legende === false ? "" : `<div class="legende"><b>${esc(S.nomTitre(m))}</b><span>${esc(o.sous ?? (m.a || ""))}</span></div>`}</a>`;
+  return `<a class="vignette" href="#/titre/${cle}" data-cle="${cle}">${S.affiche(m, { note, coeur: o.coeur ?? t.coeur, vu: o.vu })}${o.legende === false ? "" : `<div class="legende"><b>${esc(S.nomTitre(m))}</b>${o.info ? `<span>${esc(o.info)}</span>` : ""}</div>`}</a>`;
 };
 S.portrait = (chemin, nom) => `<div class="portrait">${chemin ? `<img loading="lazy" src="${S.img(chemin, "w185")}" alt="" onload="this.classList.add('ok')" onerror="this.remove()">` : ""}<span class="initiales" style="z-index:-1">${esc(S.initiales(nom))}</span></div>`;
 S.ligneTitre = (cle, o = {}) => {
@@ -163,7 +164,7 @@ S.etoiles = (valeur, onChange, o = {}) => {
 };
 
 // ------------------------------------------------------------------ toasts, infobulle, modales
-function toast(texte, action, duree = 4200) {
+function toast(texte, action, duree = 3000) {
   const t = el(`<div class="toast"><span>${esc(texte)}</span>${action ? `<button>${esc(action.texte)}</button>` : ""}</div>`);
   if (action) $("button", t).onclick = () => { t.remove(); action.fn(); };
   $("#toasts").append(t);
@@ -257,6 +258,7 @@ async function rendre(garderPosition) {
   const n = ++rendus;
   const y = window.scrollY;
   vue.className = page.plein ? "plein" : "";
+  S.theme && S.theme(r.nom);
   try {
     const res = page(vue, r.args, r.params, r);
     if (res && res.then) await res;
@@ -285,7 +287,7 @@ window.addEventListener("hashchange", () => {
 S.aller = h => { location.hash = h; };
 
 function majNav(nom) {
-  $$("[data-nav]").forEach(a => a.classList.toggle("actif", a.dataset.nav === nom || (nom === "accueil" && a.dataset.nav === "accueil")));
+  $$("[data-nav]").forEach(a => a.classList.toggle("actif", a.dataset.nav === nom || (nom === "recherche" && a.dataset.nav === "accueil" && a.closest("#barre-bas")) || (nom === "wrapped" && a.dataset.nav === "profil")));
 }
 function majChrome() {
   const e = S.etat; if (!e) return;

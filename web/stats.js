@@ -216,7 +216,7 @@ St.dessiner = (conteneur, cfg) => {
   const lib = dim.libelle || (v => String(v));
   const series = groupes.map((s, i) => { const mp = new Map(s.g); return { nom: s.nom, couleur: couleurs[i % couleurs.length], valeurs: cats.map(c => mp.has(c) ? mes.f(mp.get(c)) : (mes.entier ? 0 : null)), n: cats.map(c => mp.has(c) ? mp.get(c).length : 0) }; });
   const fmtV = mes.argent ? S.argent : (v => v == null ? "–" : mes.entier ? S.fmtNombre(Math.round(v)) : S.fmtNote(v));
-  if (!cats.length) { zone.innerHTML = S.vide("Pas assez de données", "Change les filtres ou ajoute des films."); return; }
+  if (!cats.length) { zone.innerHTML = S.vide("Pas assez de données"); return; }
   if (cfg.vue === "carte" && cfg.dim === "pays") {
     G.carte(zone, { valeurs: Object.fromEntries(cats.map((c, i) => [c, series[0].valeurs[i]]).filter(([, v]) => v != null)), titre: mes.lib, format: fmtV, clic: iso => S.aller(`#/stats?pays=${iso}`) });
     return;
@@ -248,22 +248,23 @@ St.correlation = correlation;
 
 // ------------------------------------------------------------------ page Stats
 const BLOCS = [];
-const carte = (id, titre, sous, large) => `<section class="graph-carte ${large ? "large" : ""}" data-bloc="${id}"><div class="flex haut"><div><h3>${titre}</h3>${sous ? `<div class="sous-titre">${sous}</div>` : ""}</div><span class="espace"></span><span data-act></span></div><div data-outils class="outils"></div><div data-zone></div></section>`;
+const carte = (id, titre, sous, large) => `<section class="graph-carte ${large ? "large" : ""}" data-bloc="${id}"><div class="flex haut"><div><h3>${titre}</h3></div><span class="espace"></span><span data-act></span></div><div data-outils class="outils"></div><div data-zone></div></section>`;
 
 S.pages.stats = async (vue, args, params) => {
   if (!S.base) { vue.innerHTML = S.chargement(); await S.chargerBase(); }
   const f = S.filtresMemo.stats = S.filtresMemo.stats || { pid: "", periode: "tout", type: "", format: "" };
   if (params.pays) f.pays = params.pays; else delete f.pays;
   const annees = [...new Set(St.donnees().V.map(v => v.date?.slice(0, 4)).filter(Boolean))].sort().reverse();
+  const onglet = S.filtresMemo.stats_o = params.o || S.filtresMemo.stats_o || "chiffres";
+  const ONGLETS = [["chiffres", "Chiffres"], ["personnes", "Personnes"], ["gouts", "Goûts"], ["temps", "Temps"], ["amis", "Amis"]];
   vue.innerHTML = `
-    <div class="entete"><h1>Stats</h1><a class="bouton petit" href="#/labo" style="margin-left:auto">${ico("labo")} Labo</a><a class="bouton petit" href="#/annee/${annees[0] || new Date().getFullYear()}">Ton année</a></div>
+    <div class="entete"><h1>Stats</h1><a class="icone-bouton grand" href="#/labo" aria-label="Labo" style="margin-left:auto">${ico("labo")}</a></div>
+    <div class="onglets onglets-stats">${ONGLETS.map(([k, l]) => `<a href="#/stats?o=${k}"><button class="${k === onglet ? "actif" : ""}">${l}</button></a>`).join("")}</div>
     <div class="stats-barre">
-      <select class="champ" data-f="pid" style="width:auto;height:34px;font-size:13px"><option value="">${esc(S.moi.profil.nom)}</option>${Object.entries(S.amis).map(([id, a]) => `<option value="${esc(id)}">${esc(a.profil?.nom || id)}</option>`).join("")}</select>
-      <select class="champ" data-f="periode" style="width:auto;height:34px;font-size:13px"><option value="tout">Depuis toujours</option><option value="12m">12 derniers mois</option>${annees.map(a => `<option value="${a}">${a}</option>`).join("")}</select>
+      <select class="champ" data-f="pid" style="width:auto;height:36px;font-size:13px"><option value="">${esc(S.moi.profil.nom)}</option>${Object.entries(S.amis).map(([id, a]) => `<option value="${esc(id)}">${esc(a.profil?.nom || id)}</option>`).join("")}</select>
+      <select class="champ" data-f="periode" style="width:auto;height:36px;font-size:13px"><option value="tout">Toujours</option><option value="12m">12 mois</option>${annees.map(a => `<option value="${a}">${a}</option>`).join("")}</select>
       <div class="segments" data-f="type"><button data-v="">Tout</button><button data-v="m">Films</button><button data-v="t">Séries</button></div>
-      <select class="champ" data-f="format" style="width:auto;height:34px;font-size:13px"><option value="">Tous formats</option>${Object.entries(S.FORMATS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>
       ${f.pays ? `<span class="puce actif">${esc(S.pays(f.pays))} <a class="x" href="#/stats">${ico("x")}</a></span>` : ""}
-      ${S.base.manquants ? `<span class="mini discret">${S.base.manquants} fiches en téléchargement…</span>` : ""}
     </div>
     <div data-epingles class="stats-grille" style="margin-top:14px"></div>
     <div class="stats-grille" style="margin-top:14px" data-grille></div>`;
@@ -279,37 +280,24 @@ S.pages.stats = async (vue, args, params) => {
   const notes = T.map(t => t.note).filter(n => n != null);
   const minutes = T.reduce((s, t) => s + (t.m?.r || 0) * (t.part ?? 1), 0);
   const cine = V.filter(v => v.ou?.type === "cinema");
-  grille.innerHTML = `<section class="large"><div class="chiffres">
-    <div class="chiffre"><b>${S.fmtNombre(T.filter(t => t.m?.ty !== "t").length)}</b><span>films vus</span></div>
+  const chiffres = `<section class="large"><div class="chiffres">
+    <div class="chiffre"><b>${S.fmtNombre(T.filter(t => t.m?.ty !== "t").length)}</b><span>films</span></div>
     <div class="chiffre"><b>${S.fmtNombre(T.filter(t => t.m?.ty === "t").length)}</b><span>séries</span></div>
-    <div class="chiffre"><b>${S.fmtNombre(Math.round(minutes / 60))}</b><span>heures (${S.fmtNombre(Math.round(minutes / 60 / 24))} jours)</span></div>
-    <div class="chiffre"><b>${S.fmtNombre(V.length)}</b><span>visionnages au journal</span></div>
-    <div class="chiffre"><b>${S.fmtNote(moyenne(notes))}</b><span>note moyenne (médiane ${S.fmtNote(mediane(notes))})</span></div>
+    <div class="chiffre"><b>${S.fmtNombre(Math.round(minutes / 60))}</b><span>heures</span></div>
+    <div class="chiffre"><b>${S.fmtNote(moyenne(notes))}</b><span>moyenne</span></div>
     <div class="chiffre"><b>${S.fmtNombre(T.filter(t => t.coeur).length)}</b><span>coups de cœur</span></div>
-    <div class="chiffre"><b>${S.fmtNombre(V.filter(v => v.revision).length)}</b><span>revisionnages</span></div>
-    <div class="chiffre"><b>${S.fmtNombre(cine.length)}</b><span>séances au cinéma${cine.some(v => v.prix) ? ` · ${S.fmtNote(cine.reduce((s, v) => s + (v.prix || 0), 0))} €` : ""}</span></div>
-  </div></section>
-  ${carte("distribution", "Distribution de tes notes", "Combien de fois tu as mis chaque note")}
-  ${carte("severite", "Évolution de ta sévérité", "Ta note moyenne et celle d'IMDb pour les films vus chaque année")}
-  ${carte("rythme", "Ton rythme", "Visionnages par mois", true)}
-  ${carte("personnes", "Personnes", "Les plus vues, tes chouchous et tes bêtes noires", true)}
-  ${carte("genres", "Genres", "")}
-  ${carte("radar", "Radar de tes goûts", "Ta note moyenne par genre")}
-  ${carte("decennies", "Décennies", "Nombre de titres vus par décennie de sortie")}
-  ${carte("pays", "Pays", "Pays de production", true)}
-  ${carte("langues", "Langues originales", "")}
-  ${carte("durees", "Durées", "Longs métrages par tranche de 30 minutes")}
-  ${carte("motscles", "Mots-clés et thèmes", "Les thèmes qui reviennent, avec ta note moyenne")}
-  ${carte("studios", "Studios et sociétés", "")}
-  ${carte("budget", "Budget et recettes", "Chaque point est un film", true)}
-  ${carte("decouvertes", "Découvertes", "Réalisateurs et acteurs que tu as découverts (premier film vu)")}
-  ${carte("revisionnages", "Revisionnages", "Les titres que tu as le plus revus")}
-  ${carte("compat", "Compatibilité avec tes amis", "Sur les films notés en commun", true)}
-  ${carte("completion", "Complétion", "Filmographies de tes personnes favorites et grands palmarès", true)}
-  ${carte("cinema", "Au cinéma", "Tes séances, tes salles, tes dépenses")}
-  ${carte("avec", "Avec qui", "Les gens avec qui tu regardes le plus")}`;
+    <div class="chiffre"><b>${S.fmtNombre(cine.length)}</b><span>séances</span></div>
+  </div></section>`;
+  const PAR_ONGLET = {
+    chiffres: chiffres + carte("distribution", "Tes notes") + carte("severite", "Ta sévérité face à IMDb") + carte("rythme", "Ton rythme", "", true) + carte("revisionnages", "Revisionnages"),
+    personnes: carte("personnes", "Personnes", "", true) + carte("decouvertes", "Découvertes") + carte("completion", "Complétion", "", true),
+    gouts: carte("genres", "Genres") + carte("radar", "Radar de tes goûts") + carte("decennies", "Décennies") + carte("durees", "Durées") + carte("pays", "Pays", "", true) + carte("budget", "Budget et recettes", "", true),
+    temps: `<section class="large"><div class="raccourcis-decouvrir"><a class="carte" href="#/wrapped/${(annees[0] || S.aujourdhui().slice(0, 4))}">${ico("stats")}<b>Ton année</b></a><a class="carte" href="#/wrapped/${S.moisPrecedent()}">${ico("journal")}<b>Ton mois</b></a></div></section>` + carte("cinema", "Au cinéma") + carte("avec", "Avec qui"),
+    amis: carte("compat", "Compatibilité", "", true),
+  };
+  grille.innerHTML = PAR_ONGLET[onglet] || PAR_ONGLET.chiffres;
   // graphiques épinglés
-  const ep = Object.entries(S.vivants(S.moi.graphiques));
+  const ep = onglet === "chiffres" ? Object.entries(S.vivants(S.moi.graphiques)) : [];
   $("[data-epingles]", vue).innerHTML = ep.map(([id, g]) => `<section class="graph-carte ${g.large !== false ? "large" : ""}" data-g="${id}"><div class="flex"><h3>${esc(g.titre || "Graphique")}</h3><span class="espace"></span><a class="icone-bouton" href="#/labo/${id}" title="Modifier">${ico("crayon")}</a></div><div data-zone></div></section>`).join("");
   requestAnimationFrame(() => {
     ep.forEach(([id, g]) => St.dessiner($(`[data-g="${id}"] [data-zone]`, vue), g));
@@ -382,10 +370,10 @@ BLOC.personnes = (b, d, pid) => {
   const st = memo("pers", { role: "real", tri: "nb", min: 2, complet: false, format: "" });
   const z = zoneDe(b), o = outilsDe(b);
   o.innerHTML = `<div class="segments" data-role>${[["real", "Réalisation"], ["acteur", "Acteurs"], ["actrice", "Actrices"], ["image", "Image"], ["musique", "Musique"], ["scen", "Scénario"], ["montage", "Montage"]].map(([v, l]) => `<button data-v="${v}">${l}</button>`).join("")}</div>
-    <select class="champ" data-tri style="width:auto;height:32px;font-size:12.5px"><option value="nb">Les plus vus</option><option value="chouchous">Tes chouchous (meilleure moyenne)</option><option value="betes">Tes bêtes noires (pire moyenne)</option><option value="imdb">Le plus d'écart au-dessus d'IMDb</option></select>
-    <label class="flex mini muet">min. <select class="champ" data-min style="width:auto;height:32px;font-size:12.5px">${[1, 2, 3, 4, 5, 8, 10].map(n => `<option>${n}</option>`).join("")}</select> films</label>
+    <select class="champ" data-tri style="width:auto;height:32px;font-size:12.5px"><option value="nb">Les plus vus</option><option value="chouchous">Mieux notés</option><option value="betes">Moins bien notés</option><option value="imdb">Au-dessus d'IMDb</option></select>
+    <label class="flex mini muet">au moins <select class="champ" data-min style="width:auto;height:32px;font-size:12.5px">${[1, 2, 3, 5, 8, 10].map(n => `<option>${n}</option>`).join("")}</select></label>
     <select class="champ" data-format style="width:auto;height:32px;font-size:12.5px"><option value="">Tous formats</option><option value="long">Longs métrages</option><option value="court">Courts métrages</option><option value="docu">Documentaires</option></select>
-    <label class="case mini"><input type="checkbox" data-complet> Filmo complète vue</label>`;
+    <label class="case mini"><input type="checkbox" data-complet> Filmo complète</label>`;
   $$("[data-role] button", o).forEach(x => { x.classList.toggle("actif", x.dataset.v === st.role); x.onclick = () => { st.role = x.dataset.v; BLOC.personnes(b, d, pid); }; });
   $("[data-tri]", o).value = st.tri; $("[data-tri]", o).onchange = e => { st.tri = e.target.value; BLOC.personnes(b, d, pid); };
   $("[data-min]", o).value = st.min; $("[data-min]", o).onchange = e => { st.min = +e.target.value; BLOC.personnes(b, d, pid); };
@@ -393,7 +381,7 @@ BLOC.personnes = (b, d, pid) => {
   $("[data-complet]", o).checked = st.complet; $("[data-complet]", o).onchange = e => { st.complet = e.target.checked; BLOC.personnes(b, d, pid); };
   const rows = d.T.filter(r => r.m && (!st.format || r.m.fmt === st.format));
   const role = st.role === "actrice" ? "acteur" : st.role;
-  let g = St.grouper(rows, role, 0, st.min);
+  let g = St.grouper(rows, role, 0, st.tri === "nb" ? st.min : Math.max(5, st.min));
   if (st.role === "actrice") g = g.filter(([id]) => pers(id).g === 1);
   else if (st.role === "acteur") g = g.filter(([id]) => pers(id).g !== 1);
   let liste = g.map(([id, l]) => { const n = l.map(r => r.note).filter(x => x != null); const im = l.map(r => r.m.ir).filter(Boolean); return { id, l, nb: l.length, moy: moyenne(n), imdb: moyenne(im), ecart: n.length && im.length ? moyenne(l.filter(r => r.note != null && r.m.ir).map(r => r.note - r.m.ir)) : null }; });
@@ -582,9 +570,11 @@ S.pages.labo = async (vue, args) => {
   const opts = (o, v) => Object.entries(o).map(([k, x]) => `<option value="${k}" ${k === v ? "selected" : ""}>${esc(x.lib || x)}</option>`).join("");
   const profils = [["", S.moi.profil.nom], ...Object.entries(S.amis).map(([id, a]) => [id, a.profil?.nom || id])];
   vue.innerHTML = `<div class="entete"><h1>Labo</h1><span class="espace"></span><button class="bouton petit" data-reinit>Réinitialiser</button></div>
-  <div class="segments" data-mode style="margin-bottom:14px"><button data-v="personnes">Courbes par personne</button><button data-v="agrege">Constructeur libre</button><button data-v="nuage">Nuage de points</button></div>
   <div class="labo">
     <div class="carte reglages-g">
+      <div class="etapes-labo"><button data-aller="1">1 · Type</button><button data-aller="2">2 · Axes</button><button data-aller="3">3 · Filtres</button></div>
+      <div data-etape="1"><div class="segments" data-mode style="margin-bottom:14px;display:flex;flex-wrap:wrap"><button data-v="personnes">Courbes par personne</button><button data-v="agrege">Constructeur libre</button><button data-v="nuage">Nuage de points</button></div></div>
+      <div data-etape="2">
       <div data-r-personnes>
         <label class="etiquette">Personnes (jusqu'à 6)</label>
         <input class="champ" data-chercher-p placeholder="Lynch, Villeneuve, Huppert…">
@@ -609,6 +599,8 @@ S.pages.labo = async (vue, args) => {
         <label class="etiquette">Axe vertical</label><select class="champ" data-c="y">${opts(St.CHAMPS, cfg.y)}</select>
         <label class="etiquette">Couleur par</label><select class="champ" data-c="series2"><option value="aucune">— (profil)</option><option value="genre">Genre</option><option value="format">Format</option><option value="decennie">Décennie</option></select>
       </div>
+      </div>
+      <div data-etape="3">
       <label class="etiquette">Profils comparés</label>
       <div class="puces" data-profils>${profils.map(([id, n]) => `<button class="puce" data-p="${esc(id)}">${esc(n)}</button>`).join("")}</div>
       <label class="etiquette">Filtres</label>
@@ -621,10 +613,14 @@ S.pages.labo = async (vue, args) => {
       <div class="separateur"></div>
       <input class="champ" data-titre placeholder="Titre du graphique" value="${esc(cfg.titre || "")}">
       <div class="flex" style="margin-top:10px"><button class="bouton principal" data-epingler style="flex:1">${ico("epingle")} ${gid ? "Mettre à jour" : "Épingler"}</button>${gid ? `<button class="bouton danger" data-desepingler title="Retirer">${ico("poubelle")}</button>` : ""}</div>
-      <p class="mini discret" style="margin:8px 0 0">Les graphiques épinglés s'affichent en haut de la page Stats et sur l'accueil, et se mettent à jour tout seuls.</p>
+      </div>
     </div>
     <div class="graph-carte" style="min-height:420px"><h3 data-titre-g></h3><div data-zone></div></div>
   </div>`;
+  let etape = S.filtresMemo.labo_etape || "1";
+  const montrerEtape = k => { etape = S.filtresMemo.labo_etape = k; $$("[data-etape]", vue).forEach(x => x.classList.toggle("etape-active", x.dataset.etape === k)); $$("[data-aller]", vue).forEach(b => b.classList.toggle("actif", b.dataset.aller === k)); };
+  $$("[data-aller]", vue).forEach(b => b.onclick = () => montrerEtape(b.dataset.aller));
+  montrerEtape(etape);
   const majVisibles = () => {
     $$("[data-mode] button", vue).forEach(b => b.classList.toggle("actif", b.dataset.v === cfg.mode));
     ["personnes", "agrege", "nuage"].forEach(m => $(`[data-r-${m}]`, vue).classList.toggle("cache", cfg.mode !== m));
@@ -639,7 +635,7 @@ S.pages.labo = async (vue, args) => {
     $("[data-titre-g]", vue).textContent = cfg.titre || titreAuto();
     St.dessiner($("[data-zone]", vue), c);
   };
-  $$("[data-mode] button", vue).forEach(b => b.onclick = () => { cfg.mode = b.dataset.v; if (cfg.mode === "agrege" && cfg.vue === "courbe" && !St.DIMS[cfg.dim].num && !St.DIMS[cfg.dim].temps) cfg.vue = "barres"; dessiner(); });
+  $$("[data-mode] button", vue).forEach(b => b.onclick = () => { if (matchMedia("(max-width: 899px)").matches) setTimeout(() => montrerEtape("2"), 150); cfg.mode = b.dataset.v; if (cfg.mode === "agrege" && cfg.vue === "courbe" && !St.DIMS[cfg.dim].num && !St.DIMS[cfg.dim].temps) cfg.vue = "barres"; dessiner(); });
   $$("[data-vue] button", vue).forEach(b => b.onclick = () => { cfg.vue = b.dataset.v; if (cfg.vue === "carte") { cfg.dim = "pays"; $("[data-c=dim]", vue).value = "pays"; } dessiner(); });
   $$("[data-c]", vue).forEach(c => {
     const k = c.dataset.c;
@@ -713,4 +709,80 @@ S.pages.mois = async (vue, args) => {
     <div class="chiffres"><div class="chiffre"><b>${V.length}</b><span>visionnages</span></div><div class="chiffre"><b>${S.fmtNote(moyenne(notes))}</b><span>note moyenne</span></div><div class="chiffre"><b>${S.fmtNombre(Math.round(V.reduce((s, v) => s + (v.m?.ty === "m" ? v.m.r || 0 : 0), 0) / 60))} h</b><span>de films</span></div><div class="chiffre"><b>${V.filter(v => v.ou?.type === "cinema").length}</b><span>au cinéma</span></div></div>
     <div class="section"><div class="grille">${V.map(v => S.vignette(v.cle, { note: v.note, sous: S.fmtDate(v.date, true) })).join("") || S.vide("Rien ce mois-ci")}</div></div>`;
 };
+})();
+
+// ------------------------------------------------------------------ Wrapped (ton année, ton mois), une carte par écran
+(function () {
+const S = window.Silencio, St = S.stats;
+const { $, $$, esc, ico } = S;
+const moyenne = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+const nomP = id => S.base?.pers?.[id]?.n || "";
+const photoP = id => S.base?.pers?.[id]?.ph;
+function periode(code, pid) {
+  const d = St.donnees(pid);
+  const V = d.V.filter(v => v.date?.startsWith(code) && !v.approx);
+  const cles = [...new Set(V.map(v => v.cle))];
+  const T = cles.map(c => d.T.find(t => t.cle === c)).filter(Boolean);
+  const min = T.reduce((s, t) => s + (t.m?.r || 0) * (t.part ?? 1), 0);
+  return { V, T, min, moy: moyenne(V.map(v => v.note).filter(n => n != null)) };
+}
+S.pages.wrapped = async (vue, args) => {
+  if (!S.base) { vue.innerHTML = S.chargement(); await S.chargerBase(); }
+  const code = args[0] || S.aujourdhui().slice(0, 4);
+  const annee = code.length === 4;
+  const nomPeriode = annee ? code : S.fmtDate(code);
+  const P = periode(code, undefined);
+  const prec = annee ? String(+code - 1) : (() => { const [a, m] = code.split("-").map(Number); return m === 1 ? `${a - 1}-12` : `${a}-${String(m - 1).padStart(2, "0")}`; })();
+  const Pp = periode(prec, undefined);
+  const top = [...P.T].filter(t => t.note != null).sort((a, b) => b.note - a.note || (b.coeur - a.coeur)).slice(0, annee ? 10 : 5);
+  const plusVu = role => { const g = St.grouper(P.T, role, 1, 1); return g.length ? { id: g[0][0], n: g[0][1].length } : null; };
+  const real = plusVu("real");
+  const actG = St.grouper(P.T, "acteur", 0, 1).map(([id, l]) => ({ id, n: l.length, g: S.base.pers[id]?.g }));
+  const acteur = actG.find(x => x.g !== 1), actrice = actG.find(x => x.g === 1);
+  // plus belle découverte : un réalisateur vu pour la première fois sur la période, avec la meilleure note
+  const avant = new Set(St.donnees().T.filter(t => t.premiere && t.premiere < code).flatMap(t => t.m?.eq?.real || t.m?.re || []));
+  const decouverte = P.T.filter(t => t.note != null).sort((a, b) => b.note - a.note).flatMap(t => (t.m?.eq?.real || t.m?.re || []).filter(id => !avant.has(id)).map(id => ({ id, t })))[0];
+  const parJour = d3.rollups(P.V, l => l.length, v => v.date?.slice(0, 10)).filter(([j]) => j?.length === 10).sort((a, b) => b[1] - a[1])[0];
+  const parMois = annee ? d3.rollups(P.V, l => l.length, v => v.date?.slice(0, 7)).filter(([m]) => m?.length === 7).sort((a, b) => b[1] - a[1])[0] : null;
+  const longs = P.T.filter(t => t.m?.ty === "m" && t.m.r).sort((a, b) => b.m.r - a.m.r);
+  const vieux = P.T.filter(t => t.m?.a).sort((a, b) => a.m.a - b.m.a)[0];
+  const amis = Object.keys(S.amis).map(id => ({ id, nom: S.nomDe(id), n: periode(code, id).V.length })).sort((a, b) => b.n - a.n);
+  const delta = (a, b, f = x => Math.round(x)) => b ? `<span class="delta ${a >= b ? "plus" : "moins"}">${a >= b ? "+" : "−"}${f(Math.abs(a - b))}</span>` : "";
+  const fond = top[0]?.m?.af || P.T[0]?.m?.af;
+  const cartes = P.V.length ? [
+    `<div class="w-carte w-intro"><span class="w-sur">Ton ${annee ? "année" : "mois"}</span><h1 class="w-enorme">${esc(nomPeriode)}</h1><div class="w-gros">${P.T.length}<small>titres</small></div><div class="w-gros">${S.fmtNombre(Math.round(P.min / 60))}<small>heures</small></div></div>`,
+    `<div class="w-carte"><span class="w-sur">Ton top ${top.length}</span><div class="w-top">${top.map((t, i) => `<a href="#/titre/${t.cle}" class="w-top-l" style="--i:${i}"><span class="w-rang">${i + 1}</span>${S.affiche(t.m, { taille: "w185" })}<span class="w-top-t"><b>${esc(S.nomTitre(t.m))}</b><em>${S.fmtNote(t.note)}</em></span></a>`).join("") || `<p>Pas encore de notes.</p>`}</div></div>`,
+    `<div class="w-carte"><span class="w-sur">Tes personnes</span><div class="w-pers">${[[real, "Réalisateur·rice"], [acteur, "Acteur"], [actrice, "Actrice"]].filter(([x]) => x).map(([x, lib], i) => `<a href="#/personne/${x.id}" class="w-pers-l" style="--i:${i}">${S.portrait(photoP(x.id), nomP(x.id))}<span><em>${lib}</em><b>${esc(nomP(x.id))}</b><small>${S.pluriel(x.n, "titre")}</small></span></a>`).join("")}${decouverte ? `<a href="#/personne/${decouverte.id}" class="w-pers-l w-decouverte" style="--i:3">${S.portrait(photoP(decouverte.id), nomP(decouverte.id))}<span><em>Ta découverte</em><b>${esc(nomP(decouverte.id))}</b><small>${esc(S.nomTitre(decouverte.t.m))}</small></span></a>` : ""}</div></div>`,
+    `<div class="w-carte"><span class="w-sur">Records</span><div class="w-records">
+      <div style="--i:0"><b>${S.fmtNombre(Math.round(P.min / 60))} h</b><span>devant l'écran</span></div>
+      ${parJour && parJour[1] > 1 ? `<div style="--i:1"><b>${parJour[1]} titres</b><span>le ${S.fmtDate(parJour[0])}</span></div>` : ""}
+      ${parMois ? `<div style="--i:2"><b>${esc(S.MOIS[+parMois[0].slice(5) - 1])}</b><span>ton mois le plus chargé (${parMois[1]})</span></div>` : ""}
+      ${longs[0] ? `<div style="--i:3"><b>${S.duree(longs[0].m.r)}</b><span>${esc(S.nomTitre(longs[0].m))}, le plus long</span></div>` : ""}
+      ${vieux ? `<div style="--i:4"><b>${vieux.m.a}</b><span>${esc(S.nomTitre(vieux.m))}, le plus ancien</span></div>` : ""}
+    </div></div>`,
+    `<div class="w-carte"><span class="w-sur">Et par rapport à ${annee ? prec : "le mois dernier"}</span><div class="w-records">
+      <div style="--i:0"><b>${P.T.length} ${delta(P.T.length, Pp.T.length)}</b><span>titres</span></div>
+      <div style="--i:1"><b>${S.fmtNombre(Math.round(P.min / 60))} h ${delta(P.min / 60, Pp.min / 60)}</b><span>de visionnage</span></div>
+      <div style="--i:2"><b>${S.fmtNote(P.moy)} ${P.moy != null && Pp.moy != null ? delta(P.moy, Pp.moy, x => S.fmtNote(x)) : ""}</b><span>de moyenne</span></div>
+    </div>${amis.length ? `<div class="w-amis">${[{ id: "", nom: "Toi", n: P.V.length }, ...amis].sort((a, b) => b.n - a.n).map((a, i) => `<div style="--i:${i + 3}"><span>${i + 1}</span>${S.avatar(a.id || S.etat.appareil.profil, a.nom, 30)}<b>${esc(a.nom)}</b><em>${a.n}</em></div>`).join("")}</div>` : ""}</div>`,
+    `<div class="w-carte w-fin"><span class="w-sur">${esc(nomPeriode)}</span><div class="w-gros">${S.fmtNote(P.moy)}<small>ta note moyenne</small></div><a class="bouton principal grand" href="#/${annee ? "annee/" + code : "mois/" + code}">Tous les titres</a><a class="bouton grand" href="#/stats?o=temps">Fermer</a></div>`,
+  ] : [`<div class="w-carte w-fin"><span class="w-sur">${esc(nomPeriode)}</span><h1 class="w-enorme">Rien vu</h1><a class="bouton grand" href="#/stats?o=temps">Fermer</a></div>`];
+  document.body.classList.add("plein-ecran");
+  vue.className = "plein";
+  vue.innerHTML = `<div class="wrapped">${fond ? `<img class="w-fond" src="${S.img(fond, "w342")}" alt="">` : ""}<div class="w-barres">${cartes.map(() => `<i><b></b></i>`).join("")}</div><a class="w-fermer icone-bouton" href="#/stats?o=temps" aria-label="Fermer">${ico("x")}</a><div class="w-scene"></div><button class="w-prec" aria-label="Précédent"></button><button class="w-suiv" aria-label="Suivant"></button></div>`;
+  let i = 0;
+  const montrer = k => {
+    i = Math.max(0, Math.min(cartes.length - 1, k));
+    $(".w-scene", vue).innerHTML = cartes[i];
+    $$(".w-barres i", vue).forEach((b, n) => b.classList.toggle("fait", n < i) || b.classList.toggle("actif", n === i));
+    $$(".w-barres i", vue).forEach((b, n) => b.classList.toggle("actif", n === i));
+    S.son(i === cartes.length - 1 ? "fin" : "carte", i);
+  };
+  $(".w-suiv", vue).onclick = () => montrer(i + 1);
+  $(".w-prec", vue).onclick = () => montrer(i - 1);
+  vue.onkeydown = null;
+  montrer(0);
+};
+const sortir = () => { if (!location.hash.startsWith("#/wrapped")) document.body.classList.remove("plein-ecran"); };
+window.addEventListener("hashchange", sortir);
 })();

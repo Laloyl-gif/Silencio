@@ -67,3 +67,40 @@ def palmares(code):
         if cle not in res or (a and (res[cle]["annee"] or 9999) > a):
             res[cle] = {"cle": cle, "annee": a, "titre": l.get("filmLabel", "")}
     return {"code": code, "nom": libelle, "films": sorted(res.values(), key=lambda x: x["annee"] or 0)}
+
+
+CEREMONIES = [   # (motif sur le nom anglais du prix, nom court affiché)
+    (r"Academy Award|Oscar", "Oscars"), (r"C[ée]sar Award|C[ée]sar", "César"),
+    (r"Cannes|Palme d|Camera d.Or|Cam[ée]ra d.or", "Cannes"), (r"Venice|Golden Lion|Silver Lion|Volpi", "Venise"),
+    (r"Berlin|Golden Bear|Silver Bear", "Berlin"), (r"BAFTA|British Academy", "BAFTA"), (r"Golden Globe", "Golden Globes"),
+]
+
+
+def prix_film(cle):
+    """{gagnes: [{prix, ceremonie, annee}], nominations: [...]} pour les 7 grandes cérémonies (Wikidata)."""
+    import re as _re
+    prop = "P4947" if cle.startswith("m:") else "P4983"
+    q = f"""SELECT ?type ?prixFr ?prixEn ?annee WHERE {{
+  ?f wdt:{prop} "{int(cle[2:])}" .
+  {{ ?f p:P166 ?st . ?st ps:P166 ?prix . BIND("gagne" AS ?type) }} UNION {{ ?f p:P1411 ?st . ?st ps:P1411 ?prix . BIND("nomme" AS ?type) }}
+  OPTIONAL {{ ?st pq:P585 ?date . BIND(YEAR(?date) AS ?annee) }}
+  OPTIONAL {{ ?prix rdfs:label ?prixFr . FILTER(LANG(?prixFr) = "fr") }}
+  OPTIONAL {{ ?prix rdfs:label ?prixEn . FILTER(LANG(?prixEn) = "en") }}
+}}"""
+    res = {"gagnes": [], "nominations": []}
+    vus = set()
+    for l in _sparql(q):
+        en = l.get("prixEn") or l.get("prixFr") or ""
+        cer = next((nom for motif, nom in CEREMONIES if _re.search(motif, en, _re.I)), None)
+        if not cer:
+            continue
+        nom = l.get("prixFr") or en
+        k = (l["type"], nom)
+        if k in vus:
+            continue
+        vus.add(k)
+        res["gagnes" if l["type"] == "gagne" else "nominations"].append(
+            {"prix": nom, "ceremonie": cer, "annee": int(l["annee"]) if l.get("annee") else None})
+    gagnes = {p["prix"] for p in res["gagnes"]}
+    res["nominations"] = [p for p in res["nominations"] if p["prix"] not in gagnes]
+    return res

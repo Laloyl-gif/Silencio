@@ -5,7 +5,7 @@ partagés avec tes amis.
 
 ## Ce que fait Silencio
 
-- **Journal** : ajoute un visionnage en deux secondes (bouton **+**, ou touche **n** sur PC).
+- **Journal** : ajoute un visionnage en deux secondes (bouton **+**, ou touche **n** sur PC). Note de 1 à 10 en touchant une case ; deux appuis rapides = le demi-point en dessous (sur PC : 8 puis « . » = 7,5).
   - La note est sur 10, au demi-point : clique sur la moitié gauche d'une étoile pour un demi-point.
   - Tu peux aussi préciser la date, le coup de cœur et s'il s'agit d'un revisionnage (détecté tout seul).
   - « Plus de détails » : où tu l'as vu (cinéma avec salle et prix du billet, plateforme ou support), avec qui, la version, ta critique (privée si tu veux), des notes détaillées, et l'option « film caché ».
@@ -100,7 +100,15 @@ Clone le dépôt (`git clone https://github.com/TON_COMPTE/silencio.git`), puis 
 raccourci « Silencio » arrive sur le bureau (il met Silencio à jour à chaque lancement). Mac / Linux : `installer.sh`,
 ou simplement `python3 main.py`. Seul Python 3.9 ou plus est nécessaire, sans aucun module à installer.
 
-### 4. Remplir ton profil
+### 4. Publier une nouvelle version
+
+Quand tu reçois un nouveau `silencio.zip` : glisse-le sur **outils\publier_version.bat** (dans l'Explorateur, ouvre
+le dossier `silencio`, puis le sous-dossier `outils`). Le code est remplacé (ton dossier `donnees` et `depot.json` sont
+gardés), puis envoyé sur GitHub. Le PC se met à jour au prochain lancement du raccourci, et les téléphones au prochain
+lancement de l'application. Si le dossier `android/` a changé, GitHub reconstruit l'application, qui propose alors
+d'installer la nouvelle version.
+
+### 5. Remplir ton profil
 
 Réglages :
 

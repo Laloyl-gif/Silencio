@@ -298,11 +298,25 @@ class H(BaseHTTPRequestHandler):
         if p == "/imdb.tsv.gz":
             lignes = "tconst\taverageRating\tnumVotes\n" + "".join(f"{k}\t{v[0]}\t{v[1]}\n" for k, v in sorted(IMDB_NOTES.items()))
             return self.envoyer(200, gzip.compress(lignes.encode()), "application/gzip")
+        if p == "/nominatim":
+            noms = [("Le Champo", "Paris"), ("Champollion", "Grenoble")] if "champ" in q.get("q", "").lower() else [("MK2 Bibliothèque", "Paris")]
+            return self.envoyer(200, [{"type": "cinema", "category": "amenity", "name": n, "address": {"city": v}} for n, v in noms])
         if p == "/monde.json":
             return self.envoyer(200, monde())
         if p == "/wikidata":
             qq = q.get("query", "")
-            if "P4985" in qq and '"5602"' in qq:
+            if "P1411" in qq and '"496243"' in qq:
+                b = [{"type": {"value": "gagne"}, "prixFr": {"value": "Palme d'or"}, "prixEn": {"value": "Palme d'Or"}, "annee": {"value": "2019"}},
+                     {"type": {"value": "gagne"}, "prixFr": {"value": "Oscar du meilleur film"}, "prixEn": {"value": "Academy Award for Best Picture"}, "annee": {"value": "2020"}},
+                     {"type": {"value": "gagne"}, "prixFr": {"value": "Oscar du meilleur réalisateur"}, "prixEn": {"value": "Academy Award for Best Director"}, "annee": {"value": "2020"}},
+                     {"type": {"value": "nomme"}, "prixFr": {"value": "BAFTA du meilleur film"}, "prixEn": {"value": "BAFTA Award for Best Film"}, "annee": {"value": "2020"}},
+                     {"type": {"value": "nomme"}, "prixFr": {"value": "Golden Globe du meilleur réalisateur"}, "prixEn": {"value": "Golden Globe Award for Best Director"}, "annee": {"value": "2020"}},
+                     {"type": {"value": "gagne"}, "prixFr": {"value": "Prix du public"}, "prixEn": {"value": "Audience Award"}, "annee": {"value": "2019"}}]
+            elif "P1411" in qq and '"1018"' in qq:
+                b = [{"type": {"value": "gagne"}, "prixFr": {"value": "Prix de la mise en scène"}, "prixEn": {"value": "Cannes Best Director Award"}, "annee": {"value": "2001"}},
+                     {"type": {"value": "nomme"}, "prixFr": {"value": "Oscar du meilleur réalisateur"}, "prixEn": {"value": "Academy Award for Best Director"}, "annee": {"value": "2002"}},
+                     {"type": {"value": "gagne"}, "prixFr": {"value": "César du meilleur film étranger"}, "prixEn": {"value": "César Award for Best Foreign Film"}, "annee": {"value": "2002"}}]
+            elif "P4985" in qq and '"5602"' in qq:
                 b = [{"prixLabel": {"value": "Palme d'or"}, "annee": {"value": "1990"}, "oeuvreLabel": {"value": "Sailor et Lula"}},
                      {"prixLabel": {"value": "Prix de la mise en scène du Festival de Cannes"}, "annee": {"value": "2001"}, "oeuvreLabel": {"value": "Mulholland Drive"}, "tmdbFilm": {"value": "1018"}},
                      {"prixLabel": {"value": "Oscar d'honneur"}, "annee": {"value": "2019"}}]

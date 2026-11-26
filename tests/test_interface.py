@@ -23,7 +23,7 @@ DONNEES = tempfile.mkdtemp(prefix="silencio_ui_")
 ENV = dict(os.environ, SILENCIO_DONNEES=DONNEES, SILENCIO_PORT=str(PS), SILENCIO_SANS_NAVIGATEUR="1",
            SILENCIO_TMDB=f"http://127.0.0.1:{PF}/tmdb/3", SILENCIO_TMDB_IMG=f"http://127.0.0.1:{PF}/img/",
            SILENCIO_GITHUB=f"http://127.0.0.1:{PF}/github", SILENCIO_WIKIDATA=f"http://127.0.0.1:{PF}/wikidata",
-           SILENCIO_IMDB=f"http://127.0.0.1:{PF}/imdb.tsv.gz", SILENCIO_MONDE=f"http://127.0.0.1:{PF}/monde.json")
+           SILENCIO_IMDB=f"http://127.0.0.1:{PF}/imdb.tsv.gz", SILENCIO_MONDE=f"http://127.0.0.1:{PF}/monde.json", SILENCIO_NOMINATIM=f"http://127.0.0.1:{PF}/nominatim")
 os.environ.update({k: v for k, v in ENV.items() if k.startswith("SILENCIO_")})
 import faux_services  # noqa: E402
 faux_services.lancer(PF)
@@ -146,25 +146,28 @@ with sync_playwright() as p:
     pg.wait_for_selector(".modale .res-recherche .ligne")
     capture(pg, "04_tel_ajout_recherche")
     pg.click(".modale .res-recherche .ligne")
-    pg.wait_for_selector(".modale [data-etoiles] .e")
-    box = pg.locator(".modale [data-etoiles] .e").nth(7).bounding_box()
-    pg.mouse.click(box["x"] + box["width"] * 0.25, box["y"] + box["height"] / 2)   # moitié gauche de la 8e étoile = 7,5
-    pg.click(".modale [data-plus] > button")
-    pg.click(".modale [data-ou] button[data-v=cinema]")
-    pg.fill(".modale [data-cinema]", "Le Champo")
+    pg.wait_for_selector(".modale .case-note")
+    pg.locator(".modale .case-note").nth(7).dblclick()                    # deux appuis rapides = 7,5
+    pg.click(".modale .interrupteur")
+    pg.fill(".modale [data-cine-recherche]", "Champo")
+    pg.wait_for_selector(".modale [data-cine-res] .ligne")
+    pg.click(".modale [data-cine-res] .ligne")
+    pg.fill(".modale [data-salle]", "1")
     pg.fill(".modale [data-prix]", "9")
+    pg.click(".modale [data-version] button[data-v=VO]")
     capture(pg, "05_tel_ajout_formulaire")
     pg.click(".modale [data-ok]")
     pg.wait_for_timeout(600)
     e = api("/api/etat")
     j = [x for x in e["profil"]["journal"].values() if x.get("cle") == "m:11220" and x.get("date") == time.strftime("%Y-%m-%d")]
-    assert j and j[0]["note"] == 7.5 and j[0]["ou"]["cinema"] == "Le Champo" and j[0]["prix"] == 9, j
+    assert j and j[0]["note"] == 7.5 and j[0]["ou"]["cinema"] == "Le Champo" and j[0]["ou"]["salle"] == "1" and j[0]["prix"] == 9 and j[0]["version"] == "VO", j
     assert j[0]["revision"] is True, "revisionnage détecté"
     capture(pg, "06_tel_toast")
 
     # page film (téléphone), série, personne
     pg.goto(URL + "/#/titre/m:1018")
-    pg.wait_for_selector(".cartes-stats")
+    pg.wait_for_selector(".film-tete")
+    pg.wait_for_selector(".badge-prix")
     pg.wait_for_timeout(900)
     capture(pg, "07_tel_film")
     pg.screenshot(path=os.path.join(CAPT, "07b_tel_film_long.png"), full_page=True)
@@ -200,12 +203,47 @@ with sync_playwright() as p:
     pg.wait_for_selector(".grille")
     capture(pg, "11_tel_ce_soir")
     pg.goto(URL + "/#/reglages")
-    pg.wait_for_selector(".carte h3")
+    pg.wait_for_selector(".menu-reglages")
     capture(pg, "12_tel_reglages")
+    pg.goto(URL + "/#/reglages/affichage")
+    pg.wait_for_selector("[data-plat]")
+    pg.click("[data-plat='8']")
+    pg.wait_for_timeout(400)
+    assert 8 in api("/api/etat")["profil"]["profil"]["reglages"]["plateformes"]
+    capture(pg, "12b_tel_reglages_affichage")
     pg.goto(URL + "/#/profil")
     pg.wait_for_selector(".profil-tete")
     pg.wait_for_timeout(600)
     capture(pg, "13_tel_profil")
+    pg.goto(URL + "/#/watchlist")
+    pg.wait_for_selector(".carte-wl")
+    pg.locator(".prio-bouton").nth(1).click()
+    pg.wait_for_timeout(500)
+    assert any(v.get("prio") for v in api("/api/etat")["profil"]["watchlist"].values()), "priorité"
+    capture(pg, "14_tel_watchlist")
+    pg.click("[data-dispo]")
+    pg.wait_for_timeout(800)
+    pg.goto(URL + "/#/listes")
+    pg.wait_for_selector(".ligne-liste")
+    capture(pg, "15_tel_listes")
+    pg.goto(URL + "/#/decouvrir")
+    pg.wait_for_selector(".raccourcis-decouvrir")
+    pg.wait_for_timeout(900)
+    capture(pg, "16_tel_decouvrir", plein=True)
+    pg.goto(URL + "/#/personne/5602")
+    pg.wait_for_selector(".film-tete")
+    pg.wait_for_timeout(700)
+    capture(pg, "17_tel_personne")
+    pg.goto(URL + "/#/wrapped/2026")
+    pg.wait_for_selector(".w-carte")
+    for k in range(5):
+        pg.wait_for_timeout(900)
+        capture(pg, f"18_tel_wrapped_{k}")
+        pg.mouse.click(378, 830)
+    pg.goto(URL + "/#/stats?o=personnes")
+    pg.wait_for_selector("[data-bloc=personnes]")
+    pg.wait_for_timeout(700)
+    capture(pg, "19_tel_stats_personnes")
 
     # ---------------------------------------------------------------- PC
     pc = nav.new_context(**PC)
@@ -217,23 +255,23 @@ with sync_playwright() as p:
     pp.wait_for_timeout(1500)
     capture(pp, "20_pc_accueil")
     pp.goto(URL + "/#/titre/m:1018")
-    pp.wait_for_selector(".cartes-stats")
+    pp.wait_for_selector(".film-tete")
     pp.wait_for_timeout(1200)
     capture(pp, "21_pc_film")
-    # note cliquable : 8,5 puis annulation au clavier
-    box = pp.locator(".ma-note .e").nth(8).bounding_box()
-    pp.mouse.click(box["x"] + 4, box["y"] + box["height"] / 2)
-    pp.wait_for_timeout(500)
-    assert api("/api/etat")["profil"]["titres"]["m:1018"]["note"] == 8.5
+    # anneau : toucher, puis la rangée ; annulation au clavier
+    pp.click(".anneau")
+    pp.locator(".zone-rangee .case-note").nth(8).click()
+    pp.wait_for_timeout(900)
+    assert api("/api/etat")["profil"]["titres"]["m:1018"]["note"] == 9
     pp.keyboard.press("z")
     pp.wait_for_timeout(500)
     assert api("/api/etat")["profil"]["titres"]["m:1018"]["note"] == 10, "annulation"
     pp.goto(URL + "/#/personne/5602")
-    pp.wait_for_selector(".fiche .cartes-stats")
+    pp.wait_for_selector(".film-tete")
     pp.wait_for_timeout(1500)
     capture(pp, "22_pc_personne")
     pp.screenshot(path=os.path.join(CAPT, "22b_pc_personne_long.png"), full_page=True)
-    pp.goto(URL + "/#/stats")
+    pp.goto(URL + "/#/stats?o=gouts")
     pp.wait_for_selector("[data-bloc=pays] svg")
     pp.wait_for_timeout(1500)
     capture(pp, "23_pc_stats")
@@ -283,13 +321,13 @@ with sync_playwright() as p:
     pp.keyboard.type("parasite")
     pp.wait_for_selector(".modale .res-recherche .ligne")
     pp.keyboard.press("Enter")
-    pp.wait_for_selector(".modale [data-etoiles] .e")
+    pp.wait_for_selector(".modale .case-note")
     pp.keyboard.press("8")
     pp.keyboard.press(".")
     capture(pp, "32_pc_ajout_clavier")
     pp.keyboard.press("Enter")
     pp.wait_for_timeout(600)
-    assert any(x.get("cle") == "m:496243" and x.get("note") == 8.5 and x.get("date") == time.strftime("%Y-%m-%d") for x in api("/api/etat")["profil"]["journal"].values()), "ajout au clavier"
+    assert any(x.get("cle") == "m:496243" and x.get("note") == 7.5 and x.get("date") == time.strftime("%Y-%m-%d") for x in api("/api/etat")["profil"]["journal"].values()), "ajout au clavier"
     pp.goto(URL + "/#/notifs")
     pp.wait_for_selector(".entete")
     capture(pp, "33_pc_notifs")

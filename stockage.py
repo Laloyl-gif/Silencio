@@ -432,6 +432,14 @@ class Stock:
         tmdb.append(("watchlist", cle, bool(d.get("val", True))))
         return "Watchlist"
 
+    def _a_watchlist_prio(self, trace, tmdb, d):
+        """Marque un titre de la watchlist « à voir en premier » (toujours en tête)."""
+        w = self.doc["watchlist"].get(d["cle"])
+        if not w or w.get("x"):
+            return ""
+        self._poser(trace, "watchlist", d["cle"], dict({k: v for k, v in w.items() if k != "maj"}, prio=bool(d.get("val"))))
+        return "Priorité"
+
     def _a_liste(self, trace, tmdb, d):
         l = dict(d.get("liste") or {})
         lid = l.get("id") or ("l" + uuid.uuid4().hex[:10])

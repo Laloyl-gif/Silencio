@@ -44,6 +44,8 @@ class App:
         self.img_pool = ThreadPoolExecutor(max_workers=4)
         self.precharge = {"fait": 0, "total": 0}
         self._ancien_profil = self.stock.pid
+        self._verrou_osm = threading.Lock()
+        self._osm_dernier = 0
 
     # ---- arrière-plan
     def demarrer(self):
@@ -355,6 +357,85 @@ class App:
                         for c, r in titres.items()]
         return res
 
+    def cinemas(self, q):
+        """Cinémas (OpenStreetMap / Nominatim) dont le nom contient q, en France."""
+        q = (q or "").strip()
+        if len(q) < 2:
+            return []
+        cle = q.lower()
+        cache = self.stock.appareil.setdefault("cache_cinemas", {})
+        if cle in cache:
+            return cache[cle]
+        with self._verrou_osm:                       # règle d'OpenStreetMap : une requête par seconde au plus
+            attente = 1.1 - (time.time() - self._osm_dernier)
+            if attente > 0:
+                time.sleep(attente)
+            self._osm_dernier = time.time()
+            d = requete(config.NOMINATIM, params={"q": f"cinéma {q}", "format": "jsonv2", "countrycodes": "fr",
+                                                  "limit": 10, "addressdetails": 1}, delai=15)
+        res = []
+        for x in d:
+            if x.get("type") != "cinema" and x.get("category") != "amenity":
+                continue
+            a = x.get("address") or {}
+            nom = x.get("name") or (x.get("display_name") or "").split(",")[0]
+            ville = a.get("city") or a.get("town") or a.get("village") or a.get("municipality") or ""
+            if nom and {"nom": nom, "ville": ville} not in res:
+                res.append({"nom": nom, "ville": ville})
+        cache[cle] = res
+        if len(cache) > 300:
+            cache.pop(next(iter(cache)))
+        self.stock.sauver_appareil()
+        return res
+
+    def anniversaires(self, jours=7):
+        """Les personnes vues dans au moins deux de tes titres (réalisation ou premiers rôles) qui fêtent leur
+        anniversaire dans les jours qui viennent."""
+        compte = {}
+        for c in self.cles_utiles(amis=False):
+            t = (self.stock.doc.get("titres") or {}).get(c) or {}
+            if t.get("x") or not t.get("vu"):
+                continue
+            m = self._meta(c) or {}
+            for p in set((m.get("re") or []) + (m.get("ca") or [])[:4]):
+                compte.setdefault(p, []).append(c)
+        candidats = sorted((p for p, l in compte.items() if len(l) >= 2), key=lambda p: -len(compte[p]))[:300]
+        auj = time.localtime()
+        prochains = {time.strftime("%m-%d", time.localtime(time.time() + i * 86400)): i for i in range(jours)}
+        res, manquants = [], []
+        for p in candidats:
+            d = self.tmdb.get(f"/person/{p}", ttl=120 * 86400) if self._personne_en_cache(p) else None
+            if d is None:
+                manquants.append(p)
+                continue
+            b = d.get("birthday") or ""
+            if len(b) == 10 and b[5:] in prochains:
+                res.append({"id": p, "nom": d.get("name"), "photo": d.get("profile_path"), "dans": prochains[b[5:]],
+                            "age": auj.tm_year - int(b[:4]), "deces": d.get("deathday"), "nb": len(compte[p]),
+                            "titres": compte[p][:3]})
+        if manquants:                                 # fiches téléchargées en arrière-plan, pour la prochaine fois
+            self.img_pool.submit(lambda l=manquants[:60]: [self.tmdb.get(f"/person/{x}", ttl=120 * 86400) for x in l])
+        return sorted(res, key=lambda x: (x["dans"], -x["nb"]))
+
+    def _personne_en_cache(self, pid):
+        import hashlib
+        params = {"language": config.LANGUE}
+        cle = hashlib.sha1((f"/person/{pid}" + json.dumps(params, sort_keys=True)).encode()).hexdigest()
+        return os.path.exists(os.path.join(self.tmdb.dossier, cle[:2], cle + ".json"))
+
+    def dispo(self):
+        """Pour chaque titre de ta watchlist : les plateformes d'abonnement (identifiants TMDB) en France."""
+        wl = list(_vivants((self.stock.doc or {}).get("watchlist")))[:300]
+
+        def un(c):
+            try:
+                f = self.tmdb.fournisseurs(c)
+                return c, [p["provider_id"] for p in f.get("flatrate") or []]
+            except Exception:  # noqa: BLE001
+                return c, None
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            return {c: l for c, l in ex.map(un, wl) if l is not None}
+
     def monde(self):
         f = os.path.join(config.CACHE, "monde.json")
         if not os.path.exists(f):
@@ -475,11 +556,11 @@ def fabriquer_handler(app):
                 try:
                     app.tmdb.connexion_fin(q["request_token"])
                     threading.Thread(target=app.tmdb.vider_file, daemon=True).start()
-                    cible = "/#/reglages?tmdb=ok"
+                    cible = "/#/reglages/tmdb?tmdb=ok"
                 except Exception:  # noqa: BLE001
-                    cible = "/#/reglages?tmdb=erreur"
+                    cible = "/#/reglages/tmdb?tmdb=erreur"
             else:
-                cible = "/#/reglages?tmdb=refus"
+                cible = "/#/reglages/tmdb?tmdb=refus"
             self.send_response(302)
             self.send_header("Location", cible)
             self.send_header("Content-Length", "0")
@@ -509,6 +590,15 @@ def fabriquer_handler(app):
             m = re.fullmatch(r"prix/personne/(\d+)", r)
             if m:
                 return self._envoyer(200, {"prix": wiki.prix_personne(int(m.group(1)))})
+            m = re.fullmatch(r"prix/titre/([mt]:\d+)", r)
+            if m:
+                return self._envoyer(200, wiki.prix_film(m.group(1)))
+            if r == "cinemas":
+                return self._envoyer(200, {"r": app.cinemas(q.get("q", ""))})
+            if r == "anniversaires":
+                return self._envoyer(200, {"r": app.anniversaires()})
+            if r == "dispo":
+                return self._envoyer(200, app.dispo())
             m = re.fullmatch(r"palmares/(\w+)", r)
             if m and m.group(1) in config.PRIX:
                 return self._envoyer(200, wiki.palmares(m.group(1)))

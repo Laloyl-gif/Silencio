@@ -152,7 +152,7 @@ class Notifications:
             texte += f", moyenne {sum(notes) / len(notes):.1f}"
         if m.get("m"):
             texte += f" · ton préféré : {m['m'].get('t')}"
-        self.ajouter("recap:" + code, "recap", f"Ton mois de {MOIS[mois - 1]}", texte, f"#/mois/{code}",
+        self.ajouter("recap:" + code, "recap", f"Ton mois de {MOIS[mois - 1]}", texte, f"#/wrapped/{code}",
                      (m.get("m") or {}).get("fd"))
 
     def _sorties(self):
@@ -181,7 +181,8 @@ class Notifications:
             for c, f in ex.map(un, wl):
                 if f is None:
                     continue
-                noms = sorted({p["provider_name"] for p in f.get("flatrate") or []})
+                miennes = set(((self.stock.doc or {}).get("profil") or {}).get("reglages", {}).get("plateformes") or [])
+                noms = sorted({p["provider_name"] for p in f.get("flatrate") or [] if not miennes or p["provider_id"] in miennes})
                 avant = dispo.get(c)
                 dispo[c] = noms
                 nouveaux = [n for n in noms if avant is not None and n not in avant]

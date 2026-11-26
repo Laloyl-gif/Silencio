@@ -20,12 +20,13 @@ P.profil = async (vue, args, params) => {
   const ban = doc.profil?.banniere;
   const compat = pid ? St.compat("", pid) : null;
   const base = `#/profil${pid ? "/" + encodeURIComponent(pid) : ""}`;
-  const ONGLETS = [["films", "Films"], ["journal", "Journal"], ["watchlist", "Watchlist"], ["listes", "Listes"], ["critiques", "Critiques"], ["citations", "Citations"], ["personnes", "Personnes"], ["collection", "Collection"], ["seances", "Séances"], ...(pid ? [] : [["annees", "Années"]])];
+  const ONGLETS = [["films", "Films"], ["journal", "Journal"], ["watchlist", "Watchlist"], ["listes", "Listes"], ["critiques", "Critiques"], ["citations", "Citations"], ["collection", "Collection"], ["seances", "Séances"]];
   vue.innerHTML = `
     <div class="banniere">${ban?.image ? `<img src="${S.img(ban.image, "w1280")}" alt="">` : ""}</div>
-    <div class="profil-tete">${S.avatar(pid || S.etat.appareil.profil, nom)}<div class="espace" style="min-width:0"><h1>${esc(nom)}</h1>${doc.profil?.bio ? `<div class="muet petit">${esc(doc.profil.bio)}</div>` : ""}${compat?.n ? `<div class="petit" style="color:var(--accent)">${compat.accord} % d'accord avec toi · ${compat.n} films en commun</div>` : ""}</div>
+    <div class="profil-tete">${S.avatar(pid || S.etat.appareil.profil, nom)}<div class="espace" style="min-width:0"><h1>${esc(nom)}</h1>${doc.profil?.bio ? `<div class="muet petit">${esc(doc.profil.bio)}</div>` : ""}${compat?.n ? `<div class="petit" style="color:var(--accent)">${compat.accord} % d'accord avec toi</div>` : ""}</div>
       ${pid ? "" : `<button class="icone-bouton" data-editer title="Modifier le profil">${ico("crayon")}</button><a class="icone-bouton" href="#/reglages" title="Réglages">${ico("reglages")}</a>`}</div>
-    <div class="chiffres section"><div class="chiffre"><b>${S.fmtNombre(T.filter(t => t.m?.ty !== "t").length)}</b><span>films</span></div><div class="chiffre"><b>${S.fmtNombre(T.filter(t => t.m?.ty === "t").length)}</b><span>séries</span></div><div class="chiffre"><b>${S.fmtNombre(heures)}</b><span>heures</span></div><div class="chiffre"><b>${V.filter(v => v.date?.startsWith(S.aujourdhui().slice(0, 4))).length}</b><span>cette année</span></div><div class="chiffre"><b>${S.fmtNote(moyenne(T.map(t => t.note).filter(n => n != null)))}</b><span>note moyenne</span></div></div>
+    <div class="chiffres-ligne"><span><b>${S.fmtNombre(T.filter(t => t.m?.ty !== "t").length)}</b> films</span><span><b>${S.fmtNombre(T.filter(t => t.m?.ty === "t").length)}</b> séries</span><span><b>${S.fmtNombre(heures)}</b> h</span><span><b>${S.fmtNote(moyenne(T.map(t => t.note).filter(n => n != null)))}</b> moy.</span></div>
+    ${pid ? "" : `<a class="bouton principal bouton-wrapped" href="#/wrapped/${S.aujourdhui().slice(0, 4)}">${ico("stats")} Ton année ${S.aujourdhui().slice(0, 4)}</a>`}
     <div class="onglets">${ONGLETS.map(([k, l]) => `<a href="${base}?o=${k}"><button class="${onglet === k ? "actif" : ""}">${l}</button></a>`).join("")}</div>
     <div data-contenu></div>`;
   const z = $("[data-contenu]", vue);
@@ -58,6 +59,8 @@ function ongletFilms(z, pid, T) {
   const etqs = [...new Set(T.flatMap(t => t.etiquettes || []))].sort();
   z.innerHTML = `<div class="filtres">
       <input class="champ recherche-l" data-f="q" placeholder="Titre, personne…" value="${esc(f.q)}">
+      <button class="puce ${f.plus ? "actif" : ""}" data-filtres-plus>${ico("reglages")} Filtres</button>
+      <div class="filtres-plus ${f.plus ? "" : "cache"}" style="display:contents">
       <select class="champ" data-f="type"><option value="">Films et séries</option><option value="m">Films</option><option value="t">Séries</option></select>
       <select class="champ" data-f="format"><option value="">Formats</option>${Object.entries(S.FORMATS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>
       <select class="champ" data-f="genre"><option value="">Genres</option>${genres.map(g => `<option value="${g}">${esc(S.GENRES[g] || g)}</option>`).join("")}</select>
@@ -66,11 +69,13 @@ function ongletFilms(z, pid, T) {
       <select class="champ" data-f="note"><option value="">Notes</option><option value="9">9 et plus</option><option value="8">8 et plus</option><option value="7">7 et plus</option><option value="-5">5 et moins</option><option value="sans">Sans note</option></select>
       ${etqs.length ? `<select class="champ" data-f="etiquette"><option value="">Étiquettes</option>${etqs.map(e => `<option>${esc(e)}</option>`).join("")}</select>` : ""}
       <button class="puce ${f.coeur ? "actif" : ""}" data-coeur>${ico("coeur")} Coups de cœur</button>
+      </div>
       <span class="espace"></span>
       <select class="champ" data-f="tri"><option value="vu">Vu récemment</option><option value="note">Ta note</option><option value="annee">Année</option><option value="titre">Titre</option><option value="imdb">IMDb</option><option value="ecart">Écart avec IMDb</option><option value="duree">Durée</option></select>
       <div class="segments" data-vue><button data-v="grille" title="Grille">${ico("grille")}</button><button data-v="liste" title="Liste">${ico("listes")}</button><button data-v="tableau" title="Tableau">${ico("tableau")}</button></div>
     </div><div class="mini discret" data-compte style="margin-bottom:10px"></div><div data-res></div>`;
   $$("[data-f]", z).forEach(c => { c.value = f[c.dataset.f] ?? ""; c.oninput = c.onchange = () => { f[c.dataset.f] = c.value; peindre(); }; });
+  $("[data-filtres-plus]", z).onclick = e => { f.plus = !f.plus; e.currentTarget.classList.toggle("actif", f.plus); $(".filtres-plus", z).classList.toggle("cache", !f.plus); };
   $("[data-coeur]", z).onclick = e => { f.coeur = !f.coeur; e.currentTarget.classList.toggle("actif", f.coeur); peindre(); };
   $$("[data-vue] button", z).forEach(b => b.onclick = () => { f.vue = b.dataset.v; peindre(); });
   const norm = s => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -166,16 +171,14 @@ function cartesListes(z, doc, pid) {
   const listes = Object.entries(S.vivants(doc.listes)).sort((a, b) => (b[1].maj || 0) - (a[1].maj || 0));
   const wl = Object.keys(S.vivants(doc.watchlist));
   const q = pid ? `?p=${encodeURIComponent(pid)}` : "";
-  z.innerHTML = `<div class="cartes-listes">
-    <a class="carte-liste" href="${pid ? `#/profil/${encodeURIComponent(pid)}?o=watchlist` : "#/watchlist"}">${collage(wl)}<b>Watchlist</b><span>${S.pluriel(wl.length, "titre")}</span></a>
-    ${listes.map(([id, l]) => `<a class="carte-liste" href="#/liste/${id}${q}">${collage(l.items || [])}<b>${l.privee ? ico("cadenas") + " " : ""}${esc(l.nom)}</b><span>${S.pluriel((l.items || []).length, "titre")}${l.classee ? " · classée" : ""}</span></a>`).join("")}
-  </div>`;
+  const ligne = (href, items, nom, prive) => { const vus = items.filter(c => S.monTitre(c).vu).length; return `<a class="ligne ligne-liste" href="${href}">${S.affiche(S.info(items[0]) || {}, { taille: "w92" })}<div class="corps"><b>${prive ? ico("cadenas") + " " : ""}${esc(nom)}</b><span>${S.pluriel(items.length, "titre")}</span></div>${items.length ? `<div class="part-vue"><b>${Math.round(100 * vus / items.length)} %</b><span>vu</span></div>` : ""}</a>`; };
+  z.innerHTML = `<div class="lignes">${ligne(pid ? `#/profil/${encodeURIComponent(pid)}?o=watchlist` : "#/watchlist", wl, "Watchlist")}${listes.map(([id, l]) => ligne(`#/liste/${id}${q}`, l.items || [], l.nom, l.privee)).join("")}</div>`;
 }
 P.listes = (vue) => {
   const ans = [...new Set(Object.values(S.vivants(S.moi.journal)).map(e => e.date?.slice(0, 4)).filter(Boolean))].sort().reverse();
   vue.innerHTML = `<div class="entete"><h1>Listes</h1><span class="espace"></span><button class="bouton petit principal" data-nouvelle>${ico("plus")} Nouvelle liste</button></div>
     <div data-z></div>
-    <div class="section"><div class="section-titre"><h2>Listes automatiques</h2></div><div class="cartes-listes">${ans.map(a => `<a class="carte-liste" href="#/annee/${a}">${collage([...new Set(Object.values(S.vivants(S.moi.journal)).filter(e => e.date?.startsWith(a)).map(e => e.cle))].slice(-4))}<b>Vu en ${a}</b><span>se remplit toute seule</span></a>`).join("")}<a class="carte-liste" href="#/decouvrir/commune"><div class="collage" style="display:grid;place-items:center;grid-template-columns:1fr">${ico("amis")}</div><b>Watchlist commune</b><span>ce que vous voulez tous voir</span></a></div></div>`;
+    <div class="section"><div class="section-titre"><h2>Automatiques</h2></div><div class="lignes">${ans.map(a => { const c = [...new Set(Object.values(S.vivants(S.moi.journal)).filter(e => e.date?.startsWith(a)).map(e => e.cle))]; return `<a class="ligne ligne-liste" href="#/annee/${a}">${S.affiche(S.info(c[c.length - 1]) || {}, { taille: "w92" })}<div class="corps"><b>Vu en ${a}</b><span>${S.pluriel(c.length, "titre")}</span></div></a>`; }).join("")}<a class="ligne ligne-liste" href="#/decouvrir/commune"><span class="icone-bouton grand">${ico("amis")}</span><div class="corps"><b>Watchlist commune</b><span>avec tes amis</span></div></a></div></div>`;
   cartesListes($("[data-z]", vue), S.moi, "");
   $("[data-nouvelle]", vue).onclick = () => editerListe();
 };
@@ -225,23 +228,33 @@ P.liste = (vue, args, params) => {
   peindre();
 };
 P.watchlist = (vue) => {
-  const f = S.filtresMemo.wl = S.filtresMemo.wl || { type: "", tri: "ajout", genre: "" };
-  const wl = Object.entries(S.vivants(S.moi.watchlist));
-  vue.innerHTML = `<div class="entete"><h1>Watchlist</h1><span class="espace"></span><button class="bouton petit" data-tirage>${ico("des")} Tirage au sort</button></div>
-    <div class="filtres"><div class="segments" data-type><button data-v="">Tout</button><button data-v="m">Films</button><button data-v="t">Séries</button></div><select class="champ" data-genre><option value="">Genres</option>${Object.entries(S.GENRES).filter(([k]) => +k < 10759).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select><select class="champ" data-tri><option value="ajout">Ajout récent</option><option value="annee">Année</option><option value="duree">Plus courts d'abord</option><option value="tmdb">Note TMDB</option><option value="amis">Voulus par tes amis</option></select><span class="mini discret" data-n></span></div><div data-g></div>`;
+  const f = S.filtresMemo.wl = S.filtresMemo.wl || { type: "", duree: 0, dispo: false };
+  const mesPlat = S.reglage("plateformes", []) || [];
+  vue.innerHTML = `<div class="entete"><h1>Watchlist</h1><span class="espace"></span><button class="icone-bouton grand" data-tirage aria-label="Tirage au sort">${ico("des")}</button></div>
+    <div class="filtres defile-x" style="flex-wrap:nowrap">
+      <div class="segments" data-type><button data-v="">Tout</button><button data-v="m">Films</button><button data-v="t">Séries</button></div>
+      <div class="segments" data-duree><button data-v="0">Toutes durées</button><button data-v="95">≤ 1 h 35</button><button data-v="120">≤ 2 h</button></div>
+      <button class="puce ${f.dispo ? "actif" : ""}" data-dispo>${ico("play")} Sur mes plateformes</button>
+    </div><div data-g></div>`;
   $("[data-tirage]", vue).onclick = () => S.tirage();
   const peindre = () => {
     $$("[data-type] button", vue).forEach(b => b.classList.toggle("actif", b.dataset.v === f.type));
-    const amisWl = c => Object.values(S.amis).filter(a => S.dansWatchlist(c, a)).length;
-    let l = wl.filter(([c]) => { const m = S.info(c) || {}; return (!f.type || c[0] === f.type) && (!f.genre || (m.g || []).includes(+f.genre)); });
-    const k = { ajout: ([, e]) => e.ajout || "", annee: ([c]) => S.info(c)?.a || 0, duree: ([c]) => -(S.info(c)?.r || 999), tmdb: ([c]) => S.info(c)?.vt || 0, amis: ([c]) => amisWl(c) }[f.tri];
-    l.sort((a, b) => (k(b) > k(a) ? 1 : k(b) < k(a) ? -1 : 0));
-    $("[data-n]", vue).textContent = S.pluriel(l.length, "titre");
-    $("[data-g]", vue).innerHTML = l.length ? `<div class="grille">${l.map(([c]) => { const n = amisWl(c); return S.vignette(c, { sous: [S.info(c)?.a, n ? `${n} ami${n > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ") }); }).join("")}</div>` : S.vide("Watchlist vide", "Glisse un titre vers la gauche, ou le bouton Watchlist sur sa page.");
+    $$("[data-duree] button", vue).forEach(b => b.classList.toggle("actif", +b.dataset.v === f.duree));
+    $("[data-dispo]", vue).classList.toggle("actif", f.dispo);
+    const wl = Object.entries(S.vivants(S.moi.watchlist));
+    const dispo = S.memo.dispo || {};
+    let l = wl.filter(([c]) => { const m = S.info(c) || {}; return (!f.type || c[0] === f.type) && (!f.duree || (m.ty === "m" && m.r && m.r <= f.duree)) && (!f.dispo || (dispo[c] || []).some(id => !mesPlat.length || mesPlat.includes(id))); });
+    l.sort((a, b) => (b[1].prio ? 1 : 0) - (a[1].prio ? 1 : 0) || (b[1].ajout || "").localeCompare(a[1].ajout || "") || (b[1].maj || 0) - (a[1].maj || 0));
+    const z = $("[data-g]", vue);
+    if (f.dispo && !S.memo.dispo) { z.innerHTML = S.chargement(); S.api("/api/dispo").then(d => { S.memo.dispo = d; peindre(); }).catch(() => z.innerHTML = S.vide("Hors ligne")); return; }
+    if (f.dispo && !mesPlat.length) z.insertAdjacentHTML("afterbegin", "");
+    z.innerHTML = (f.dispo && !mesPlat.length ? `<a class="carte serree" href="#/reglages/affichage" style="display:block;margin-bottom:12px">Choisis tes abonnements dans Réglages → Affichage pour filtrer seulement les tiens.</a>` : "")
+      + (l.length ? `<div class="grille">${l.map(([c, e]) => { const m = S.info(c) || {}; const amis = Object.entries(S.amis).filter(([, a]) => S.dansWatchlist(c, a)); return `<div class="carte-wl ${e.prio ? "prio" : ""}">${S.vignette(c, { info: m.ty === "t" ? (m.dep ? `${m.dep} min / ép.` : "Série") : S.duree(m.r) })}<button class="prio-bouton" data-prio="${c}" aria-label="À voir en premier">${ico("epingle")}</button>${amis.length ? `<div class="amis-wl">${amis.slice(0, 3).map(([id, a]) => S.avatar(id, a.profil?.nom, 20)).join("")}</div>` : ""}</div>`; }).join("")}</div>` : S.vide("Rien ici"));
+    $$("[data-prio]", z).forEach(b => b.onclick = ev => { ev.preventDefault(); const c = b.dataset.prio; const prio = !S.vivants(S.moi.watchlist)[c]?.prio; S.agir("watchlist_prio", { cle: c, val: prio }, { toast: prio ? "En tête de liste" : "Priorité retirée" }); });
   };
   $$("[data-type] button", vue).forEach(b => b.onclick = () => { f.type = b.dataset.v; peindre(); });
-  $("[data-tri]", vue).value = f.tri; $("[data-tri]", vue).onchange = e => { f.tri = e.target.value; peindre(); };
-  $("[data-genre]", vue).value = f.genre; $("[data-genre]", vue).onchange = e => { f.genre = e.target.value; peindre(); };
+  $$("[data-duree] button", vue).forEach(b => b.onclick = () => { f.duree = +b.dataset.v; peindre(); });
+  $("[data-dispo]", vue).onclick = () => { f.dispo = !f.dispo; peindre(); };
   peindre();
 };
 
@@ -259,12 +272,42 @@ P.amis = (vue) => {
 
 // ------------------------------------------------------------------ découvrir
 P.decouvrir = (vue, args, params) => {
-  const onglet = args[0] || "pourtoi";
+  if (!args[0]) return decouvrirAccueil(vue);
+  const onglet = args[0];
   const ONG = [["pourtoi", "Pour toi"], ["soir", "Ce soir entre amis"], ["commune", "Watchlist commune"], ["explorer", "Explorer"], ["sorties", "Sorties"], ["palmares", "Palmarès"]];
-  vue.innerHTML = `<div class="entete"><h1>Découvrir</h1></div><div class="onglets">${ONG.map(([k, l]) => `<a href="#/decouvrir/${k}"><button class="${k === onglet ? "actif" : ""}">${l}</button></a>`).join("")}</div><div data-z></div>`;
+  vue.innerHTML = `<div class="entete"><a class="icone-bouton" href="#/decouvrir" aria-label="Retour">${ico("retour")}</a><h1>${esc((ONG.find(o => o[0] === onglet) || ["", "Découvrir"])[1])}</h1></div><div data-z></div>`;
   const z = $("[data-z]", vue);
   ({ pourtoi: pourToi, soir: ceSoir, commune: commune, explorer: explorer, sorties: sorties, palmares: palmaresListe }[onglet] || pourToi)(z, params);
 };
+function decouvrirAccueil(vue) {
+  const mesPlat = S.reglage("plateformes", []) || [];
+  vue.innerHTML = `<div class="entete"><h1>Découvrir</h1></div>
+    <div class="section" data-pourtoi>${S.chargement()}</div>
+    <div class="section" data-plateformes></div>
+    <div class="section" data-sorties></div>
+    <div class="section"><div class="raccourcis-decouvrir">
+      <a class="carte" href="#/decouvrir/soir">${ico("amis")}<b>Ce soir entre amis</b></a>
+      <a class="carte" href="#/decouvrir/commune">${ico("watchlist")}<b>Watchlist commune</b></a>
+      <a class="carte" href="#/decouvrir/explorer">${ico("decouvrir")}<b>Explorer</b></a>
+      <a class="carte" href="#/decouvrir/palmares">${ico("trophee")}<b>Palmarès</b></a>
+    </div></div>
+    <div class="section" data-palmares></div>`;
+  const rangee = (titre, cles, lien) => `<div class="section-titre"><h2>${titre}</h2>${lien ? `<a class="lien" href="${lien}">Tout voir</a>` : ""}</div><div class="rangee">${cles.map(c => S.vignette(c)).join("")}</div>`;
+  const recos = r => { r.forEach(x => S.infos[x.cle] = S.infos[x.cle] || { k: x.cle, ty: x.cle[0], t: x.t, af: x.af, a: x.a ? +x.a : null, vt: x.vt }); $("[data-pourtoi]", vue).innerHTML = r.length ? rangee("Pour toi", r.slice(0, 16).map(x => x.cle), "#/decouvrir/pourtoi") : ""; };
+  if (S.memo.recos) recos(S.memo.recos); else S.api("/api/recos").then(d => { S.memo.recos = d.r; recos(d.r); }).catch(() => $("[data-pourtoi]", vue).innerHTML = "");
+  if (mesPlat.length) S.api(`/api/decouvrir?type=movie&sort_by=vote_average.desc&vote_count.gte=800&with_watch_providers=${mesPlat.join("|")}`).then(d => {
+    const cles = (d.results || []).map(x => S.retenir(x, "movie")).filter(c => c && !S.monTitre(c).vu).slice(0, 16);
+    if (cles.length) $("[data-plateformes]", vue).innerHTML = rangee("Sur tes plateformes", cles);
+  }).catch(() => {});
+  const sorties = r => { const l = r.filter(x => !x.vu).slice(0, 16); l.forEach(x => S.infos[x.cle] = S.infos[x.cle] || { k: x.cle, ty: x.cle[0], t: x.t, af: x.af, fd: x.fd, a: x.date ? +x.date.slice(0, 4) : null }); if (l.length) $("[data-sorties]", vue).innerHTML = rangee("Sorties de tes favoris", l.map(x => x.cle), "#/decouvrir/sorties"); };
+  if (Object.keys(S.vivants(S.moi.favoris)).length) { if (S.memo.sorties) sorties(S.memo.sorties); else S.api("/api/sorties").then(d => { S.memo.sorties = d.r; sorties(d.r); }).catch(() => {}); }
+  S.api("/api/palmares").then(l => {
+    const vus = new Set(St.donnees().T.map(t => t.cle));
+    const z = $("[data-palmares]", vue); if (!z) return;
+    z.innerHTML = `<div class="section-titre"><h2>Palmarès à compléter</h2></div><div class="barres-h">${Object.entries(l).map(([k, n]) => `<a class="barre-h" href="#/palmares/${k}" data-pk="${k}"><span class="lib">${esc(n)}</span><span class="piste"><i style="width:0"></i></span><span class="val">…</span></a>`).join("")}</div>`;
+    for (const k of Object.keys(l)) S.api("/api/palmares/" + k).then(pp => { const b = $(`[data-pk="${k}"]`, z); if (!b) return; const v = pp.films.filter(f => vus.has(f.cle)).length; $("i", b).style.width = Math.max(1.5, 100 * v / (pp.films.length || 1)) + "%"; $(".val", b).textContent = `${v}/${pp.films.length}`; }).catch(() => {});
+  }).catch(() => {});
+}
 function pourToi(z) {
   const peindre = r => {
     if (!r.length) { z.innerHTML = S.vide("Pas encore de recommandations", "Note quelques films 8 ou plus (ou mets des coups de cœur)."); return; }
@@ -419,26 +462,28 @@ P.reglages = async (vue, args, params) => {
   const corpsMail = encodeURIComponent(`Bonjour,\n\nJe développe Silencio, une application personnelle (non commerciale) de journal de films pour moi et quelques amis. J'aimerais l'accès à l'API Letterboxd pour synchroniser mon journal, mes notes et ma watchlist avec mon compte Letterboxd.\n\nUsage prévu : lecture et écriture de mon propre journal, de mes notes et de ma watchlist. Volume : quelques dizaines de requêtes par jour.\n\nMerci d'avance,\n${S.moi.profil.nom}`);
   vue.innerHTML = `<div class="entete"><h1>Réglages</h1></div>
   <div class="col" style="gap:14px;max-width:760px">
-    <section class="carte"><h3>Profil</h3>
+    <section class="carte" data-rub="affichage"><h3>Affichage</h3>
       <div class="flex" style="margin-top:10px">${S.avatar(a.profil, S.moi.profil.nom)}<b class="espace">${esc(S.moi.profil.nom)}</b><button class="bouton petit" data-changer>Changer de profil</button></div>
       <label class="etiquette">Titres affichés</label><div class="segments" data-titres><button data-v="fr">En français</button><button data-v="vo">En version originale</button></div>
+      <div class="ligne-champ"><span class="libelle-champ" style="width:auto;flex:1">${ico("son")} Sons</span><label class="interrupteur"><input type="checkbox" data-sons ${S.reglage("sons", true) !== false ? "checked" : ""}><span></span></label></div>
+      <label class="etiquette">Tes abonnements (filtre « sur mes plateformes »)</label><div class="puces" data-plats>${S.chargement()}</div>
     </section>
-    <section class="carte"><h3>TMDB</h3><p class="muet petit">Tes notes, ta watchlist, tes coups de cœur et tes listes de films sont recopiés sur ton compte TMDB (dès qu'il y a du réseau).</p>
+    <section class="carte" data-rub="tmdb"><h3>TMDB</h3><p class="muet petit">Tes notes, ta watchlist, tes coups de cœur et tes listes de films sont recopiés sur ton compte TMDB (dès qu'il y a du réseau).</p>
       ${a.tmdb.connecte ? `<div class="flex"><span class="pastille ok"></span><span class="espace">Connecté : <b>${esc(a.tmdb.nom)}</b>${e.file_tmdb.attente ? ` · ${e.file_tmdb.attente} modification(s) en attente` : ""}${e.file_tmdb.erreur ? ` · <span style="color:var(--rouge)">${esc(e.file_tmdb.erreur)}</span>` : ""}</span><button class="bouton petit" data-tmdb-off>Déconnecter</button></div>` : `<button class="bouton principal" data-tmdb-on>Connecter mon compte TMDB</button>`}
     </section>
-    <section class="carte"><h3>Letterboxd, IMDb, Refract</h3>
+    <section class="carte" data-rub="exporter"><h3>Letterboxd, IMDb, Refract</h3>
       <p class="muet petit">Letterboxd ne donne son API que sur demande, IMDb n'en a pas de gratuite, Refract n'en a pas : Silencio ne peut donc pas écrire directement dans ces comptes. À la place : un fichier à importer chez eux (Letterboxd, et Refract qui importe depuis Letterboxd), et les liens vers chaque film.</p>
       <div class="flex" style="flex-wrap:wrap"><a class="bouton" href="/api/export/letterboxd.csv" download target="_blank">Journal pour Letterboxd / Refract</a><a class="bouton" href="/api/export/watchlist.csv" download target="_blank">Watchlist pour Letterboxd</a><a class="bouton" href="mailto:api@letterboxd.com?subject=${encodeURIComponent("Demande d'accès à l'API Letterboxd (usage personnel)")}&body=${corpsMail}">Demander l'API Letterboxd</a></div>
       <p class="mini discret">Import sur Letterboxd : letterboxd.com/import. Notes converties sur 5 (7,5 → 4 étoiles).</p>
     </section>
-    <section class="carte"><h3>Importer ton historique</h3>
+    <section class="carte" data-rub="importer"><h3>Importer ton historique</h3>
       <label class="etiquette">Letterboxd</label><div class="mini discret" style="margin-bottom:6px">Réglages Letterboxd → Import &amp; Export → Export your data : glisse le fichier .zip ici (journal, notes, critiques, listes, watchlist, likes).</div><input type="file" accept=".zip" data-imp="letterboxd" class="champ" style="padding-top:8px">
       <label class="etiquette">IMDb</label><div class="mini discret" style="margin-bottom:6px">Tes notes (Your ratings → Export) ou ta watchlist, en .csv.</div><input type="file" accept=".csv" data-imp="imdb" class="champ" style="padding-top:8px">
       <div class="flex" style="margin-top:12px;flex-wrap:wrap"><button class="bouton" data-imp-tmdb ${a.tmdb.connecte ? "" : "disabled"}>Importer depuis TMDB</button><button class="bouton" data-imp-tp>Importer un profil Twin Picks</button></div>
       <label class="case"><input type="checkbox" data-vers-tmdb ${a.tmdb.connecte ? "checked" : "disabled"}> Envoyer aussi les notes importées vers TMDB</label>
       <div data-taches></div>
     </section>
-    <section class="carte"><h3>Synchronisation GitHub (amis et appareils)</h3>
+    <section class="carte" data-rub="amis"><h3>Synchronisation GitHub (amis et appareils)</h3>
       <p class="muet petit">Ton profil est enregistré dans un dépôt GitHub partagé avec tes amis : chacun écrit son fichier avec son propre compte, et lit ceux des autres. Hors ligne, tout est gardé et envoyé au retour du réseau.</p>
       <div class="flex" style="margin:6px 0"><span class="pastille ${!s.active ? "" : s.erreur ? "erreur" : "ok"}"></span><span class="espace petit">${!s.active ? "Pas encore réglée" : s.erreur ? esc(s.erreur) : `Synchronisée${s.derniere ? " à " + new Date(s.derniere * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : ""} · ${S.pluriel(s.amis || 0, "ami")}`}</span>${s.active ? `<button class="bouton petit" data-sync>${ico("sync")} Maintenant</button>` : ""}</div>
       <div class="grille-2"><div><label class="etiquette">Dépôt (compte/nom)</label><input class="champ" data-g="depot" value="${esc(g.depot)}" placeholder="etienne/silencio"></div><div><label class="etiquette">Branche</label><input class="champ" data-g="branche" value="${esc(g.branche || "profils")}"></div></div>
@@ -447,19 +492,31 @@ P.reglages = async (vue, args, params) => {
       <div class="flex" style="margin-top:12px"><button class="bouton principal" data-g-ok>Enregistrer</button>${s.active ? `<button class="bouton" data-versions>Historique des versions</button>` : ""}</div>
       <div data-versions-l></div>
     </section>
-    <section class="carte"><h3>Historique et annulation</h3>
+    <section class="carte" data-rub="historique"><h3>Historique et annulation</h3>
       ${(e.historique || []).length ? `<div class="lignes">${e.historique.slice(0, 12).map((h, i) => `<div class="ligne" style="padding:7px 2px"><div class="corps"><b style="font-weight:500">${esc(h.libelle)}</b><span>${new Date(h.quand * 1000).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span></div>${i === 0 ? `<button class="bouton petit" data-annuler>${ico("annuler")} Annuler</button>` : ""}</div>`).join("")}</div>` : `<p class="mini discret">Rien à annuler depuis le lancement. (Raccourci : <b>z</b>.)</p>`}
       <p class="mini discret">Chaque modification envoyée sur GitHub est aussi gardée dans l'historique du dépôt (bouton « Historique des versions »).</p>
     </section>
-    <section class="carte"><h3>Sauvegarde</h3><div class="flex" style="flex-wrap:wrap"><a class="bouton" href="/api/export/silencio.json" download target="_blank">Tout exporter (JSON)</a></div></section>
-    <section class="carte"><h3>Données</h3>
+    <section class="carte" data-rub="exporter"><h3>Sauvegarde</h3><div class="flex" style="flex-wrap:wrap"><a class="bouton" href="/api/export/silencio.json" download target="_blank">Tout exporter (JSON)</a></div></section>
+    <section class="carte" data-rub="avance"><h3>Données</h3>
       <p class="petit muet">Notes IMDb : ${e.imdb.present ? `fichier du ${new Date(e.imdb.date * 1000).toLocaleDateString("fr-FR")}` : e.imdb.en_cours ? "téléchargement en cours…" : "pas encore téléchargé"}${e.imdb.erreur ? ` · <span style="color:var(--rouge)">${esc(e.imdb.erreur)}</span>` : ""}</p>
       <button class="bouton petit" data-imdb>Mettre à jour les notes IMDb</button>
       <label class="etiquette">Clé API TMDB personnelle (facultatif)</label><div class="flex"><input class="champ" data-cle placeholder="${a.cle_tmdb ? "•••• (enregistrée)" : "par défaut : la clé de Silencio"}"><button class="bouton" data-cle-ok>OK</button></div>
     </section>
-    <section class="carte"><h3>Raccourcis clavier</h3><dl class="tableau-infos petit"><dt>n</dt><dd>Ajouter un visionnage</dd><dt>/</dt><dd>Recherche</dd><dt>1 … 0, puis « . »</dt><dd>Note (dans l'ajout) : 7 puis . = 7,5</dd><dt>Entrée</dt><dd>Valider l'ajout</dd><dt>h · j · s</dt><dd>Accueil · Journal · Stats</dd><dt>z</dt><dd>Annuler la dernière action</dd><dt>Échap</dt><dd>Fermer</dd></dl></section>
-    <p class="mini discret centre">Silencio ${esc(e.app)} · données TMDB (ce produit utilise l'API TMDB sans être approuvé ni certifié par TMDB) · notes IMDb : datasets.imdbws.com · prix : Wikidata · plateformes : JustWatch</p>
+    <section class="carte" data-rub="avance"><h3>Raccourcis clavier</h3><dl class="tableau-infos petit"><dt>n</dt><dd>Ajouter un visionnage</dd><dt>/</dt><dd>Recherche</dd><dt>1 … 0, puis « . »</dt><dd>Note (dans l'ajout) : 8 puis . = 7,5</dd><dt>Entrée</dt><dd>Valider l'ajout</dd><dt>h · j · s</dt><dd>Accueil · Journal · Stats</dd><dt>z</dt><dd>Annuler la dernière action</dd><dt>Échap</dt><dd>Fermer</dd></dl></section>
+    <p class="mini discret centre" data-rub="avance">Silencio ${esc(e.app)} · données TMDB (ce produit utilise l'API TMDB sans être approuvé ni certifié par TMDB) · notes IMDb : datasets.imdbws.com · prix : Wikidata · plateformes : JustWatch</p>
   </div>`;
+  const RUBS = [["affichage", "Affichage", "reglages"], ["tmdb", "Compte TMDB", "sync"], ["amis", "Amis et synchro", "amis"], ["importer", "Importer", "plus"], ["exporter", "Exporter", "lien"], ["historique", "Historique", "annuler"], ["avance", "Avancé", "info"]];
+  const rub = args[0];
+  $$("[data-rub]", vue).forEach(x => x.classList.toggle("cache", x.dataset.rub !== rub));
+  if (!rub) $(".col", vue).insertAdjacentHTML("afterbegin", `<div class="lignes menu-reglages">${RUBS.map(([k, l, i]) => `<a class="ligne" href="#/reglages/${k}"><span class="icone-bouton">${ico(i)}</span><div class="corps"><b>${l}</b></div>${ico("retour", "fleche-droite")}</a>`).join("")}</div>`);
+  else $(".entete h1", vue).insertAdjacentHTML("beforebegin", `<a class="icone-bouton" href="#/reglages" aria-label="Retour">${ico("retour")}</a>`), $(".entete h1", vue).textContent = RUBS.find(r => r[0] === rub)?.[1] || "Réglages";
+  $("[data-sons]", vue).onchange = ev => S.agir("profil", { champs: { reglages: { sons: ev.target.checked } } }, { toast: ev.target.checked ? "Sons activés" : "Sons coupés", sansAnnuler: true });
+  if (rub === "affichage") S.api("/api/fournisseurs_liste").then(d => {
+    const miennes = new Set(S.reglage("plateformes", []) || []);
+    const z = $("[data-plats]", vue);
+    z.innerHTML = (d.results || []).sort((a, b) => (a.display_priorities?.FR ?? 99) - (b.display_priorities?.FR ?? 99)).slice(0, 24).map(p => `<button class="puce ${miennes.has(p.provider_id) ? "actif" : ""}" data-plat="${p.provider_id}">${esc(p.provider_name)}</button>`).join("");
+    $$("[data-plat]", z).forEach(b => b.onclick = () => { const id = +b.dataset.plat; miennes.has(id) ? miennes.delete(id) : miennes.add(id); b.classList.toggle("actif"); S.memo.dispo = null; S.agir("profil", { champs: { reglages: { plateformes: [...miennes] } } }, { toast: false, sansRendu: true }); });
+  }).catch(() => $("[data-plats]", vue).innerHTML = `<span class="mini discret">Hors ligne</span>`);
   $("[data-changer]", vue).onclick = () => { if (confirm("Changer de profil sur cet appareil ?")) { S.moi = null; S.pages.choixProfil($("#vue")); } };
   $$("[data-titres] button", vue).forEach(b => { b.classList.toggle("actif", S.reglage("titres", "fr") === b.dataset.v); b.onclick = () => S.agir("profil", { champs: { reglages: { titres: b.dataset.v } } }, { toast: b.dataset.v === "vo" ? "Titres en version originale" : "Titres en français" }); });
   const on = $("[data-tmdb-on]", vue); if (on) on.onclick = async () => { try { const r = await S.api("/api/tmdb/connexion"); location.href = r.url; } catch (er) { S.toast(er.horsLigne ? "Hors ligne" : er.message); } };

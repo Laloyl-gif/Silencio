@@ -80,44 +80,55 @@ P.accueil = async (vue) => {
   const moi = S.moi;
   const journal = Object.entries(S.vivants(moi.journal)).map(([id, e]) => ({ id, ...e })).sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.maj || 0) - (a.maj || 0));
   const auj = S.aujourdhui(), an = auj.slice(0, 4), md = auj.slice(5);
-  const cetteAnnee = journal.filter(e => e.date?.startsWith(an));
-  const notesAn = cetteAnnee.map(e => e.note).filter(n => n != null);
-  const minAn = cetteAnnee.reduce((s, e) => s + ((S.info(e.cle)?.ty === "m" ? S.info(e.cle)?.r : 0) || 0), 0);
-  const ceJour = journal.filter(e => e.date && e.date.slice(5) === md && !e.date.startsWith(an) && !e.approx);
-  const wl = Object.entries(S.vivants(moi.watchlist)).sort((a, b) => (b[1].ajout || "").localeCompare(a[1].ajout || "") || (b[1].maj || 0) - (a[1].maj || 0)).map(([c]) => c);
+  const ceJour = journal.filter(e => e.date && e.date.length === 10 && e.date.slice(5) === md && !e.date.startsWith(an) && !e.approx);
+  const wl = Object.entries(S.vivants(moi.watchlist)).sort((a, b) => (b[1].prio ? 1 : 0) - (a[1].prio ? 1 : 0) || (b[1].ajout || "").localeCompare(a[1].ajout || "") || (b[1].maj || 0) - (a[1].maj || 0)).map(([c]) => c);
   const enCours = Object.entries(S.vivants(moi.series)).filter(([c, s]) => (s.episodes || []).length).sort((a, b) => (b[1].derniere || b[1].maj || 0) - (a[1].derniere || a[1].maj || 0)).map(([c]) => ({ c, p: S.prochainEpisode(c) })).filter(x => x.p).slice(0, 8);
-  const activite = [];
-  for (const [pid, a] of Object.entries(S.amis)) for (const [id, e] of Object.entries(S.vivants(a.journal))) if (e.cle && e.date) activite.push({ pid, ...e, id });
-  activite.sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.maj || 0) - (a.maj || 0));
   const e = S.etat;
+  const duree = c => { const m = S.info(c) || {}; return m.ty === "t" ? (m.dep ? `${m.dep} min / ép.` : "Série") : S.duree(m.r) || ""; };
   vue.innerHTML = `
-    <div class="entete bonjour"><h1>${bonjour()}, <i>${esc(moi.profil.nom)}</i></h1><span class="espace"></span>
-      <a class="icone-bouton" href="#/notifs" title="Notifications">${ico("cloche")}${e.notifs ? `<span class="badge">${e.notifs}</span>` : ""}</a>
-      <a class="icone-bouton" href="#/reglages" title="Réglages" style="margin-left:0">${ico("reglages")}</a></div>
-    ${enCours.length ? `<div class="section"><div class="section-titre"><h2>Reprendre</h2></div><div class="suivre">${enCours.map(({ c, p }) => { const m = S.info(c) || {}; return `<a class="carte" href="#/titre/${c}">${S.affiche(m, { taille: "w154" })}<div style="min-width:0"><b class="coupe" style="display:block">${esc(S.nomTitre(m))}</b><span class="petit ${p.futur ? "discret" : ""}" style="color:${p.futur ? "" : "var(--accent)"}">S${p.s} · É${p.e}${p.futur && p.date ? ` · le ${S.fmtDate(p.date, true)}` : ""}</span></div></a>`; }).join("")}</div></div>` : ""}
-    <div class="section"><div class="section-titre"><h2>Derniers vus</h2><a class="lien" href="#/journal">Journal</a></div>
-      ${journal.length ? `<div class="rangee">${journal.slice(0, 14).map(j => S.vignette(j.cle, { note: j.note, sous: S.fmtDate(j.date, true) })).join("")}</div>` : `<div class="carte vide"><b>Ton journal est vide</b>Ajoute ton premier film avec le bouton <b>+</b>, ou importe ton historique Letterboxd, IMDb ou TMDB dans les <a href="#/reglages" style="color:var(--accent)">réglages</a>.</div>`}</div>
-    <div class="section"><div class="section-titre"><h2>${an} en chiffres</h2><a class="lien" href="#/annee/${an}">Ton année</a></div>
-      <div class="chiffres"><div class="chiffre"><b>${cetteAnnee.length}</b><span>visionnages</span></div><div class="chiffre"><b>${S.fmtNombre(Math.round(minAn / 60))} h</b><span>de films</span></div><div class="chiffre"><b>${S.fmtNote(moyenne(notesAn))}</b><span>note moyenne</span></div><div class="chiffre"><b>${cetteAnnee.filter(j => j.ou?.type === "cinema").length}</b><span>séances de cinéma</span></div></div></div>
-    ${ceJour.length ? `<div class="section"><div class="section-titre"><h2>Ce jour-là</h2><span class="mini discret">un ${new Date().getDate()} ${S.MOIS[new Date().getMonth()]}</span></div><div class="rangee">${ceJour.map(j => S.vignette(j.cle, { note: j.note, sous: j.date.slice(0, 4) })).join("")}</div></div>` : ""}
-    <div class="section"><div class="section-titre"><h2>À voir ensuite</h2><button class="lien" data-tirage style="color:var(--accent);font-size:13px">${ico("des")} Tirage au sort</button><a class="lien" href="#/watchlist" style="margin-left:14px">Watchlist (${wl.length})</a></div>
-      ${wl.length ? `<div class="rangee">${wl.slice(0, 14).map(c => S.vignette(c)).join("")}</div>` : `<div class="mini discret">Ta watchlist est vide.</div>`}</div>
+    <div class="entete bonjour"><h1>${bonjour()}, <i>${esc(moi.profil.nom.split(" ")[0])}</i></h1><span class="espace"></span>
+      <a class="icone-bouton" href="#/notifs" aria-label="Notifications">${ico("cloche")}${e.notifs ? `<span class="badge">${e.notifs}</span>` : ""}</a>
+      <a class="icone-bouton" href="#/reglages" aria-label="Réglages" style="margin-left:0">${ico("reglages")}</a></div>
+    <div class="recherche-accueil">${ico("recherche")}<input type="search" placeholder="Film, série, personne" autocomplete="off" enterkeyhint="search" data-recherche></div>
+    <div data-resultats class="cache"></div>
+    <div data-blocs>
+    ${journal.length ? `<div class="section"><div class="section-titre"><h2>Derniers vus</h2><a class="lien" href="#/journal">Journal</a></div><div class="rangee">${journal.slice(0, 14).map(j => S.vignette(j.cle, { note: j.note })).join("")}</div></div>`
+      : `<div class="carte vide" style="margin-top:20px"><b>Ton journal est vide</b>Le bouton <b>+</b> ajoute ton premier film.</div>`}
+    ${enCours.length ? `<div class="section"><div class="section-titre"><h2>Reprendre</h2></div><div class="suivre">${enCours.map(({ c, p }) => { const m = S.info(c) || {}; return `<a class="carte" href="#/titre/${c}">${S.affiche(m, { taille: "w154" })}<div style="min-width:0"><b class="coupe" style="display:block">${esc(S.nomTitre(m))}</b><span class="petit" style="color:${p.futur ? "var(--texte-3)" : "var(--accent)"}">S${p.s} · É${p.e}${p.futur && p.date ? ` · ${S.fmtDate(p.date, true)}` : ""}</span></div></a>`; }).join("")}</div></div>` : ""}
+    ${wl.length ? `<div class="section"><div class="section-titre"><h2>À voir ensuite</h2><button class="lien" data-tirage aria-label="Tirage au sort" style="color:var(--accent)">${ico("des")}</button><a class="lien" href="#/watchlist" style="margin-left:14px">Watchlist</a></div><div class="rangee">${wl.slice(0, 14).map(c => S.vignette(c, { info: duree(c) })).join("")}</div></div>` : ""}
+    ${ceJour.length ? `<div class="section"><div class="section-titre"><h2>Ce jour-là</h2></div><div class="rangee">${ceJour.map(j => S.vignette(j.cle, { note: j.note, info: j.date.slice(0, 4) })).join("")}</div></div>` : ""}
     <div class="section" data-sorties></div>
-    ${activite.length ? `<div class="section activite"><div class="section-titre"><h2>Tes amis</h2><a class="lien" href="#/amis">Tout voir</a></div><div class="lignes">${activite.slice(0, 8).map(a => S.ligneTitre(a.cle, { glisse: false, avant: S.avatar(a.pid, S.nomDe(a.pid)), sous: `${S.nomDe(a.pid)} · ${S.fmtDate(a.date, true)}${a.revision ? " · revu" : ""}`, droite: a.note != null ? `<span class="note-txt" style="color:${S.couleurProfil(a.pid)}">${S.fmtNote(a.note)}</span>` : "" })).join("")}</div></div>` : ""}
-    <div class="section" data-epingles></div>`;
-  $("[data-tirage]", vue).onclick = () => tirage();
-  // sorties des favoris (en arrière-plan)
+    <div class="section" data-anniv></div>
+    </div>`;
+  const t = $("[data-tirage]", vue); if (t) t.onclick = () => tirage();
+  // recherche en haut : les résultats remplacent les blocs pendant qu'on tape
+  const champ = $("[data-recherche]", vue), res = $("[data-resultats]", vue), blocs = $("[data-blocs]", vue);
+  const chercher = S.debounce(async () => {
+    const q = champ.value.trim();
+    res.classList.toggle("cache", !q); blocs.classList.toggle("cache", !!q);
+    if (!q) return;
+    const loc = S.rechercheLocale(q, 4);
+    const peindre = (r = []) => {
+      const titres = [...new Set([...loc, ...r.filter(x => x.media_type !== "person").map(x => S.retenir(x)).filter(Boolean)])].slice(0, 20);
+      const pers = r.filter(x => x.media_type === "person").slice(0, 10);
+      res.innerHTML = `${pers.length ? `<div class="rangee" style="margin:14px -16px 6px">${pers.map(p => `<a class="personne-v" href="#/personne/${p.id}">${S.portrait(p.profile_path, p.name)}<b>${esc(p.name)}</b></a>`).join("")}</div>` : ""}<div class="lignes">${titres.map(c => S.ligneTitre(c)).join("")}</div>`;
+      S.activerGlisse(res);
+    };
+    peindre();
+    try { peindre(await S.rechercheTMDB(q)); } catch { /* hors ligne : tes films seulement */ }
+  }, 180);
+  champ.oninput = chercher;
+  // sorties des favoris et anniversaires (en arrière-plan)
   if (Object.keys(S.vivants(moi.favoris)).length) {
     const z = $("[data-sorties]", vue);
-    const remplir = r => { const l = r.filter(x => !x.vu).slice(0, 14); if (!l.length) return; l.forEach(x => S.infos[x.cle] = S.infos[x.cle] || { k: x.cle, ty: x.cle[0], t: x.t, af: x.af, fd: x.fd, a: x.date ? +x.date.slice(0, 4) : null }); z.innerHTML = `<div class="section-titre"><h2>Sorties de tes favoris</h2><a class="lien" href="#/decouvrir/sorties">Tout voir</a></div><div class="rangee">${l.map(x => S.vignette(x.cle, { sous: x.date ? (x.sortie ? "sorti le " : "") + S.fmtDate(x.date, true) : "date inconnue" })).join("")}</div>`; };
+    const remplir = r => { const l = r.filter(x => !x.vu).slice(0, 14); if (!l.length) return; l.forEach(x => S.infos[x.cle] = S.infos[x.cle] || { k: x.cle, ty: x.cle[0], t: x.t, af: x.af, fd: x.fd, a: x.date ? +x.date.slice(0, 4) : null }); z.innerHTML = `<div class="section-titre"><h2>Sorties de tes favoris</h2><a class="lien" href="#/decouvrir">Tout voir</a></div><div class="rangee">${l.map(x => S.vignette(x.cle, { info: x.date ? S.fmtDate(x.date, true) : "" })).join("")}</div>`; };
     if (S.memo.sorties) remplir(S.memo.sorties); else S.api("/api/sorties").then(d => { S.memo.sorties = d.r; remplir(d.r); }).catch(() => {});
   }
-  const ep = Object.entries(S.vivants(moi.graphiques)).slice(0, 2);
-  if (ep.length && S.base) {
-    const z = $("[data-epingles]", vue);
-    z.innerHTML = `<div class="section-titre"><h2>Tes graphiques</h2><a class="lien" href="#/stats">Stats</a></div><div class="stats-grille">${ep.map(([id, g]) => `<section class="graph-carte"><h3>${esc(g.titre || "")}</h3><div data-g="${id}"></div></section>`).join("")}</div>`;
-    requestAnimationFrame(() => ep.forEach(([id, g]) => St.dessiner($(`[data-g="${id}"]`, z), g)));
-  }
+  const remplirAnniv = r => {
+    if (!r.length) return;
+    $("[data-anniv]", vue).innerHTML = `<div class="section-titre"><h2>Anniversaires</h2></div><div class="rangee">${r.slice(0, 12).map(p => `<a class="personne-v anniv" href="#/personne/${p.id}">${S.portrait(p.photo, p.nom)}<b>${esc(p.nom)}</b><span>${p.dans === 0 ? "aujourd'hui" : p.dans === 1 ? "demain" : `dans ${p.dans} jours`}${p.deces ? "" : ` · ${p.age} ans`}</span></a>`).join("")}</div>`;
+  };
+  if (S.memo.anniv) remplirAnniv(S.memo.anniv); else S.api("/api/anniversaires").then(d => { S.memo.anniv = d.r; remplirAnniv(d.r); }).catch(() => {});
 };
 
 // tirage au sort dans la watchlist (ou dans des recos)
@@ -208,106 +219,106 @@ function rendreTitre(vue, cle, data) {
   const t = S.monTitre(cle), journal = S.journalDe(cle), wl = S.dansWatchlist(cle);
   const date = d.release_date || d.first_air_date || "";
   const reals = tv ? (d.created_by || []) : (d.credits?.crew || []).filter(c => c.job === "Director");
-  const duree = tv ? (d.episode_run_time?.[0] ? `${d.episode_run_time[0]} min / ép.` : "") : S.duree(d.runtime);
-  const pays = (d.production_countries || []).map(p => p.iso_3166_1).concat(tv ? d.origin_country || [] : []);
-  const amis = Object.entries(data.amis || {});
-  const notesAmis = amis.map(([, a]) => a.note).filter(n => n != null);
+  const duree = tv ? (d.episode_run_time?.[0] ? `${d.episode_run_time[0]} min` : "") : S.duree(d.runtime);
+  const pays = [...new Set((d.production_countries || []).map(p => p.iso_3166_1).concat(tv ? d.origin_country || [] : []))];
+  const amis = Object.entries(data.amis || {}).sort((a, b) => (b[1].note ?? -1) - (a[1].note ?? -1));
   const sortieFR = !tv && (d.release_dates?.results || []).find(r => r.iso_3166_1 === "FR")?.release_dates?.find(x => x.type === 3)?.release_date?.slice(0, 10);
   const fourn = data.fournisseurs || {};
-  const cast = tv ? (d.aggregate_credits?.cast || []).slice(0, 24) : (d.credits?.cast || []).slice(0, 24);
+  const cast = tv ? (d.aggregate_credits?.cast || []).slice(0, 30) : (d.credits?.cast || []).slice(0, 30);
   const crewBrut = tv ? (d.aggregate_credits?.crew || []).flatMap(c => (c.jobs || []).map(j => ({ ...c, job: j.job }))) : (d.credits?.crew || []);
-  const METIERS_AFF = [["Director", "Réalisation"], ["Screenplay", "Scénario"], ["Writer", "Scénario"], ["Novel", "Roman"], ["Director of Photography", "Image"], ["Original Music Composer", "Musique"], ["Editor", "Montage"], ["Production Design", "Décors"], ["Costume Design", "Costumes"], ["Casting", "Casting"], ["Producer", "Production"]];
-  const equipe = []; const deja = new Set();
-  for (const [job, lib] of METIERS_AFF) for (const c of crewBrut.filter(x => x.job === job)) { const k = c.id + lib; if (deja.has(k)) continue; deja.add(k); equipe.push({ id: c.id, nom: c.name, lib }); }
-  const recos = (d.recommendations?.results || []).slice(0, 16).map(r => S.retenir(r, tv ? "tv" : "movie")).filter(Boolean);
-  const imdbId = d.external_ids?.imdb_id || d.imdb_id;
-  const lbUrl = tv ? null : `https://letterboxd.com/tmdb/${d.id}/`;
+  const METIERS = [["Screenplay", "Scénario"], ["Writer", "Scénario"], ["Novel", "Roman"], ["Director of Photography", "Image"], ["Original Music Composer", "Musique"], ["Editor", "Montage"], ["Production Design", "Décors"], ["Costume Design", "Costumes"], ["Sound Designer", "Son"], ["Casting", "Casting"], ["Visual Effects Supervisor", "Effets visuels"], ["Producer", "Production"]];
+  const equipe = {};
+  for (const [job, lib] of METIERS) for (const c of crewBrut.filter(x => x.job === job)) { const l = equipe[lib] = equipe[lib] || []; if (!l.some(x => x.id === c.id) && l.length < 3) l.push({ id: c.id, nom: c.name }); }
+  const recos = (d.recommendations?.results || []).map(r => S.retenir(r, tv ? "tv" : "movie")).filter(c => c && !S.monTitre(c).vu).slice(0, 16);
+  const motscles = ((tv ? d.keywords?.results : d.keywords?.keywords) || []).slice(0, 5);
+  const ratio = d.budget > 1000 && d.revenue ? d.revenue / d.budget : null;
+  const verdict = ratio == null ? null : ratio < 1 ? ["Bide", "mauvais"] : ratio < 2.5 ? ["Juste rentable", "moyen"] : ratio < 5 ? ["Succès", "bon"] : ["Triomphe", "bon"];
+  const groupes = [["flatrate", "Abonnement"], ["free", "Gratuit"], ["ads", "Gratuit avec pub"], ["rent", "Location"], ["buy", "Achat"]].filter(([k]) => fourn[k]?.length);
+  const titreRecherche = d.title || d.name;
   const vt = "affiche-" + cle.replace(":", "-");
-  const drapeau = iso => iso && iso.length === 2 ? String.fromCodePoint(...[...iso.toUpperCase()].map(c => 127397 + c.charCodeAt(0))) : "";
-  const genresL = (d.genres || []).map(g => `<a href="#/decouvrir/explorer?genre=${g.id}&type=${tv ? "tv" : "movie"}">${esc(S.GENRES[g.id] || g.name)}</a>`).join("");
-  const motscles = (tv ? d.keywords?.results : d.keywords?.keywords) || [];
-  const fournGroupes = [["flatrate", "Abonnement"], ["free", "Gratuit"], ["ads", "Avec pub"], ["rent", "Location"], ["buy", "Achat"]].filter(([k]) => fourn[k]?.length);
-  const bloc = (titre, contenu, n, extra = "") => `<section class="bloc"><div class="section-titre"><h2>${titre}${n != null ? `<span class="compte">${n}</span>` : ""}</h2>${extra}</div>${contenu}</section>`;
   vue.className = "";
-  vue.innerHTML = `<div class="titre-page">
-    <div class="fiche" data-fiche>
-      <div class="fiche-fond">${d.backdrop_path ? `<img src="${S.img(d.backdrop_path, "w1280")}" alt="">` : ""}</div>
-      <div class="fiche-grille">
-        <div class="cover">${S.affiche(m, { taille: "w500", vt })}</div>
-        <div style="min-width:0">
-          <span class="pastille-type">${tv ? (d.type === "Miniseries" ? "Mini-série" : "Série") : esc(S.FORMATS[meta.fmt] && meta.fmt !== "long" ? S.FORMATS[meta.fmt] : "Film")}</span>
-          <h1>${esc(S.nomTitre(m))}</h1>${S.autreTitre(m) ? `<div class="vo">${esc(S.autreTitre(m))}</div>` : ""}
-          ${reals.length || pays.length ? `<div class="auteur">${pays.length ? `<span title="${esc([...new Set(pays)].map(S.pays).join(", "))}">${[...new Set(pays)].slice(0, 2).map(drapeau).join(" ")}</span>` : ""}${reals.map(r => `<a href="#/personne/${r.id}">${esc(r.name)}</a>`).join("<span class=\"discret\">·</span>")}</div>` : ""}
-          ${genresL ? `<div class="genres-ligne">${genresL}</div>` : ""}
-          <div class="notes-ligne">
-            ${data.imdb ? `<span class="note-g"><span class="pilule-note imdb">${S.fmtNote(data.imdb[0])}<small>/10</small></span><span class="sous">IMDb · ${S.fmtNombre(data.imdb[1])} votes</span></span>` : ""}
-            ${d.vote_count ? `<span class="note-g"><span class="pilule-note">${S.fmtNote(d.vote_average)}<small>/10</small></span><span class="sous">TMDB · ${S.fmtNombre(d.vote_count)} votes</span></span>` : ""}
-            ${notesAmis.length ? `<span class="note-g"><span class="pilule-note amis">${S.fmtNote(moyenne(notesAmis))}<small>/10</small></span><span class="sous">${S.pluriel(notesAmis.length, "ami")}</span></span>` : ""}
-            ${lbUrl ? `<a class="sous lien-bleu" href="${lbUrl}" target="_blank" rel="noopener">Letterboxd ${ico("lien")}</a>` : ""}
-          </div>
-          <div class="ma-note"><div data-etoiles></div><button class="coeur ${t.coeur ? "actif" : ""}" data-coeur title="Coup de cœur">${ico(t.coeur ? "coeur-plein" : "coeur")}</button><span class="espace"></span><span class="mini muet">${journal.length ? `vu ${S.pluriel(journal.length, "fois", "fois")} · dernier le ${S.fmtDate(journal[0].date, true)}` : t.vu ? "vu" : "pas encore vu"}</span>${t.vu && !journal.length ? `<button class="bouton petit" data-pasvu>Pas vu</button>` : ""}</div>
-          <div class="cartes-stats">
-            <div class="carte-stat"><span>${tv ? "Première diffusion" : "Sortie"}</span><b>${date ? S.fmtDate(sortieFR || date) : "–"}</b></div>
-            <div class="carte-stat"><span>Durée</span><b>${duree || "–"}</b></div>
-            ${tv ? `<div class="carte-stat"><span>Épisodes</span><b>${d.number_of_episodes || "–"} · ${S.pluriel(d.number_of_seasons || 0, "saison")}</b></div>` : `<div class="carte-stat"><span>Langue</span><b>${esc(S.langue(d.original_language) || "–")}</b></div>`}
-            <div class="carte-stat"><span>${d.budget ? "Budget" : "Pays"}</span><b>${d.budget ? S.argent(d.budget) : esc([...new Set(pays)].slice(0, 2).map(S.pays).join(", ") || "–")}</b></div>
-          </div>
-        </div>
+  vue.innerHTML = `<div class="fond-film">${d.poster_path ? `<img src="${S.img(d.poster_path, "w342")}" alt="">` : ""}</div>
+  <div class="page-film">
+    <header class="film-tete apparait">
+      <div class="film-affiche">${S.affiche(m, { taille: "w500", vt })}</div>
+      <div class="film-titres">
+        <h1>${esc(S.nomTitre(m))}</h1>
+        ${S.autreTitre(m) ? `<div class="vo">${esc(S.autreTitre(m))}</div>` : ""}
+        <div class="film-ligne">${date ? `<span>${date.slice(0, 4)}${tv && d.last_air_date && d.status !== "Returning Series" && d.last_air_date.slice(0, 4) !== date.slice(0, 4) ? "–" + d.last_air_date.slice(0, 4) : ""}</span>` : ""}${reals.map(r => `<a href="#/personne/${r.id}">${esc(r.name)}</a>`).join("")}</div>
+        <div class="tags">${(d.genres || []).map(g => `<a class="tag" href="#/decouvrir/explorer?genre=${g.id}&type=${tv ? "tv" : "movie"}">${esc(S.GENRES[g.id] || g.name)}</a>`).join("")}${motscles.map(k => `<a class="tag tag-mc" href="#/motcle/${k.id}">${esc(k.name)}</a>`).join("")}</div>
+        <div class="notes-logos">${data.imdb ? `<span class="note-logo">${S.LOGOS.imdb}<b>${S.fmtNote(data.imdb[0])}</b></span>` : ""}${d.vote_count ? `<span class="note-logo">${S.LOGOS.tmdb}<b>${S.fmtNote(d.vote_average)}</b></span>` : ""}</div>
       </div>
-    </div>
-    <div class="actions-titre">
-      <button class="bouton principal" data-vu>${ico("oeil")} ${journal.length || t.vu ? "Revu" : "J'ai vu"}</button>
-      <button class="bouton ${wl ? "actif" : ""}" data-wl>${ico(wl ? "watchlist-plein" : "watchlist")} Watchlist</button>
-      <button class="bouton" data-liste>${ico("listes")} Liste</button>
-      ${!tv ? `<button class="bouton ${t.collection ? "actif" : ""}" data-collection>${ico("boite")} ${t.collection ? esc(t.collection.format || "Collection") : "Collection"}</button>` : ""}
-    </div>
-    <div class="grille-blocs">
-      <div>
-        ${bloc("Synopsis", `${d.tagline ? `<p class="serif" style="font-style:italic;color:var(--texte-2);font-size:17px;margin:0 0 8px">${esc(d.tagline)}</p>` : ""}<p class="synopsis" style="margin:0">${esc(d.overview || d.overview_en || "Pas de synopsis.")}${!d.overview && d.overview_en ? ` <span class="mini discret">(en anglais)</span>` : ""}</p>`)}
-        <section class="bloc" data-mon-journal></section>
-        ${tv ? `<section class="bloc" data-saisons></section>` : ""}
-        ${cast.length ? bloc("Casting", `<div class="rangee">${cast.map(c => `<a class="personne-v" href="#/personne/${c.id}">${S.portrait(c.profile_path, c.name)}${esc(c.name)}<span>${esc(tv ? (c.roles || []).map(r => r.character).filter(Boolean)[0] || "" : c.character || "")}</span></a>`).join("")}</div>`, cast.length) : ""}
-        ${equipe.length ? bloc("Équipe", `<div class="lignes liens">${equipe.slice(0, 16).map(c => `<a class="ligne" href="#/personne/${c.id}" style="padding:9px 2px"><div class="corps"><b>${esc(c.nom)}</b></div><span class="muet petit">${esc(c.lib)}</span></a>`).join("")}</div>`, Math.min(16, equipe.length)) : ""}
-        ${data.collection?.parts?.length > 1 ? bloc(esc(data.collection.name), `<div class="rangee">${data.collection.parts.sort((a, b) => (a.release_date || "9").localeCompare(b.release_date || "9")).map(p => S.vignette(S.retenir(p, "movie"), { vu: S.monTitre("m:" + p.id).vu })).join("")}</div>`, data.collection.parts.length) : ""}
+    </header>
+    <div data-prix class="prix-film"></div>
+    <section class="film-note apparait" style="--i:1">
+      <div data-anneau></div>
+      <div class="cartes-film">
+        ${duree ? `<div class="carte-stat"><span>Durée</span><b>${duree}</b></div>` : ""}
+        ${tv ? `<div class="carte-stat"><span>Épisodes</span><b>${d.number_of_episodes || "–"}</b><small>${S.pluriel(d.number_of_seasons || 0, "saison")}</small></div>` : ""}
+        ${d.budget ? `<div class="carte-stat"><span>Budget</span><b>${S.argent(d.budget)}</b>${ratio != null ? `<div class="jauge-bide ${verdict[1]}" title="Recettes ${S.argent(d.revenue)}"><i style="width:${Math.min(100, ratio / 6 * 100)}%"></i><em style="left:${2.5 / 6 * 100}%"></em></div><small>${verdict[0]} · ×${S.fmtNote(ratio)}</small>` : `<small>recettes inconnues</small>`}</div>` : ""}
       </div>
-      <div>
-        ${amis.length ? bloc("Tes amis", amis.map(([pid, a]) => `<div class="ami-note">${S.avatar(pid, a.nom)}<span class="espace"><b style="font-weight:550">${esc(a.nom)}</b><br><span class="mini discret">${a.vu ? (a.coeur ? "coup de cœur" : "vu") : a.watchlist ? "dans sa watchlist" : ""}</span></span>${a.note != null ? `<span class="note-txt" style="font-size:17px;color:${S.couleurProfil(pid)}">${S.fmtNote(a.note)}</span>` : ""}</div>${a.critiques.map(c => `<div class="critique" style="padding-left:40px"><span class="mini discret">${S.fmtDate(c.date)}${c.note != null ? ` · ${S.fmtNote(c.note)}` : ""}</span><p>${esc(c.texte)}</p></div>`).join("")}`).join(""), amis.length) : ""}
-        ${fournGroupes.length ? bloc("Où le regarder", `<div class="fournisseurs">${fournGroupes.map(([k, l]) => `<div class="groupe"><span>${l}</span><div class="logos">${fourn[k].map(p => `<img src="${S.img(p.logo_path, "w92")}" alt="${esc(p.provider_name)}" title="${esc(p.provider_name)}">`).join("")}</div></div>`).join("")}</div>${fourn.link ? `<a class="mini lien-bleu" href="${esc(fourn.link)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:12px">Voir les offres ${ico("lien")}</a>` : ""}<div class="mini discret" style="margin-top:6px">En France · données JustWatch</div>`) : ""}
-        ${bloc("Genres et thèmes", `<div class="mini muet" style="margin-bottom:8px">Genres</div><div class="puces">${(d.genres || []).map((g, i) => `<a class="puce" href="#/decouvrir/explorer?genre=${g.id}&type=${tv ? "tv" : "movie"}"><span class="rond" style="background:${S.COULEURS[i % 8]}"></span>${esc(S.GENRES[g.id] || g.name)}</a>`).join("") || `<span class="mini discret">—</span>`}</div>${motscles.length ? `<div class="mini muet" style="margin:14px 0 8px">Mots-clés</div><div class="puces">${motscles.slice(0, 24).map(k => `<a class="puce pointillee" href="#/motcle/${k.id}">${esc(k.name)}</a>`).join("")}</div>` : ""}`)}
-        ${bloc("Détails", `<dl class="tableau-infos">
-          ${S.autreTitre(m) ? `<dt>Titre ${S.reglage("titres", "fr") === "vo" ? "français" : "original"}</dt><dd>${esc(S.autreTitre(m))}</dd>` : ""}
-          ${date ? `<dt>${tv ? "Première diffusion" : "Sortie"}</dt><dd>${S.fmtDate(date)}${sortieFR && sortieFR !== date ? ` · en France le ${S.fmtDate(sortieFR)}` : ""}</dd>` : ""}
-          ${tv && d.number_of_episodes ? `<dt>Statut</dt><dd>${esc({ "Returning Series": "en cours", Ended: "terminée", Canceled: "annulée", "In Production": "en production" }[d.status] || d.status || "")}</dd>` : ""}
-          ${d.budget ? `<dt>Budget</dt><dd>${S.argent(d.budget)}</dd>` : ""}${d.revenue ? `<dt>Recettes</dt><dd>${S.argent(d.revenue)}${d.budget ? ` · ×${S.fmtNote(d.revenue / d.budget)}` : ""}</dd>` : ""}
-          ${pays.length ? `<dt>Pays</dt><dd>${[...new Set(pays)].map(p => `${drapeau(p)} ${esc(S.pays(p))}`).join(", ")}</dd>` : ""}
-          ${d.original_language ? `<dt>Langue</dt><dd>${esc(S.langue(d.original_language))}</dd>` : ""}
-          ${(d.production_companies || []).length ? `<dt>Production</dt><dd>${d.production_companies.slice(0, 5).map(c => esc(c.name)).join(", ")}</dd>` : ""}
-          ${tv && (d.networks || []).length ? `<dt>Chaîne</dt><dd>${d.networks.map(n => esc(n.name)).join(", ")}</dd>` : ""}
-        </dl><div class="puces" style="margin-top:14px">${imdbId ? `<a class="puce" href="https://www.imdb.com/title/${imdbId}/" target="_blank" rel="noopener">IMDb ${ico("lien")}</a>` : ""}${lbUrl ? `<a class="puce" href="${lbUrl}" target="_blank" rel="noopener">Letterboxd ${ico("lien")}</a>` : ""}<a class="puce" href="https://www.themoviedb.org/${tv ? "tv" : "movie"}/${d.id}" target="_blank" rel="noopener">TMDB ${ico("lien")}</a><a class="puce" href="https://fr.wikipedia.org/w/index.php?search=${encodeURIComponent((d.title || d.name) + " " + date.slice(0, 4) + (tv ? " série" : " film"))}" target="_blank" rel="noopener">Wikipédia ${ico("lien")}</a></div>`)}
-      </div>
-    </div>
-    ${recos.length ? bloc("Dans le même esprit", `<div class="rangee">${recos.map(c => S.vignette(c, { vu: S.monTitre(c).vu })).join("")}</div>`, recos.length) : ""}
-    <p class="mini discret" style="margin-top:14px">Données TMDB. Notes IMDb : fichiers publics d'IMDb (usage personnel).</p>
-  </div>`;
-  // halo aux couleurs de l'affiche
-  if (d.poster_path) S.couleursAffiche(S.img(d.poster_path, "w92")).then(c => { const f = $("[data-fiche]", vue); if (c && f) { f.style.setProperty("--halo", c[0].join(",")); f.style.setProperty("--halo2", c[1].join(",")); } });
-  // ma note, cœur, actions
-  $("[data-etoiles]", vue).append(S.etoiles(t.note, v => S.agir("noter", { cle, note: v }, { toast: v == null ? "Note retirée" : `Noté ${S.fmtNote(v)}` })));
-  $("[data-coeur]", vue).onclick = () => S.agir("coeur", { cle, val: !t.coeur }, { toast: !t.coeur ? "Coup de cœur" : "Coup de cœur retiré" });
+    </section>
+    <div class="boutons-film apparait" style="--i:2"><button class="bouton" data-synopsis>${ico("texte")} Synopsis</button><button class="bouton" data-infos>${ico("info")} Infos</button></div>
+    ${tv ? `<section class="bloc" data-saisons></section>` : ""}
+    ${cast.length ? `<section class="section-film"><h2>Casting</h2><div class="rangee rangee-cast">${cast.map(c => `<a class="personne-v" href="#/personne/${c.id}">${S.portrait(c.profile_path, c.name)}<b>${esc(c.name)}</b><span>${esc(tv ? (c.roles || []).map(r => r.character).filter(Boolean)[0] || "" : c.character || "")}</span></a>`).join("")}</div></section>` : ""}
+    ${Object.keys(equipe).length ? `<section class="section-film"><h2>Équipe</h2><div class="grille-equipe">${Object.entries(equipe).map(([lib, l]) => `<div><span>${lib}</span>${l.map(p => `<a href="#/personne/${p.id}">${esc(p.nom)}</a>`).join("")}</div>`).join("")}</div></section>` : ""}
+    <section class="section-film"><div class="onglets onglets-film"><button data-o="toi" class="actif">Toi</button>${amis.length ? `<button data-o="amis">Amis <span class="discret">${amis.length}</span></button>` : ""}</div><div data-onglet-toi></div><div data-onglet-amis class="cache"></div></section>
+    ${groupes.length ? `<section class="section-film"><h2>Regarder</h2>${groupes.map(([k, l]) => `<div class="groupe-dispo"><span>${l}</span><div class="logos-dispo">${fourn[k].map(p => `<a href="${esc(S.lienPlateforme(p.provider_id, titreRecherche, fourn.link || "#"))}" target="_blank" rel="noopener" title="${esc(p.provider_name)}"><img src="${S.img(p.logo_path, "w92")}" alt="${esc(p.provider_name)}"></a>`).join("")}</div></div>`).join("")}</section>` : ""}
+    ${data.collection?.parts?.length > 1 ? `<section class="section-film"><h2>${esc(data.collection.name)}</h2><div class="rangee">${data.collection.parts.sort((a, b) => (a.release_date || "9").localeCompare(b.release_date || "9")).map(p => S.vignette(S.retenir(p, "movie"), { vu: S.monTitre("m:" + p.id).vu })).join("")}</div></section>` : ""}
+    ${recos.length ? `<section class="section-film"><h2>Dans le même esprit</h2><div class="rangee">${recos.map(c => S.vignette(c)).join("")}</div></section>` : ""}
+  </div>
+  <nav class="barre-film">
+    <button class="bouton principal" data-vu>${ico("oeil")} ${journal.length || t.vu ? "Revu" : "J'ai vu"}</button>
+    <button class="icone-bouton grand ${wl ? "actif" : ""}" data-wl aria-label="Watchlist">${ico(wl ? "watchlist-plein" : "watchlist")}</button>
+    <button class="icone-bouton grand" data-liste aria-label="Ajouter à une liste">${ico("listes")}</button>
+    ${!tv ? `<button class="icone-bouton grand ${t.collection ? "actif" : ""}" data-collection aria-label="Collection">${ico("boite")}</button>` : ""}
+  </nav>`;
+  // couleurs de l'affiche : fond, halos, couleur d'accent de la page
+  if (d.poster_path) S.couleursAffiche(S.img(d.poster_path, "w92")).then(c => {
+    if (!c || !location.hash.includes(cle)) return;
+    const a = S.accentLisible(c[0]);
+    document.body.style.setProperty("--accent-film", a.join(","));
+    document.body.style.setProperty("--accent-film-2", S.accentLisible(c[1]).join(","));
+  });
+  // ta note : l'anneau, toucher pour noter
+  const an = S.anneau(t.note, v => S.agir("noter", { cle, note: v }, { toast: v == null ? "Note retirée" : `Noté ${S.fmtNote(v)}`, sansRendu: true }));
+  an.insertAdjacentHTML("beforeend", `<button class="coeur ${t.coeur ? "actif" : ""}" data-coeur aria-label="Coup de cœur">${ico(t.coeur ? "coeur-plein" : "coeur")}</button>`);
+  $("[data-anneau]", vue).append(an);
+  $("[data-coeur]", vue).onclick = ev => { const b = ev.currentTarget; const nv = !b.classList.contains("actif"); b.classList.toggle("actif", nv); b.innerHTML = ico(nv ? "coeur-plein" : "coeur"); b.classList.remove("rebond"); void b.offsetWidth; b.classList.add("rebond"); S.agir("coeur", { cle, val: nv }, { toast: nv ? "Coup de cœur" : "Cœur retiré", sansRendu: true }); };
   $("[data-vu]", vue).onclick = () => S.ouvrirAjout(cle);
-  $("[data-wl]", vue).onclick = () => S.agir("watchlist", { cle, val: !wl }, { toast: wl ? "Retiré de la watchlist" : "Ajouté à la watchlist" });
+  $("[data-wl]", vue).onclick = () => S.agir("watchlist", { cle, val: !wl }, { toast: wl ? "Retiré de la watchlist" : "Dans ta watchlist" });
   $("[data-liste]", vue).onclick = () => S.choisirListe(cle);
-  const pv = $("[data-pasvu]", vue); if (pv) pv.onclick = () => S.agir("vu", { cle, val: false });
   const col = $("[data-collection]", vue); if (col) col.onclick = () => collection(cle);
-  monJournal($("[data-mon-journal]", vue), cle, t, journal);
+  $("[data-synopsis]", vue).onclick = () => S.ouvrirModale({ titre: "Synopsis", corps: `${d.tagline ? `<p class="serif" style="font-style:italic;color:var(--texte-2);font-size:17px;margin-top:0">${esc(d.tagline)}</p>` : ""}<p class="synopsis" style="font-size:16px">${esc(d.overview || d.overview_en || "Pas de synopsis.")}</p>` });
+  $("[data-infos]", vue).onclick = () => S.ouvrirModale({ titre: "Infos", corps: `<dl class="tableau-infos">
+    ${date ? `<dt>${tv ? "Première diffusion" : "Sortie"}</dt><dd>${S.fmtDate(date)}</dd>` : ""}${sortieFR && sortieFR !== date ? `<dt>En France</dt><dd>${S.fmtDate(sortieFR)}</dd>` : ""}
+    ${tv && d.status ? `<dt>Statut</dt><dd>${esc({ "Returning Series": "En cours", Ended: "Terminée", Canceled: "Annulée", "In Production": "En production" }[d.status] || d.status)}</dd>` : ""}
+    ${pays.length ? `<dt>Pays</dt><dd>${pays.map(p => esc(S.pays(p))).join(", ")}</dd>` : ""}
+    ${d.revenue ? `<dt>Recettes</dt><dd>${S.argent(d.revenue)}</dd>` : ""}
+    ${(d.production_companies || []).length ? `<dt>Production</dt><dd>${d.production_companies.slice(0, 6).map(c => esc(c.name)).join(", ")}</dd>` : ""}
+    ${tv && (d.networks || []).length ? `<dt>Chaîne</dt><dd>${d.networks.map(n => esc(n.name)).join(", ")}</dd>` : ""}
+  </dl>` });
+  // onglets Toi / Amis
+  const toi = $("[data-onglet-toi]", vue), am = $("[data-onglet-amis]", vue);
+  monJournal(toi, cle, t, journal);
+  am.innerHTML = amis.map(([pid, a]) => { const ec = a.note != null && t.note != null ? a.note - t.note : null; return `<div class="ami-note"><a href="#/profil/${encodeURIComponent(pid)}">${S.avatar(pid, a.nom)}</a><span class="espace"><b>${esc(a.nom)}</b>${a.coeur ? ` <span style="color:var(--rouge)">${ico("coeur-plein")}</span>` : ""}${!a.vu && a.watchlist ? `<br><span class="mini discret">veut le voir</span>` : ""}</span>${a.note != null ? `<span class="note-ami">${S.fmtNote(a.note)}</span>` : ""}</div>${a.critiques.map(c => `<div class="critique" style="padding-left:42px"><p>${esc(c.texte)}</p></div>`).join("")}`; }).join("");
+  $$(".onglets-film button", vue).forEach(b => b.onclick = () => { $$(".onglets-film button", vue).forEach(x => x.classList.toggle("actif", x === b)); toi.classList.toggle("cache", b.dataset.o !== "toi"); am.classList.toggle("cache", b.dataset.o !== "amis"); });
   if (tv) saisons($("[data-saisons]", vue), cle, d);
+  // récompenses (Wikidata), sans bloquer la page
+  const pz = $("[data-prix]", vue);
+  const peindrePrix = r => {
+    if (!r || (!r.gagnes.length && !r.nominations.length)) return;
+    pz.innerHTML = `${r.gagnes.map(p => `<span class="badge-prix">${ico("trophee")}${esc(p.prix)}${p.annee ? ` <em>${p.annee}</em>` : ""}</span>`).join("")}${r.nominations.length ? `<button class="badge-prix nomination" data-nom>+ ${S.pluriel(r.nominations.length, "nomination")}</button><div class="cache liste-nominations">${r.nominations.map(p => `<span>${esc(p.prix)}${p.annee ? ` · ${p.annee}` : ""}</span>`).join("")}</div>` : ""}`;
+    const b = $("[data-nom]", pz); if (b) b.onclick = () => $(".liste-nominations", pz).classList.toggle("cache");
+  };
+  if (S.memo["prix:" + cle]) peindrePrix(S.memo["prix:" + cle]);
+  else S.api("/api/prix/titre/" + cle).then(r => { S.memo["prix:" + cle] = r; if (location.hash.includes(cle)) peindrePrix(r); }).catch(() => {});
 }
 
 function monJournal(z, cle, t, journal) {
   const cit = t.citations || [], et = t.etiquettes || [], det = Object.entries(t.detail || {}).filter(([, v]) => v);
   const LIB = { scenario: "Scénario", realisation: "Mise en scène", jeu: "Jeu", image: "Image", musique: "Musique", son: "Son" };
-  z.innerHTML = `<div class="section-titre"><h2>Ton journal${journal.length ? `<span class="compte">${journal.length}</span>` : ""}</h2></div>
-    ${journal.length ? `<div class="lignes">${journal.map(j => `<div class="ligne" data-j="${j.id}" style="cursor:pointer"><div class="jour"><b>${+j.date.slice(8, 10) || ""}</b><span>${S.MOIS_C[+j.date.slice(5, 7) - 1] || ""} ${j.date.slice(2, 4)}</span></div><div class="corps"><span class="icones-ligne">${j.revision ? ico("revision") : ""}${j.ou?.type === "cinema" ? ico("ticket") + `<span class="mini">${esc(j.ou.cinema || "")}${j.ou.salle ? " · " + esc(j.ou.salle) : ""}</span>` : j.ou?.nom ? ico(j.ou.type === "support" ? "disque" : "play") + `<span class="mini">${esc(j.ou.nom)}</span>` : ""}${j.version ? `<span class="mini">${esc(j.version)}</span>` : ""}${(j.avec || []).length ? `<span class="mini">avec ${esc(j.avec.map(a => S.amis[a]?.profil?.nom || a).join(", "))}</span>` : ""}${j.prive ? ico("cadenas") : ""}</span>${j.critique ? `<div class="petit" style="color:#d6d4df;white-space:pre-wrap;margin-top:4px">${esc(j.critique)}${j.critique_privee ? ` <span class="discret">${ico("cadenas")}</span>` : ""}</div>` : ""}</div><div class="droite">${j.note != null ? `<span class="note-txt">${S.fmtNote(j.note)}</span>` : ""}${ico("crayon")}</div></div>`).join("")}</div>` : `<div class="mini discret">Aucun visionnage au journal.</div>`}
+  z.innerHTML = `${journal.length ? `<div class="lignes">${journal.map(j => `<div class="ligne" data-j="${j.id}" style="cursor:pointer"><div class="jour"><b>${+j.date.slice(8, 10) || ""}</b><span>${S.MOIS_C[+j.date.slice(5, 7) - 1] || ""} ${j.date.slice(2, 4)}</span></div><div class="corps"><span class="icones-ligne">${j.revision ? ico("revision") : ""}${j.ou?.type === "cinema" ? ico("ticket") + `<span class="mini">${esc(j.ou.cinema || "")}${j.ou.salle ? " · " + esc(j.ou.salle) : ""}</span>` : j.ou?.nom ? ico(j.ou.type === "support" ? "disque" : "play") + `<span class="mini">${esc(j.ou.nom)}</span>` : ""}${j.version ? `<span class="mini">${esc(j.version)}</span>` : ""}${(j.avec || []).length ? `<span class="mini">avec ${esc(j.avec.map(a => S.amis[a]?.profil?.nom || a).join(", "))}</span>` : ""}${j.prive ? ico("cadenas") : ""}</span>${j.critique ? `<div class="petit" style="color:#d6d4df;white-space:pre-wrap;margin-top:4px">${esc(j.critique)}${j.critique_privee ? ` <span class="discret">${ico("cadenas")}</span>` : ""}</div>` : ""}</div><div class="droite">${j.note != null ? `<span class="note-txt">${S.fmtNote(j.note)}</span>` : ""}${ico("crayon")}</div></div>`).join("")}</div>` : `<div class="mini discret" style="padding:6px 0">Pas encore dans ton journal.</div>`}
     ${det.length ? `<div class="mini-notes" style="margin-top:14px">${det.map(([k, v]) => `<span class="petit muet">${LIB[k] || k}</span><div class="flex"><div class="jauge" style="width:140px"><i style="width:${v * 10}%"></i></div><span class="mini">${v}/10</span></div>`).join("")}</div>` : ""}
     <div style="margin-top:14px">${cit.map((c, i) => `<div class="citation flex haut"><span class="espace">${esc(c)}</span><button class="discret" data-cit-suppr="${i}">${ico("x")}</button></div>`).join("")}</div>
     <div class="puces" style="margin-top:10px">${et.map(e => `<span class="puce actif">${esc(e)} <button class="x" data-et-suppr="${esc(e)}">${ico("x")}</button></span>`).join("")}<button class="puce" data-cit>${ico("citation")} Citation</button><button class="puce" data-et>${ico("plus")} Étiquette</button>${t.prive ? `<button class="puce actif" data-prive>${ico("cadenas")} Film caché</button>` : `<button class="puce" data-prive>${ico("cadenas")} Cacher ce film</button>`}</div>`;
@@ -414,28 +425,51 @@ P.personne = async (vue, args) => {
   const tousVus = [...new Set(depts.flatMap(dp => [...parDept[dp].values()]).map(f => f.cle).filter(c => vus.has(c)))];
   const ordre = [...classement, ...tousVus.filter(c => !classement.includes(c)).sort((a, b) => (S.monTitre(b).note ?? -1) - (S.monTitre(a).note ?? -1))];
   const age = (n, m) => { if (!n) return ""; const f = m ? new Date(m) : new Date(); const a = f.getFullYear() - +n.slice(0, 4) - ((f.getMonth() + 1) * 100 + f.getDate() < +n.slice(5, 7) * 100 + +n.slice(8, 10) ? 1 : 0); return `${a} ans`; };
+  const ongletP = S.filtresMemo["pers_o_" + pid] = S.filtresMemo["pers_o_" + pid] || "filmo";
+  const vusN = cLong.v + cDocu.v + cSerie.v, totN = cLong.n + cDocu.n + cSerie.n;
   vue.innerHTML = `
-    <div class="fiche"><div class="fiche-grille"><div class="cover" style="max-width:220px">${S.portrait(d.profile_path, d.name)}</div><div style="min-width:0">
-      <span class="pastille-type">${esc(DEPT[d.known_for_department] || d.known_for_department || "Personne")}</span>
-      <h1>${esc(d.name)}</h1>
-      <div class="vo">${d.birthday ? `${d.deathday ? d.birthday.slice(0, 4) + "–" + d.deathday.slice(0, 4) + ` (${age(d.birthday, d.deathday)})` : age(d.birthday)}` : ""}${d.place_of_birth ? ` · ${esc(d.place_of_birth)}` : ""}</div>
-      <div class="flex" style="margin-top:14px;flex-wrap:wrap"><button class="bouton ${fav ? "actif" : ""}" data-fav>${ico(fav ? "coeur-plein" : "coeur")} ${fav ? "Favori" : "Ajouter aux favoris"}</button>${d.imdb_id ? `<a class="puce" href="https://www.imdb.com/name/${d.imdb_id}/" target="_blank" rel="noopener">IMDb ${ico("lien")}</a>` : ""}<a class="puce" href="https://www.themoviedb.org/person/${pid}" target="_blank" rel="noopener">TMDB ${ico("lien")}</a></div>
-      <div class="notes-ligne">${mesNotes.length ? `<span class="pilule-note moi">${S.fmtNote(moyenne(mesNotes.map(x => S.monTitre(x.cle).note)))}<small>/10</small></span><span class="sous">ta moyenne · ${S.pluriel(mesNotes.length, "titre noté", "titres notés")}</span>` : ""}</div>
-      <div class="cartes-stats">
-        ${cLong.n ? `<div class="carte-stat"><span>Longs métrages</span><b>${cLong.v}/${cLong.n}</b><div class="jauge" style="margin-top:8px;height:5px"><i style="width:${100 * cLong.v / cLong.n}%"></i></div></div>` : ""}
-        ${cCourt.n ? `<div class="carte-stat"><span>Courts métrages</span><b>${cCourt.v}/${cCourt.n}</b><div class="jauge" style="margin-top:8px;height:5px"><i style="width:${100 * cCourt.v / cCourt.n}%"></i></div></div>` : ""}
-        ${cDocu.n ? `<div class="carte-stat"><span>Documentaires</span><b>${cDocu.v}/${cDocu.n}</b><div class="jauge" style="margin-top:8px;height:5px"><i style="width:${100 * cDocu.v / cDocu.n}%"></i></div></div>` : ""}
+    <div class="page-film" style="padding-bottom:40px">
+    <header class="film-tete apparait">
+      <div class="film-affiche">${S.portrait(d.profile_path, d.name)}</div>
+      <div class="film-titres">
+        <h1>${esc(d.name)}</h1>
+        <div class="film-ligne"><span>${esc(DEPT[d.known_for_department] || d.known_for_department || "")}</span>${d.birthday ? `<span>${d.deathday ? d.birthday.slice(0, 4) + "–" + d.deathday.slice(0, 4) : age(d.birthday)}</span>` : ""}</div>
+        <div class="flex" style="margin-top:12px"><button class="bouton ${fav ? "actif" : ""}" data-fav>${ico(fav ? "coeur-plein" : "coeur")} ${fav ? "Favori" : "Favori ?"}</button></div>
+      </div>
+    </header>
+    <section class="film-note apparait" style="--i:1">
+      <div data-anneau-p></div>
+      <div class="cartes-film">
+        ${totN ? `<div class="carte-stat"><span>Vus</span><b>${vusN}/${totN}</b><div class="jauge" style="margin-top:8px;height:5px"><i style="width:${100 * vusN / totN}%"></i></div></div>` : ""}
+        ${cLong.n ? `<div class="carte-stat"><span>Longs</span><b>${cLong.v}/${cLong.n}</b></div>` : ""}
+        ${cCourt.n ? `<div class="carte-stat"><span>Courts</span><b>${cCourt.v}/${cCourt.n}</b></div>` : ""}
+        ${cDocu.n ? `<div class="carte-stat"><span>Documentaires</span><b>${cDocu.v}/${cDocu.n}</b></div>` : ""}
         ${cSerie.n ? `<div class="carte-stat"><span>Séries</span><b>${cSerie.v}/${cSerie.n}</b></div>` : ""}
       </div>
-    </div></div></div>
-    ${mesNotes.length > 1 ? `<div class="graph-carte" style="margin-top:18px"><h3>Courbe de carrière</h3><div class="sous-titre">Tes notes au fil de sa ${esc((DEPT[st.dept] || "").toLowerCase())} · IMDb en pointillé</div><div data-courbe style="margin-top:8px"></div><div class="flex" style="margin-top:6px"><a class="mini" style="color:var(--accent)" href="#/labo" data-labo>Comparer avec d'autres dans le labo →</a></div></div>` : ""}
-    ${ordre.length ? `<div class="bloc"><div class="section-titre"><h2>Ton classement<span class="compte">${ordre.length}</span></h2><span class="mini discret">glisse pour réordonner</span></div><div class="lignes classement" data-classement>${ordre.map((c, i) => `<div class="ligne" data-cle="${c}" draggable="false"><span class="rang">${i + 1}</span>${S.affiche(S.info(c) || {}, { taille: "w92" })}<a class="corps" href="#/titre/${c}"><b>${esc(S.nomTitre(S.info(c)))}</b><span>${S.info(c)?.a || ""}</span></a><span class="note-txt">${S.fmtNote(S.monTitre(c).note)}</span><span class="poignee">${ico("poignee")}</span></div>`).join("")}</div></div>` : ""}
-    <div class="grille-blocs"><div data-prix></div><div data-collab></div></div>
-    <div class="bloc"><div class="section-titre"><h2>Filmographie<span class="compte">${filmo.length}</span></h2></div>
-      <div class="onglets">${depts.map(dp => `<button data-dept="${esc(dp)}" class="${dp === st.dept ? "actif" : ""}">${esc(DEPT[dp] || dp)} <span class="mini discret">${parDept[dp].size}</span></button>`).join("")}</div>
+    </section>
+    <div class="onglets onglets-film" style="margin-top:22px">${[["filmo", "Filmo"], ["classement", "Classement"], ["courbe", "Courbe"], ["prix", "Prix"], ["collab", "Collaborateurs"]].map(([k, l]) => `<button data-op="${k}" class="${ongletP === k ? "actif" : ""}">${l}</button>`).join("")}</div>
+    <div data-panneau="filmo"><div class="onglets">${depts.map(dp => `<button data-dept="${esc(dp)}" class="${dp === st.dept ? "actif" : ""}">${esc(DEPT[dp] || dp)}</button>`).join("")}</div>
       <div class="filtres"><div class="segments" data-vu><button data-v="tous">Tous</button><button data-v="vus">Vus</button><button data-v="pasvus">Pas vus</button></div></div>
-      <div class="grille" data-filmo></div></div>
-    ${d.biography ? `<div class="bloc"><div class="section-titre"><h2>Biographie</h2></div><p class="synopsis" data-bio style="max-height:9.5em;overflow:hidden">${esc(d.biography)}</p><button class="mini" style="color:var(--accent)" data-bio-plus>Lire la suite</button></div>` : ""}`;
+      <div class="grille" data-filmo></div>
+      ${d.biography ? `<button class="bouton" data-bio-ouvrir style="margin-top:18px;width:100%">${ico("texte")} Biographie</button>` : ""}</div>
+    <div data-panneau="classement">${ordre.length ? `<div class="lignes classement" data-classement>${ordre.map((c, i) => `<div class="ligne" data-cle="${c}"><span class="rang">${i + 1}</span>${S.affiche(S.info(c) || {}, { taille: "w92" })}<a class="corps" href="#/titre/${c}"><b>${esc(S.nomTitre(S.info(c)))}</b><span>${S.info(c)?.a || ""}</span></a><span class="note-txt">${S.fmtNote(S.monTitre(c).note)}</span><span class="poignee">${ico("poignee")}</span></div>`).join("")}</div><p class="mini discret">Glisse les poignées pour réordonner.</p>` : S.vide("Aucun titre vu")}</div>
+    <div data-panneau="courbe">${mesNotes.length > 1 ? `<div data-courbe></div><a class="bouton" data-labo href="#/labo" style="margin-top:12px">${ico("labo")} Comparer dans le labo</a>` : S.vide("Note au moins deux titres")}</div>
+    <div data-panneau="prix"><div data-prix>${S.chargement()}</div></div>
+    <div data-panneau="collab"><div data-collab></div></div>
+    </div>`;
+  const montrerP = k => { S.filtresMemo["pers_o_" + pid] = k; $$("[data-op]", vue).forEach(b => b.classList.toggle("actif", b.dataset.op === k)); $$("[data-panneau]", vue).forEach(x => x.classList.toggle("cache", x.dataset.panneau !== k)); if (k === "courbe") dessinerCourbe(); };
+  $$("[data-op]", vue).forEach(b => b.onclick = () => montrerP(b.dataset.op));
+  const notesP = mesNotes.map(x => S.monTitre(x.cle).note);
+  $("[data-anneau-p]", vue).append(S.anneau(notesP.length ? Math.round(moyenne(notesP) * 10) / 10 : null, null, { lecture: true, libelle: "ta moyenne" }));
+  const bo = $("[data-bio-ouvrir]", vue); if (bo) bo.onclick = () => S.ouvrirModale({ titre: d.name, corps: `<p class="synopsis" style="font-size:15.5px">${esc(d.biography)}</p>` });
+  let courbeFaite = false;
+  const dessinerCourbe = () => {
+    const cz = $("[data-courbe]", vue); if (!cz || courbeFaite) return; courbeFaite = true;
+    const pts = mesNotes.map(x => { const m = S.info(x.cle) || {}; return { x: +(x.date || "0").slice(0, 4), y: S.monTitre(x.cle).note, ir: m.ir, lib: `${S.nomTitre(m)} (${(x.date || "").slice(0, 4)})`, cle: x.cle }; }).sort((a, b) => a.x - b.x);
+    const series = [{ nom: "Ta note", couleur: S.COULEURS[0], relier: true, lisse: false, points: pts }, { nom: "IMDb", couleur: S.COULEURS[3], pointille: true, relier: true, lisse: false, points: pts.filter(p => p.ir).map(p => ({ ...p, y: p.ir })) }];
+    cz.innerHTML = G.legende(series) + "<div></div>";
+    requestAnimationFrame(() => G.points(cz.lastElementChild, { series, x: { format: d3.format("d") }, y: { domaine: [0, 10] }, hauteur: 260 }));
+  };
   const remplirFilmo = () => {
     const l = filmo.filter(f => st.vu === "tous" || (st.vu === "vus" ? vus.has(f.cle) : !vus.has(f.cle)));
     $("[data-filmo]", vue).innerHTML = l.map(f => S.vignette(f.cle, { vu: vus.has(f.cle), sous: [f.date ? f.date.slice(0, 4) : "à venir", [...f.roles][0] && st.dept === "Acting" ? [...f.roles][0] : ""].filter(Boolean).join(" · ") })).join("") || S.vide("Rien ici");
@@ -445,16 +479,8 @@ P.personne = async (vue, args) => {
   $$("[data-dept]", vue).forEach(b => b.onclick = () => { st.dept = b.dataset.dept; S.rafraichir(true); });
   remplirFilmo();
   $("[data-fav]", vue).onclick = () => S.agir("favori", { personne: { id: pid, nom: d.name, photo: d.profile_path, metier: { Directing: "real", Acting: "acteur", Camera: "image", Sound: "musique", Writing: "scen", Editing: "montage" }[d.known_for_department] || "" }, val: !fav }, { toast: fav ? "Retiré des favoris" : `${d.name} ajouté à tes favoris` });
-  const bio = $("[data-bio-plus]", vue); if (bio) bio.onclick = () => { $("[data-bio]", vue).style.maxHeight = "none"; bio.remove(); };
   const lab = $("[data-labo]", vue); if (lab) lab.onclick = () => { S.filtresMemo.labo = { mode: "personnes", vue: "courbe", dim: "annee", mes: "moy_note", series: "aucune", profils: [""], personnes: [{ id: pid, nom: d.name }], role: st.dept === "Acting" ? "acteur" : st.dept === "Directing" ? "real" : "tous", x: "annee", y: "note", imdb: true, filtres: {}, top: 15 }; S.filtresMemo.laboId = null; };
-  // courbe de carrière
-  const cz = $("[data-courbe]", vue);
-  if (cz) {
-    const pts = mesNotes.filter(x => x.cle).map(x => { const m = S.info(x.cle) || {}; return { x: +(x.date || "0").slice(0, 4), y: S.monTitre(x.cle).note, ir: m.ir, lib: `${S.nomTitre(m)} (${(x.date || "").slice(0, 4)})`, cle: x.cle }; }).sort((a, b) => a.x - b.x);
-    const series = [{ nom: "Ta note", couleur: S.COULEURS[0], relier: true, lisse: false, points: pts }, { nom: "IMDb", couleur: S.COULEURS[3], pointille: true, relier: true, lisse: false, points: pts.filter(p => p.ir).map(p => ({ ...p, y: p.ir })) }];
-    cz.innerHTML = G.legende(series) + "<div></div>";
-    requestAnimationFrame(() => G.points(cz.lastElementChild, { series, x: { titre: "Année", format: d3.format("d") }, y: { domaine: [0, 10] }, hauteur: 240 }));
-  }
+  montrerP(ongletP);
   // classement : glisser-déposer par la poignée
   const cl = $("[data-classement]", vue);
   if (cl) {
@@ -472,11 +498,11 @@ P.personne = async (vue, args) => {
   // prix (Wikidata)
   const pz = $("[data-prix]", vue);
   S.api("/api/prix/personne/" + pid).then(r => {
-    if (!r.prix.length) return;
+    if (!r.prix.length) { pz.innerHTML = S.vide("Aucun prix connu"); return; }
     const grands = r.prix.filter(p => /oscar|academy award|palme|césar|cesar|lion d|ours d|golden|bafta|prix d'interprétation|grand prix|goya|emmy/i.test(p.prix));
     const l = (grands.length ? grands : r.prix).slice(0, 30);
-    pz.className = "bloc"; pz.innerHTML = `<div class="section-titre"><h2>Prix<span class="compte">${r.prix.length}</span></h2><span class="mini discret">Wikidata</span></div><div class="lignes">${l.map(p => `<div class="ligne" style="padding:7px 2px"><span class="jour"><b style="font-size:14px">${p.annee || ""}</b></span><div class="corps"><b style="white-space:normal">${esc(p.prix)}</b>${p.oeuvre ? `<span>${p.cle ? `<a href="#/titre/${p.cle}" style="color:var(--accent)">${esc(p.oeuvre)}</a>` : esc(p.oeuvre)}</span>` : ""}</div></div>`).join("")}</div>`;
-  }).catch(() => {});
+    pz.innerHTML = `<div class="lignes">${l.map(p => `<div class="ligne" style="padding:7px 2px"><span class="jour"><b style="font-size:14px">${p.annee || ""}</b></span><div class="corps"><b style="white-space:normal">${esc(p.prix)}</b>${p.oeuvre ? `<span>${p.cle ? `<a href="#/titre/${p.cle}" style="color:var(--accent)">${esc(p.oeuvre)}</a>` : esc(p.oeuvre)}</span>` : ""}</div></div>`).join("")}</div>`;
+  }).catch(() => { pz.innerHTML = S.vide("Hors ligne"); });
   // collaborateurs (d'après les films vus)
   const collab = new Map();
   for (const c of tousVus) {
@@ -485,6 +511,7 @@ P.personne = async (vue, args) => {
     for (const [role, ids] of roles) for (const id of ids) { if (id === pid) continue; const k = id; const e = collab.get(k) || { id, roles: new Set(), films: new Set() }; e.roles.add(role); e.films.add(c); collab.set(k, e); }
   }
   const tops = [...collab.values()].filter(e => e.films.size >= 2).sort((a, b) => b.films.size - a.films.size).slice(0, 12);
-  if (tops.length) { $("[data-collab]", vue).className = "bloc"; $("[data-collab]", vue).innerHTML = `<div class="section-titre"><h2>Collaborateurs</h2><span class="mini discret">dans les titres que tu as vus</span></div><div class="classement-p">${tops.map(e => { const p = S.base.pers[e.id] || {}; const notes = [...e.films].map(c => S.monTitre(c).note).filter(n => n != null); return `<a href="#/personne/${e.id}"><span class="n"></span>${S.portrait(p.ph, p.n)}<span><b style="font-weight:550">${esc(p.n || "")}</b><br><span class="mini discret">${[...e.roles].map(r => S.METIERS[r]).join(", ")} · ${e.films.size} titres ensemble</span></span><span class="valeurs"><span class="note-txt">${S.fmtNote(moyenne(notes))}</span><small>ta moyenne</small></span></a>`; }).join("")}</div>`; }
+  $("[data-collab]", vue).innerHTML = S.vide("Pas encore assez de titres vus");
+  if (tops.length) { $("[data-collab]", vue).innerHTML = `<div class="classement-p">${tops.map(e => { const p = S.base.pers[e.id] || {}; const notes = [...e.films].map(c => S.monTitre(c).note).filter(n => n != null); return `<a href="#/personne/${e.id}"><span class="n"></span>${S.portrait(p.ph, p.n)}<span><b style="font-weight:550">${esc(p.n || "")}</b><br><span class="mini discret">${[...e.roles].map(r => S.METIERS[r]).join(", ")} · ${e.films.size} titres ensemble</span></span><span class="valeurs"><span class="note-txt">${S.fmtNote(moyenne(notes))}</span><small>ta moyenne</small></span></a>`; }).join("")}</div>`; }
 };
 })();
