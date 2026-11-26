@@ -24,9 +24,9 @@ P.profil = async (vue, args, params) => {
   vue.innerHTML = `
     <div class="banniere">${ban?.image ? `<img src="${S.img(ban.image, "w1280")}" alt="">` : ""}</div>
     <div class="profil-tete">${S.avatar(pid || S.etat.appareil.profil, nom)}<div class="espace" style="min-width:0"><h1>${esc(nom)}</h1>${doc.profil?.bio ? `<div class="muet petit">${esc(doc.profil.bio)}</div>` : ""}${compat?.n ? `<div class="petit" style="color:var(--accent)">${compat.accord} % d'accord avec toi</div>` : ""}</div>
-      ${pid ? "" : `<button class="icone-bouton" data-editer title="Modifier le profil">${ico("crayon")}</button><a class="icone-bouton" href="#/reglages" title="Réglages">${ico("reglages")}</a>`}</div>
+      ${pid ? "" : `<nav class="liens-tete"><button data-editer>Modifier</button><a href="#/reglages" class="tel">Réglages</a></nav>`}</div>
     <div class="chiffres-ligne"><span><b>${S.fmtNombre(T.filter(t => t.m?.ty !== "t").length)}</b> films</span><span><b>${S.fmtNombre(T.filter(t => t.m?.ty === "t").length)}</b> séries</span><span><b>${S.fmtNombre(heures)}</b> h</span><span><b>${S.fmtNote(moyenne(T.map(t => t.note).filter(n => n != null)))}</b> moy.</span></div>
-    ${pid ? "" : `<a class="bouton principal bouton-wrapped" href="#/wrapped/${S.aujourdhui().slice(0, 4)}">${ico("stats")} Ton année ${S.aujourdhui().slice(0, 4)}</a>`}
+    ${pid ? "" : `<a class="bouton principal bouton-wrapped" href="#/wrapped/${S.aujourdhui().slice(0, 4)}">Ton année ${S.aujourdhui().slice(0, 4)}</a>`}
     <div class="onglets">${ONGLETS.map(([k, l]) => `<a href="${base}?o=${k}"><button class="${onglet === k ? "actif" : ""}">${l}</button></a>`).join("")}</div>
     <div data-contenu></div>`;
   const z = $("[data-contenu]", vue);
@@ -34,7 +34,7 @@ P.profil = async (vue, args, params) => {
   ({ films: () => ongletFilms(z, pid, T), journal: () => rendreJournal(z, doc, pid), watchlist: () => grilleCles(z, Object.entries(S.vivants(doc.watchlist)).sort((a, b) => (b[1].ajout || "").localeCompare(a[1].ajout || "")).map(([c]) => c), "Watchlist vide"),
     listes: () => cartesListes(z, doc, pid), critiques: () => critiques(z, V), citations: () => citations(z, doc),
     personnes: () => { const f = Object.entries(S.vivants(doc.favoris)); z.innerHTML = f.length ? `<div class="grille">${f.map(([id, p]) => `<a class="personne-v" style="width:auto" href="#/personne/${id}">${S.portrait(p.photo, p.nom)}${esc(p.nom)}<span>${esc(S.METIERS[p.metier] || "")}</span></a>`).join("")}</div>` : S.vide("Aucune personne favorite", "Le cœur sur la page d'un réalisateur, d'un acteur, d'un chef op…"); },
-    collection: () => { const c = Object.entries(S.vivants(doc.titres)).filter(([, t]) => t.collection); const fmts = [...new Set(c.map(([, t]) => t.collection.format))]; z.innerHTML = c.length ? `<div class="puces" style="margin-bottom:12px">${fmts.map(f => `<span class="puce">${esc(f)} · ${c.filter(([, t]) => t.collection.format === f).length}</span>`).join("")}</div><div class="grille">${c.map(([k, t]) => S.vignette(k, { sous: [t.collection.format, t.collection.edition].filter(Boolean).join(" · ") })).join("")}</div>` : S.vide("Ta collection est vide", "Bouton « Collection » sur la page d'un film (Blu-ray, DVD, 4K…)."); },
+    collection: () => { const c = Object.entries(S.vivants(doc.titres)).filter(([, t]) => t.collection); const fmts = [...new Set(c.map(([, t]) => t.collection.format))]; z.innerHTML = c.length ? `<div class="puces" style="margin-bottom:12px">${fmts.map(f => `<span class="puce">${esc(f)}, ${c.filter(([, t]) => t.collection.format === f).length}</span>`).join("")}</div><div class="grille">${c.map(([k, t]) => S.vignette(k, { sous: [t.collection.format, t.collection.edition].filter(Boolean).join(", ") })).join("")}</div>` : S.vide("Ta collection est vide", "Bouton « Collection » sur la page d'un film (Blu-ray, DVD, 4K…)."); },
     seances: () => seances(z, V), annees: () => annees(z, V),
   }[onglet] || (() => {}))();
 };
@@ -59,7 +59,7 @@ function ongletFilms(z, pid, T) {
   const etqs = [...new Set(T.flatMap(t => t.etiquettes || []))].sort();
   z.innerHTML = `<div class="filtres">
       <input class="champ recherche-l" data-f="q" placeholder="Titre, personne…" value="${esc(f.q)}">
-      <button class="puce ${f.plus ? "actif" : ""}" data-filtres-plus>${ico("reglages")} Filtres</button>
+      <button class="puce ${f.plus ? "actif" : ""}" data-filtres-plus>Filtres</button>
       <div class="filtres-plus ${f.plus ? "" : "cache"}" style="display:contents">
       <select class="champ" data-f="type"><option value="">Films et séries</option><option value="m">Films</option><option value="t">Séries</option></select>
       <select class="champ" data-f="format"><option value="">Formats</option>${Object.entries(S.FORMATS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>
@@ -68,11 +68,11 @@ function ongletFilms(z, pid, T) {
       <select class="champ" data-f="pays"><option value="">Pays</option>${pays.map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select>
       <select class="champ" data-f="note"><option value="">Notes</option><option value="9">9 et plus</option><option value="8">8 et plus</option><option value="7">7 et plus</option><option value="-5">5 et moins</option><option value="sans">Sans note</option></select>
       ${etqs.length ? `<select class="champ" data-f="etiquette"><option value="">Étiquettes</option>${etqs.map(e => `<option>${esc(e)}</option>`).join("")}</select>` : ""}
-      <button class="puce ${f.coeur ? "actif" : ""}" data-coeur>${ico("coeur")} Coups de cœur</button>
+      <button class="puce ${f.coeur ? "actif" : ""}" data-coeur>Coups de cœur</button>
       </div>
       <span class="espace"></span>
       <select class="champ" data-f="tri"><option value="vu">Vu récemment</option><option value="note">Ta note</option><option value="annee">Année</option><option value="titre">Titre</option><option value="imdb">IMDb</option><option value="ecart">Écart avec IMDb</option><option value="duree">Durée</option></select>
-      <div class="segments" data-vue><button data-v="grille" title="Grille">${ico("grille")}</button><button data-v="liste" title="Liste">${ico("listes")}</button><button data-v="tableau" title="Tableau">${ico("tableau")}</button></div>
+      <div class="segments" data-vue><button data-v="grille">Grille</button><button data-v="liste">Liste</button><button data-v="tableau">Tableau</button></div>
     </div><div class="mini discret" data-compte style="margin-bottom:10px"></div><div data-res></div>`;
   $$("[data-f]", z).forEach(c => { c.value = f[c.dataset.f] ?? ""; c.oninput = c.onchange = () => { f[c.dataset.f] = c.value; peindre(); }; });
   $("[data-filtres-plus]", z).onclick = e => { f.plus = !f.plus; e.currentTarget.classList.toggle("actif", f.plus); $(".filtres-plus", z).classList.toggle("cache", !f.plus); };
@@ -103,10 +103,10 @@ function ongletFilms(z, pid, T) {
     const max = S.filtresMemo["films_max_" + pid] || 240;
     const plus = l.length > max ? `<div class="centre" style="margin:16px"><button class="bouton" data-plus>Afficher plus (${l.length - max})</button></div>` : "";
     if (f.vue === "grille") r.innerHTML = `<div class="grille">${l.slice(0, max).map(t => S.vignette(t.cle, { note: t.note, coeur: t.coeur, sous: t.m?.a || "" })).join("")}</div>` + plus;
-    else if (f.vue === "liste") { r.innerHTML = `<div class="lignes">${l.slice(0, max).map(t => S.ligneTitre(t.cle, { glisse: estMoi(pid), droite: `${t.coeur ? `<span style="color:var(--rouge)">${ico("coeur-plein")}</span>` : ""}<span class="note-txt">${S.fmtNote(t.note)}</span>` })).join("")}</div>` + plus; S.activerGlisse(r); }
+    else if (f.vue === "liste") { r.innerHTML = `<div class="lignes">${l.slice(0, max).map(t => S.ligneTitre(t.cle, { glisse: estMoi(pid), droite: `<span class="note-txt ${t.coeur ? "cc" : ""}">${S.fmtNote(t.note)}</span>` })).join("")}</div>` + plus; S.activerGlisse(r); }
     else {
       const cols = [["titre", "Titre"], ["annee", "Année", 1], ["note", "Note", 1], ["imdb", "IMDb", 1], ["ecart", "Écart", 1], ["duree", "Durée", 1], ["", "Réalisation"], ["vu", "Vu le", 1]];
-      r.innerHTML = `<div class="defile-x"><table class="tableau"><thead><tr>${cols.map(([k, lb, n]) => `<th class="${n ? "num" : ""} ${k === f.tri ? "tri" : ""}" data-tri="${k}">${lb}</th>`).join("")}</tr></thead><tbody>${l.slice(0, max).map(t => { const m = t.m || {}; const ec = t.note != null && m.ir ? t.note - m.ir : null; return `<tr><td><a href="#/titre/${t.cle}">${esc(S.nomTitre(m))}</a>${t.coeur ? ` <span style="color:var(--rouge)">♥</span>` : ""}</td><td class="num">${m.a || ""}</td><td class="num note-txt">${S.fmtNote(t.note)}</td><td class="num">${m.ir ? S.fmtNote(m.ir) : "–"}</td><td class="num" style="color:${ec == null ? "" : ec >= 0 ? "var(--vert)" : "var(--c8)"}">${ec == null ? "–" : (ec > 0 ? "+" : "") + S.fmtNote(ec)}</td><td class="num">${m.ty === "m" ? S.duree(m.r) : ""}</td><td>${(m.re || []).slice(0, 2).map(id => `<a href="#/personne/${id}">${esc(S.base?.pers?.[id]?.n || "")}</a>`).join(", ")}</td><td class="num nowrap">${t.dates.length ? S.fmtDate(t.dates[t.dates.length - 1], true) : ""}</td></tr>`; }).join("")}</tbody></table></div>` + plus;
+      r.innerHTML = `<div class="defile-x"><table class="tableau"><thead><tr>${cols.map(([k, lb, n]) => `<th class="${n ? "num" : ""} ${k === f.tri ? "tri" : ""}" data-tri="${k}">${lb}</th>`).join("")}</tr></thead><tbody>${l.slice(0, max).map(t => { const m = t.m || {}; const ec = t.note != null && m.ir ? t.note - m.ir : null; return `<tr><td><a href="#/titre/${t.cle}">${esc(S.nomTitre(m))}</a></td><td class="num">${m.a || ""}</td><td class="num note-txt ${t.coeur ? "cc" : ""}">${S.fmtNote(t.note)}</td><td class="num">${m.ir ? S.fmtNote(m.ir) : "–"}</td><td class="num" style="color:${ec == null ? "" : ec >= 0 ? "var(--vert)" : "var(--c8)"}">${ec == null ? "–" : (ec > 0 ? "+" : "") + S.fmtNote(ec)}</td><td class="num">${m.ty === "m" ? S.duree(m.r) : ""}</td><td>${(m.re || []).slice(0, 2).map(id => `<a href="#/personne/${id}">${esc(S.base?.pers?.[id]?.n || "")}</a>`).join(", ")}</td><td class="num nowrap">${t.dates.length ? S.fmtDate(t.dates[t.dates.length - 1], true) : ""}</td></tr>`; }).join("")}</tbody></table></div>` + plus;
       $$("[data-tri]", r).forEach(th => th.onclick = () => { if (th.dataset.tri) { f.tri = th.dataset.tri; $("[data-f=tri]", z).value = f.tri; peindre(); } });
     }
     const bp = $("[data-plus]", r); if (bp) bp.onclick = () => { S.filtresMemo["films_max_" + pid] = max + 480; peindre(); };
@@ -127,7 +127,7 @@ function citations(z, doc) {
 }
 function seances(z, V) {
   const l = V.filter(v => v.ou?.type === "cinema").reverse();
-  z.innerHTML = l.length ? `<div class="defile-x"><table class="tableau"><thead><tr><th>Date</th><th>Film</th><th>Cinéma</th><th>Salle</th><th class="num">Prix</th><th>Avec</th></tr></thead><tbody>${l.map(v => `<tr><td class="nowrap">${S.fmtDate(v.date, true)}</td><td><a href="#/titre/${v.cle}">${esc(S.nomTitre(v.m || S.info(v.cle)))}</a></td><td>${esc(v.ou.cinema || "")}</td><td>${esc(v.ou.salle || "")}</td><td class="num">${v.prix != null ? S.fmtNote(v.prix) + " €" : ""}</td><td>${esc((v.avec || []).map(a => S.amis[a]?.profil?.nom || a).join(", "))}</td></tr>`).join("")}</tbody></table></div><p class="mini discret">${l.length} séances · ${S.fmtNote(l.reduce((s, v) => s + (v.prix || 0), 0))} € au total</p>` : S.vide("Aucune séance", "Choisis « Cinéma » dans les détails d'un visionnage.");
+  z.innerHTML = l.length ? `<div class="defile-x"><table class="tableau"><thead><tr><th>Date</th><th>Film</th><th>Cinéma</th><th>Salle</th><th class="num">Prix</th><th>Avec</th></tr></thead><tbody>${l.map(v => `<tr><td class="nowrap">${S.fmtDate(v.date, true)}</td><td><a href="#/titre/${v.cle}">${esc(S.nomTitre(v.m || S.info(v.cle)))}</a></td><td>${esc(v.ou.cinema || "")}</td><td>${esc(v.ou.salle || "")}</td><td class="num">${v.prix != null ? S.fmtNote(v.prix) + " €" : ""}</td><td>${esc((v.avec || []).map(a => S.amis[a]?.profil?.nom || a).join(", "))}</td></tr>`).join("")}</tbody></table></div><p class="mini discret">${l.length} séances, ${S.fmtNote(l.reduce((s, v) => s + (v.prix || 0), 0))} € au total</p>` : S.vide("Aucune séance", "Choisis « Cinéma » dans les détails d'un visionnage.");
 }
 function annees(z, V) {
   const parAn = d3.rollup(V, l => l.length, v => v.date?.slice(0, 4));
@@ -149,7 +149,7 @@ function rendreJournal(z, doc, pid) {
       const mo = e.date?.slice(0, 7) || "";
       if (mo !== mois) { mois = mo; html += `<div class="mois-titre">${esc(S.fmtDate(mo) || "Sans date")}</div>`; }
       const m = S.info(e.cle) || {};
-      html += `<div class="glisse"><div class="fond-g">${ico("oeil")} Revu</div><div class="fond-d">Watchlist ${ico("watchlist")}</div><a class="ligne" href="#/titre/${e.cle}" data-cle="${e.cle}" data-j="${e.id}"><div class="jour"><b>${+(e.date || "").slice(8, 10) || ""}</b><span>${e.date ? S.JOURS[new Date(e.date + "T12:00").getDay()].slice(0, 3) : ""}</span></div>${S.affiche(m, { taille: "w154" })}<div class="corps"><b>${esc(S.nomTitre(m))}</b><span class="icones-ligne">${m.a || ""}${e.revision ? ico("revision") : ""}${e.ou?.type === "cinema" ? ico("ticket") : e.ou?.type === "plateforme" ? ico("play") : e.ou?.type === "support" ? ico("disque") : ""}${e.critique ? ico("crayon") : ""}${e.prive ? ico("cadenas") : ""}${(doc.titres?.[e.cle] || {}).coeur ? `<span class="r">${ico("coeur-plein")}</span>` : ""}</span></div><div class="droite">${e.note != null ? `<span class="note-txt">${S.fmtNote(e.note)}</span>` : ""}${estMoi(pid) ? `<button class="icone-bouton" data-editer="${e.id}" title="Modifier" style="width:32px;height:32px">${ico("crayon")}</button>` : ""}</div></a></div>`;
+      html += `<div class="glisse"><div class="fond-g">Revu</div><div class="fond-d">À voir</div><a class="ligne" href="#/titre/${e.cle}" data-cle="${e.cle}" data-j="${e.id}"><div class="jour"><b>${+(e.date || "").slice(8, 10) || ""}</b><span>${e.date ? S.JOURS[new Date(e.date + "T12:00").getDay()].slice(0, 3) : ""}</span></div>${S.affiche(m, { taille: "w154" })}<div class="corps"><b>${esc(S.nomTitre(m))}</b><span>${esc([m.a, e.revision ? "revu" : "", e.ou?.type === "cinema" ? (e.ou.cinema ? "au " + e.ou.cinema : "au cinéma") : e.ou?.nom ? "sur " + e.ou.nom : "", e.critique ? "critique" : "", e.prive ? "caché" : ""].filter(Boolean).join(", "))}</span></div><div class="droite">${e.note != null ? `<span class="note-txt ${(doc.titres?.[e.cle] || {}).coeur ? "cc" : ""}">${S.fmtNote(e.note)}</span>` : ""}${estMoi(pid) ? `<button class="modif-j" data-editer="${e.id}">modifier</button>` : ""}</div></a></div>`;
     }
     $("[data-l]", z).innerHTML = html || S.vide("Rien au journal", "Le bouton + ajoute un visionnage en deux secondes.");
     $$("[data-editer]", z).forEach(b => b.onclick = ev => { ev.preventDefault(); const e = l.find(x => x.id === b.dataset.editer); S.ouvrirAjout(e.cle, e); });
@@ -160,7 +160,7 @@ function rendreJournal(z, doc, pid) {
   peindre();
 }
 P.journal = (vue) => {
-  vue.innerHTML = `<div class="entete"><h1>Journal</h1><span class="espace"></span><button class="bouton petit principal" data-ajout2>${ico("plus")} Ajouter</button></div><div data-z></div>`;
+  vue.innerHTML = `<div class="entete"><h1>Journal</h1><span class="espace"></span><button class="lien" data-ajout2>Ajouter un visionnage</button></div><div data-z></div>`;
   $("[data-ajout2]", vue).onclick = () => S.ouvrirAjout();
   rendreJournal($("[data-z]", vue), S.moi, "");
 };
@@ -171,21 +171,21 @@ function cartesListes(z, doc, pid) {
   const listes = Object.entries(S.vivants(doc.listes)).sort((a, b) => (b[1].maj || 0) - (a[1].maj || 0));
   const wl = Object.keys(S.vivants(doc.watchlist));
   const q = pid ? `?p=${encodeURIComponent(pid)}` : "";
-  const ligne = (href, items, nom, prive) => { const vus = items.filter(c => S.monTitre(c).vu).length; return `<a class="ligne ligne-liste" href="${href}">${S.affiche(S.info(items[0]) || {}, { taille: "w92" })}<div class="corps"><b>${prive ? ico("cadenas") + " " : ""}${esc(nom)}</b><span>${S.pluriel(items.length, "titre")}</span></div>${items.length ? `<div class="part-vue"><b>${Math.round(100 * vus / items.length)} %</b><span>vu</span></div>` : ""}</a>`; };
+  const ligne = (href, items, nom, prive) => { const vus = items.filter(c => S.monTitre(c).vu).length; return `<a class="ligne ligne-liste" href="${href}">${S.affiche(S.info(items[0]) || {}, { taille: "w92" })}<div class="corps"><b>${esc(nom)}</b><span>${S.pluriel(items.length, "titre")}</span></div>${items.length ? `<div class="part-vue"><b>${Math.round(100 * vus / items.length)} %</b><span>vu</span></div>` : ""}</a>`; };
   z.innerHTML = `<div class="lignes">${ligne(pid ? `#/profil/${encodeURIComponent(pid)}?o=watchlist` : "#/watchlist", wl, "Watchlist")}${listes.map(([id, l]) => ligne(`#/liste/${id}${q}`, l.items || [], l.nom, l.privee)).join("")}</div>`;
 }
 P.listes = (vue) => {
   const ans = [...new Set(Object.values(S.vivants(S.moi.journal)).map(e => e.date?.slice(0, 4)).filter(Boolean))].sort().reverse();
-  vue.innerHTML = `<div class="entete"><h1>Listes</h1><span class="espace"></span><button class="bouton petit principal" data-nouvelle>${ico("plus")} Nouvelle liste</button></div>
+  vue.innerHTML = `<div class="entete"><h1>Listes</h1><span class="espace"></span><button class="lien" data-nouvelle>Nouvelle liste</button></div>
     <div data-z></div>
-    <div class="section"><div class="section-titre"><h2>Automatiques</h2></div><div class="lignes">${ans.map(a => { const c = [...new Set(Object.values(S.vivants(S.moi.journal)).filter(e => e.date?.startsWith(a)).map(e => e.cle))]; return `<a class="ligne ligne-liste" href="#/annee/${a}">${S.affiche(S.info(c[c.length - 1]) || {}, { taille: "w92" })}<div class="corps"><b>Vu en ${a}</b><span>${S.pluriel(c.length, "titre")}</span></div></a>`; }).join("")}<a class="ligne ligne-liste" href="#/decouvrir/commune"><span class="icone-bouton grand">${ico("amis")}</span><div class="corps"><b>Watchlist commune</b><span>avec tes amis</span></div></a></div></div>`;
+    <div class="section"><div class="section-titre"><h2>Automatiques</h2></div><div class="lignes">${ans.map(a => { const c = [...new Set(Object.values(S.vivants(S.moi.journal)).filter(e => e.date?.startsWith(a)).map(e => e.cle))]; return `<a class="ligne ligne-liste" href="#/annee/${a}">${S.affiche(S.info(c[c.length - 1]) || {}, { taille: "w92" })}<div class="corps"><b>Vu en ${a}</b><span>${S.pluriel(c.length, "titre")}</span></div></a>`; }).join("")}<a class="ligne ligne-liste" href="#/decouvrir/commune"><div class="corps"><b>Watchlist commune</b><span>avec tes amis</span></div></a></div></div>`;
   cartesListes($("[data-z]", vue), S.moi, "");
   $("[data-nouvelle]", vue).onclick = () => editerListe();
 };
 function editerListe(id) {
   const l = id ? S.vivants(S.moi.listes)[id] : { nom: "", description: "", classee: false, privee: false, epinglee: false };
-  const corps = el(`<div><label class="etiquette" style="margin-top:0">Nom</label><input class="champ" data-nom value="${esc(l.nom)}" placeholder="Mes Lynch préférés"><label class="etiquette">Description</label><textarea class="champ" data-desc>${esc(l.description || "")}</textarea><label class="case"><input type="checkbox" data-classee ${l.classee ? "checked" : ""}> Liste classée (ordre qui compte : top 10…)</label><label class="case"><input type="checkbox" data-privee ${l.privee ? "checked" : ""}> ${ico("cadenas")} Liste privée (visible par toi seul)</label><label class="case"><input type="checkbox" data-epinglee ${l.epinglee ? "checked" : ""}> ${ico("epingle")} Épinglée dans le menu</label></div>`);
-  S.ouvrirModale({ titre: id ? "Modifier la liste" : "Nouvelle liste", corps, pied: `${id ? `<button class="bouton danger" data-suppr>${ico("poubelle")} Supprimer</button>` : ""}<button class="bouton principal" data-ok>${id ? "Enregistrer" : "Créer"}</button>` });
+  const corps = el(`<div><label class="etiquette" style="margin-top:0">Nom</label><input class="champ" data-nom value="${esc(l.nom)}" placeholder="Mes Lynch préférés"><label class="etiquette">Description</label><textarea class="champ" data-desc>${esc(l.description || "")}</textarea><label class="case"><input type="checkbox" data-classee ${l.classee ? "checked" : ""}> Liste classée (ordre qui compte : top 10…)</label><label class="case"><input type="checkbox" data-privee ${l.privee ? "checked" : ""}> Liste privée (visible par toi seul)</label><label class="case"><input type="checkbox" data-epinglee ${l.epinglee ? "checked" : ""}> Épinglée dans le menu</label></div>`);
+  S.ouvrirModale({ titre: id ? "Modifier la liste" : "Nouvelle liste", corps, pied: `${id ? `<button class="aj-supprimer" data-suppr>Supprimer</button>` : ""}<button class="bouton principal" data-ok>${id ? "Enregistrer" : "Créer"}</button>` });
   const m = corps.closest(".modale");
   $("[data-nom]", corps).focus();
   $("[data-ok]", m).onclick = async () => {
@@ -203,16 +203,16 @@ P.liste = (vue, args, params) => {
   const moi = estMoi(pid);
   const items = (l.items || []);
   const f = S.filtresMemo["liste_" + id] = S.filtresMemo["liste_" + id] || { vue: l.classee ? "liste" : "grille" };
-  vue.innerHTML = `<div class="entete"><div style="min-width:0"><h1>${l.privee ? ico("cadenas") + " " : ""}${esc(l.nom)}</h1><div class="mini discret">${pid ? `par ${esc(S.nomDe(pid))} · ` : ""}${S.pluriel(items.length, "titre")}${l.classee ? " · classée" : ""}</div></div><span class="espace"></span>${moi ? `<button class="icone-bouton" data-ajouter title="Ajouter un titre">${ico("plus")}</button><button class="icone-bouton" data-editer title="Modifier">${ico("crayon")}</button>` : ""}</div>
+  vue.innerHTML = `<div class="entete"><div style="min-width:0"><h1>${esc(l.nom)}</h1><div class="mini discret">${pid ? `par ${esc(S.nomDe(pid))}, ` : ""}${S.pluriel(items.length, "titre")}${l.classee ? ", classée" : ""}</div></div><span class="espace"></span>${moi ? `<nav class="liens-tete"><button data-ajouter>Ajouter</button><button data-editer>Modifier</button></nav>` : ""}</div>
     ${l.description ? `<p class="synopsis">${esc(l.description)}</p>` : ""}
-    <div class="filtres"><div class="segments" data-vue><button data-v="grille">${ico("grille")}</button><button data-v="liste">${ico("listes")}</button></div><span class="mini discret">${S.pluriel(items.filter(c => S.monTitre(c).vu).length, "titre vu", "titres vus")} par toi</span></div>
+    <div class="filtres"><div class="segments" data-vue><button data-v="grille">Grille</button><button data-v="liste">Liste</button></div><span class="mini discret">${S.pluriel(items.filter(c => S.monTitre(c).vu).length, "titre vu", "titres vus")} par toi</span></div>
     <div data-items></div>`;
   const peindre = () => {
     $$("[data-vue] button", vue).forEach(b => b.classList.toggle("actif", b.dataset.v === f.vue));
     const z = $("[data-items]", vue);
     if (!items.length) { z.innerHTML = S.vide("Liste vide", moi ? "Ajoute des titres avec + ou depuis la page d'un film." : ""); return; }
     if (f.vue === "grille") { z.innerHTML = `<div class="grille">${items.map((c, i) => S.vignette(c, { vu: S.monTitre(c).vu, sous: l.classee ? `n° ${i + 1}` : (S.info(c)?.a || "") })).join("")}</div>`; return; }
-    z.innerHTML = `<div class="lignes ${l.classee && moi ? "classement" : ""}" data-cl>${items.map((c, i) => `<div class="ligne" data-cle="${c}">${l.classee ? `<span class="rang">${i + 1}</span>` : ""}${S.affiche(S.info(c) || {}, { taille: "w92" })}<a class="corps" href="#/titre/${c}"><b>${esc(S.nomTitre(S.info(c)))}</b><span>${S.info(c)?.a || ""}${S.monTitre(c).vu ? " · vu" : ""}</span></a>${S.monTitre(c).note != null ? `<span class="note-txt">${S.fmtNote(S.monTitre(c).note)}</span>` : ""}${moi ? `<button class="icone-bouton" data-retirer="${c}" style="width:32px;height:32px" title="Retirer">${ico("x")}</button>${l.classee ? `<span class="poignee">${ico("poignee")}</span>` : ""}` : ""}</div>`).join("")}</div>`;
+    z.innerHTML = `<div class="lignes ${l.classee && moi ? "classement" : ""}" data-cl>${items.map((c, i) => `<div class="ligne" data-cle="${c}">${l.classee ? `<span class="rang">${i + 1}</span>` : ""}${S.affiche(S.info(c) || {}, { taille: "w92" })}<a class="corps" href="#/titre/${c}"><b>${esc(S.nomTitre(S.info(c)))}</b><span>${S.info(c)?.a || ""}${S.monTitre(c).vu ? ", vu" : ""}</span></a>${S.monTitre(c).note != null ? `<span class="note-txt">${S.fmtNote(S.monTitre(c).note)}</span>` : ""}${moi ? `<button class="retirer-l" data-retirer="${c}">Retirer</button>${l.classee ? `<span class="poignee" aria-label="Déplacer"></span>` : ""}` : ""}</div>`).join("")}</div>`;
     $$("[data-retirer]", z).forEach(b => b.onclick = () => S.agir("liste_item", { id, cle: b.dataset.retirer, val: false }, { toast: "Retiré de la liste" }));
     const cl = $("[data-cl].classement", z);
     if (cl) {
@@ -230,11 +230,11 @@ P.liste = (vue, args, params) => {
 P.watchlist = (vue) => {
   const f = S.filtresMemo.wl = S.filtresMemo.wl || { type: "", duree: 0, dispo: false };
   const mesPlat = S.reglage("plateformes", []) || [];
-  vue.innerHTML = `<div class="entete"><h1>Watchlist</h1><span class="espace"></span><button class="icone-bouton grand" data-tirage aria-label="Tirage au sort">${ico("des")}</button></div>
+  vue.innerHTML = `<div class="entete"><h1>Watchlist</h1><span class="espace"></span><nav class="liens-tete"><button data-tirage>Au hasard</button></nav></div>
     <div class="filtres defile-x" style="flex-wrap:nowrap">
       <div class="segments" data-type><button data-v="">Tout</button><button data-v="m">Films</button><button data-v="t">Séries</button></div>
       <div class="segments" data-duree><button data-v="0">Toutes durées</button><button data-v="95">≤ 1 h 35</button><button data-v="120">≤ 2 h</button></div>
-      <button class="puce ${f.dispo ? "actif" : ""}" data-dispo>${ico("play")} Sur mes plateformes</button>
+      <button class="puce ${f.dispo ? "actif" : ""}" data-dispo>Sur mes plateformes</button>
     </div><div data-g></div>`;
   $("[data-tirage]", vue).onclick = () => S.tirage();
   const peindre = () => {
@@ -249,7 +249,7 @@ P.watchlist = (vue) => {
     if (f.dispo && !S.memo.dispo) { z.innerHTML = S.chargement(); S.api("/api/dispo").then(d => { S.memo.dispo = d; peindre(); }).catch(() => z.innerHTML = S.vide("Hors ligne")); return; }
     if (f.dispo && !mesPlat.length) z.insertAdjacentHTML("afterbegin", "");
     z.innerHTML = (f.dispo && !mesPlat.length ? `<a class="carte serree" href="#/reglages/affichage" style="display:block;margin-bottom:12px">Choisis tes abonnements dans Réglages → Affichage pour filtrer seulement les tiens.</a>` : "")
-      + (l.length ? `<div class="grille">${l.map(([c, e]) => { const m = S.info(c) || {}; const amis = Object.entries(S.amis).filter(([, a]) => S.dansWatchlist(c, a)); return `<div class="carte-wl ${e.prio ? "prio" : ""}">${S.vignette(c, { info: m.ty === "t" ? (m.dep ? `${m.dep} min / ép.` : "Série") : S.duree(m.r) })}<button class="prio-bouton" data-prio="${c}" aria-label="À voir en premier">${ico("epingle")}</button>${amis.length ? `<div class="amis-wl">${amis.slice(0, 3).map(([id, a]) => S.avatar(id, a.profil?.nom, 20)).join("")}</div>` : ""}</div>`; }).join("")}</div>` : S.vide("Rien ici"));
+      + (l.length ? `<div class="grille">${l.map(([c, e]) => { const m = S.info(c) || {}; const amis = Object.entries(S.amis).filter(([, a]) => S.dansWatchlist(c, a)); return `<div class="carte-wl ${e.prio ? "prio" : ""}">${S.vignette(c, { info: m.ty === "t" ? (m.dep ? `${m.dep} min / ép.` : "Série") : S.duree(m.r) })}<button class="prio-bouton" data-prio="${c}">${e.prio ? "En premier" : "Mettre en premier"}</button>${amis.length ? `<div class="amis-wl">${amis.slice(0, 3).map(([id, a]) => S.avatar(id, a.profil?.nom, 20)).join("")}</div>` : ""}</div>`; }).join("")}</div>` : S.vide("Rien ici"));
     $$("[data-prio]", z).forEach(b => b.onclick = ev => { ev.preventDefault(); const c = b.dataset.prio; const prio = !S.vivants(S.moi.watchlist)[c]?.prio; S.agir("watchlist_prio", { cle: c, val: prio }, { toast: prio ? "En tête de liste" : "Priorité retirée" }); });
   };
   $$("[data-type] button", vue).forEach(b => b.onclick = () => { f.type = b.dataset.v; peindre(); });
@@ -265,8 +265,8 @@ P.amis = (vue) => {
   for (const [pid, a] of amis) for (const [id, e] of Object.entries(S.vivants(a.journal))) if (e.cle && e.date) act.push({ pid, ...e });
   act.sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.maj || 0) - (a.maj || 0));
   vue.innerHTML = `<div class="entete"><h1>Amis</h1></div>
-    ${amis.length ? `<div class="lignes">${amis.map(([pid, a]) => { const c = St.compat("", pid); const T = St.donnees(pid).T; return `<a class="ligne" href="#/profil/${encodeURIComponent(pid)}">${S.avatar(pid, a.profil?.nom, 44)}<div class="corps"><b>${esc(a.profil?.nom || pid)}</b><span>${S.pluriel(T.length, "titre")} · ${c.n ? `${c.accord} % d'accord sur ${c.n} films` : "aucun film en commun noté"}</span></div><div class="droite">${ico("retour", "") .replace("<svg", '<svg style="transform:rotate(180deg);width:16px;height:16px"')}</div></a>`; }).join("")}</div>
-      <div class="section"><div class="section-titre"><h2>Activité</h2></div><div class="lignes">${act.slice(0, 80).map(a => S.ligneTitre(a.cle, { glisse: false, avant: S.avatar(a.pid, S.nomDe(a.pid)), sous: `${S.nomDe(a.pid)} · ${S.fmtDate(a.date, true)}${a.revision ? " · revu" : ""}${a.critique ? " · critique" : ""}`, droite: a.note != null ? `<span class="note-txt" style="color:${S.couleurProfil(a.pid)}">${S.fmtNote(a.note)}</span>` : "" })).join("")}</div></div>`
+    ${amis.length ? `<div class="lignes">${amis.map(([pid, a]) => { const c = St.compat("", pid); const T = St.donnees(pid).T; return `<a class="ligne" href="#/profil/${encodeURIComponent(pid)}">${S.avatar(pid, a.profil?.nom, 44)}<div class="corps"><b>${esc(a.profil?.nom || pid)}</b><span>${S.pluriel(T.length, "titre")}, ${c.n ? `${c.accord} % d'accord sur ${c.n} films` : "aucun film en commun noté"}</span></div></a>`; }).join("")}</div>
+      <div class="section"><div class="section-titre"><h2>Activité</h2></div><div class="lignes">${act.slice(0, 80).map(a => S.ligneTitre(a.cle, { glisse: false, avant: S.avatar(a.pid, S.nomDe(a.pid)), sous: `${S.nomDe(a.pid)}, ${S.fmtDate(a.date, true)}${a.revision ? ", revu" : ""}${a.critique ? ", critique" : ""}`, droite: a.note != null ? `<span class="note-txt" style="color:${S.couleurProfil(a.pid)}">${S.fmtNote(a.note)}</span>` : "" })).join("")}</div></div>`
     : `<div class="carte vide"><b>Pas encore d'amis ici</b>Règle la synchronisation GitHub dans les <a href="#/reglages" style="color:var(--accent)">réglages</a> : les profils de tes amis apparaîtront tout seuls.</div>`}`;
 };
 
@@ -275,7 +275,7 @@ P.decouvrir = (vue, args, params) => {
   if (!args[0]) return decouvrirAccueil(vue);
   const onglet = args[0];
   const ONG = [["pourtoi", "Pour toi"], ["soir", "Ce soir entre amis"], ["commune", "Watchlist commune"], ["explorer", "Explorer"], ["sorties", "Sorties"], ["palmares", "Palmarès"]];
-  vue.innerHTML = `<div class="entete"><a class="icone-bouton" href="#/decouvrir" aria-label="Retour">${ico("retour")}</a><h1>${esc((ONG.find(o => o[0] === onglet) || ["", "Découvrir"])[1])}</h1></div><div data-z></div>`;
+  vue.innerHTML = `<div class="entete"><a class="fil" href="#/decouvrir">Découvrir</a><h1>${esc((ONG.find(o => o[0] === onglet) || ["", "Découvrir"])[1])}</h1></div><div data-z></div>`;
   const z = $("[data-z]", vue);
   ({ pourtoi: pourToi, soir: ceSoir, commune: commune, explorer: explorer, sorties: sorties, palmares: palmaresListe }[onglet] || pourToi)(z, params);
 };
@@ -285,11 +285,11 @@ function decouvrirAccueil(vue) {
     <div class="section" data-pourtoi>${S.chargement()}</div>
     <div class="section" data-plateformes></div>
     <div class="section" data-sorties></div>
-    <div class="section"><div class="raccourcis-decouvrir">
-      <a class="carte" href="#/decouvrir/soir">${ico("amis")}<b>Ce soir entre amis</b></a>
-      <a class="carte" href="#/decouvrir/commune">${ico("watchlist")}<b>Watchlist commune</b></a>
-      <a class="carte" href="#/decouvrir/explorer">${ico("decouvrir")}<b>Explorer</b></a>
-      <a class="carte" href="#/decouvrir/palmares">${ico("trophee")}<b>Palmarès</b></a>
+    <div class="section"><div class="section-titre"><h2>Chercher autrement</h2></div><div class="raccourcis-decouvrir">
+      <a href="#/decouvrir/soir"><b>Ce soir entre amis</b><span>Un film qui plaira à tout le monde</span></a>
+      <a href="#/decouvrir/commune"><b>Watchlist commune</b><span>Ce que vous voulez voir ensemble</span></a>
+      <a href="#/decouvrir/explorer"><b>Explorer</b><span>Par genre, pays, décennie</span></a>
+      <a href="#/decouvrir/palmares"><b>Palmarès</b><span>Cannes, Oscars, César, Venise, Berlin</span></a>
     </div></div>
     <div class="section" data-palmares></div>`;
   const rangee = (titre, cles, lien) => `<div class="section-titre"><h2>${titre}</h2>${lien ? `<a class="lien" href="${lien}">Tout voir</a>` : ""}</div><div class="rangee">${cles.map(c => S.vignette(c)).join("")}</div>`;
@@ -331,7 +331,7 @@ function ceSoir(z) {
   const opts = S.filtresMemo.soir_o = S.filtresMemo.soir_o || { duree: 0, type: "m" };
   const res = el(`<div></div>`);
   const sel = choixProfils(z, "soir", ["", ...Object.keys(S.amis)], () => peindre());
-  const o = el(`<div class="filtres"><div class="segments" data-type><button data-v="m">Film</button><button data-v="t">Série</button><button data-v="">Tout</button></div><select class="champ" data-duree><option value="0">Toutes durées</option><option value="100">Moins de 1 h 40</option><option value="120">Moins de 2 h</option><option value="150">Moins de 2 h 30</option></select><button class="bouton petit" data-tirer>${ico("des")} Tirer au sort</button></div>`);
+  const o = el(`<div class="filtres"><div class="segments" data-type><button data-v="m">Film</button><button data-v="t">Série</button><button data-v="">Tout</button></div><select class="champ" data-duree><option value="0">Toutes durées</option><option value="100">Moins de 1 h 40</option><option value="120">Moins de 2 h</option><option value="150">Moins de 2 h 30</option></select><button class="bouton petit" data-tirer>Tirer au sort</button></div>`);
   z.append(o, res);
   $("[data-duree]", o).value = opts.duree; $("[data-duree]", o).onchange = e => { opts.duree = +e.target.value; peindre(); };
   $$("[data-type] button", o).forEach(b => b.onclick = () => { opts.type = b.dataset.v; peindre(); });
@@ -413,7 +413,7 @@ function sorties(z) {
     if (!Object.keys(S.vivants(S.moi.favoris)).length) { z.innerHTML = S.vide("Aucune personne favorite", "Mets en favori tes réalisateurs, acteurs, chefs op… : leurs nouveaux films apparaîtront ici (et en notification)."); return; }
     r.forEach(x => S.infos[x.cle] = S.infos[x.cle] || { k: x.cle, ty: x.cle[0], t: x.t, af: x.af, fd: x.fd, a: x.date ? +x.date.slice(0, 4) : null });
     const aVenir = r.filter(x => !x.sortie), sortis = r.filter(x => x.sortie).reverse();
-    const v = x => S.vignette(x.cle, { vu: x.vu, sous: `${x.personnes.map(p => p.nom).slice(0, 2).join(", ")}${x.date ? " · " + S.fmtDate(x.date, true) : ""}` });
+    const v = x => S.vignette(x.cle, { vu: x.vu, sous: `${x.personnes.map(p => p.nom).slice(0, 2).join(", ")}${x.date ? ", " + S.fmtDate(x.date, true) : ""}` });
     z.innerHTML = `${aVenir.length ? `<div class="section-titre"><h2>À venir</h2></div><div class="grille">${aVenir.map(v).join("")}</div>` : ""}${sortis.length ? `<div class="section-titre section"><h2>Sortis récemment</h2></div><div class="grille">${sortis.map(v).join("")}</div>` : ""}` || S.vide("Rien d'annoncé");
   };
   if (S.memo.sorties) return peindre(S.memo.sorties);
@@ -446,11 +446,11 @@ P.motcle = (vue, args) => {
 
 // ------------------------------------------------------------------ notifications
 P.notifs = async (vue) => {
-  vue.innerHTML = `<div class="entete"><h1>Notifications</h1><span class="espace"></span><button class="bouton petit" data-verif>${ico("sync")} Vérifier</button></div><div data-l>${S.chargement()}</div>`;
+  vue.innerHTML = `<div class="entete"><h1>Notifications</h1><span class="espace"></span><nav class="liens-tete"><button data-verif>Vérifier maintenant</button></nav></div><div data-l>${S.chargement()}</div>`;
   $("[data-verif]", vue).onclick = async () => { await S.post("/api/notifs/verifier"); S.toast("Vérification lancée (sorties, watchlist, récap)"); };
   const d = await S.api("/api/notifs");
   const ICONES = { sortie: "ticket", annonce: "journal", dispo: "play", recap: "stats" };
-  $("[data-l]", vue).innerHTML = d.r.length ? `<div class="lignes">${d.r.map(n => `<a class="ligne" href="${esc(n.lien || "#/")}">${n.image ? S.affiche({ af: n.image, t: n.titre }, { taille: "w92" }) : `<span class="icone-bouton">${ico(ICONES[n.type] || "cloche")}</span>`}<div class="corps"><b style="${n.lu ? "" : "color:var(--accent)"}">${esc(n.titre)}</b><span>${esc(n.texte)} · ${new Date(n.date * 1000).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}</span></div></a>`).join("")}</div>` : S.vide("Rien de neuf", "Tu seras prévenu quand un film de ta watchlist arrive sur une plateforme, quand une personne favorite sort un film, et chaque mois pour ton récap.");
+  $("[data-l]", vue).innerHTML = d.r.length ? `<div class="lignes">${d.r.map(n => `<a class="ligne" href="${esc(n.lien || "#/")}">${n.image ? S.affiche({ af: n.image, t: n.titre }, { taille: "w92" }) : `<span class="notif-sans"></span>`}<div class="corps"><b style="${n.lu ? "" : "color:var(--accent)"}">${esc(n.titre)}</b><span>${esc(n.texte)}, ${new Date(n.date * 1000).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}</span></div></a>`).join("")}</div>` : S.vide("Rien de neuf", "Tu seras prévenu quand un film de ta watchlist arrive sur une plateforme, quand une personne favorite sort un film, et chaque mois pour ton récap.");
   if (d.r.some(n => !n.lu)) S.post("/api/notifs/lues").then(() => { S.etat.notifs = 0; S.majChrome(); });
 };
 
@@ -465,11 +465,11 @@ P.reglages = async (vue, args, params) => {
     <section class="carte" data-rub="affichage"><h3>Affichage</h3>
       <div class="flex" style="margin-top:10px">${S.avatar(a.profil, S.moi.profil.nom)}<b class="espace">${esc(S.moi.profil.nom)}</b><button class="bouton petit" data-changer>Changer de profil</button></div>
       <label class="etiquette">Titres affichés</label><div class="segments" data-titres><button data-v="fr">En français</button><button data-v="vo">En version originale</button></div>
-      <div class="ligne-champ"><span class="libelle-champ" style="width:auto;flex:1">${ico("son")} Sons</span><label class="interrupteur"><input type="checkbox" data-sons ${S.reglage("sons", true) !== false ? "checked" : ""}><span></span></label></div>
+      <div class="ligne-champ"><span class="libelle-champ" style="width:auto;flex:1">Sons</span><label class="interrupteur"><input type="checkbox" data-sons ${S.reglage("sons", true) !== false ? "checked" : ""}><span></span></label></div>
       <label class="etiquette">Tes abonnements (filtre « sur mes plateformes »)</label><div class="puces" data-plats>${S.chargement()}</div>
     </section>
     <section class="carte" data-rub="tmdb"><h3>TMDB</h3><p class="muet petit">Tes notes, ta watchlist, tes coups de cœur et tes listes de films sont recopiés sur ton compte TMDB (dès qu'il y a du réseau).</p>
-      ${a.tmdb.connecte ? `<div class="flex"><span class="pastille ok"></span><span class="espace">Connecté : <b>${esc(a.tmdb.nom)}</b>${e.file_tmdb.attente ? ` · ${e.file_tmdb.attente} modification(s) en attente` : ""}${e.file_tmdb.erreur ? ` · <span style="color:var(--rouge)">${esc(e.file_tmdb.erreur)}</span>` : ""}</span><button class="bouton petit" data-tmdb-off>Déconnecter</button></div>` : `<button class="bouton principal" data-tmdb-on>Connecter mon compte TMDB</button>`}
+      ${a.tmdb.connecte ? `<div class="flex"><span class="espace">Connecté : <b>${esc(a.tmdb.nom)}</b>${e.file_tmdb.attente ? `, ${e.file_tmdb.attente} modification(s) en attente` : ""}${e.file_tmdb.erreur ? `, <span style="color:var(--rouge)">${esc(e.file_tmdb.erreur)}</span>` : ""}</span><button class="bouton petit" data-tmdb-off>Déconnecter</button></div>` : `<button class="bouton principal" data-tmdb-on>Connecter mon compte TMDB</button>`}
     </section>
     <section class="carte" data-rub="exporter"><h3>Letterboxd, IMDb, Refract</h3>
       <p class="muet petit">Letterboxd ne donne son API que sur demande, IMDb n'en a pas de gratuite, Refract n'en a pas : Silencio ne peut donc pas écrire directement dans ces comptes. À la place : un fichier à importer chez eux (Letterboxd, et Refract qui importe depuis Letterboxd), et les liens vers chaque film.</p>
@@ -485,7 +485,7 @@ P.reglages = async (vue, args, params) => {
     </section>
     <section class="carte" data-rub="amis"><h3>Synchronisation GitHub (amis et appareils)</h3>
       <p class="muet petit">Ton profil est enregistré dans un dépôt GitHub partagé avec tes amis : chacun écrit son fichier avec son propre compte, et lit ceux des autres. Hors ligne, tout est gardé et envoyé au retour du réseau.</p>
-      <div class="flex" style="margin:6px 0"><span class="pastille ${!s.active ? "" : s.erreur ? "erreur" : "ok"}"></span><span class="espace petit">${!s.active ? "Pas encore réglée" : s.erreur ? esc(s.erreur) : `Synchronisée${s.derniere ? " à " + new Date(s.derniere * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : ""} · ${S.pluriel(s.amis || 0, "ami")}`}</span>${s.active ? `<button class="bouton petit" data-sync>${ico("sync")} Maintenant</button>` : ""}</div>
+      <div class="flex" style="margin:6px 0"><span class="espace petit">${!s.active ? "Pas encore réglée" : s.erreur ? esc(s.erreur) : `Synchronisée${s.derniere ? " à " + new Date(s.derniere * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : ""}, ${S.pluriel(s.amis || 0, "ami")}`}</span>${s.active ? `<button class="bouton petit" data-sync>Maintenant</button>` : ""}</div>
       <div class="grille-2"><div><label class="etiquette">Dépôt (compte/nom)</label><input class="champ" data-g="depot" value="${esc(g.depot)}" placeholder="etienne/silencio"></div><div><label class="etiquette">Branche</label><input class="champ" data-g="branche" value="${esc(g.branche || "profils")}"></div></div>
       <label class="etiquette">Ton jeton GitHub (fine-grained, accès « Contents : read and write » à ce dépôt)</label><input class="champ" type="password" data-g="jeton" placeholder="${g.jeton ? "•••• (enregistré)" : "github_pat_…"}">
       <label class="etiquette">Phrase secrète (chiffre tes films cachés et critiques privées ; la même sur tous tes appareils)</label><input class="champ" type="password" data-g="phrase" placeholder="${g.phrase ? "•••• (enregistrée)" : "facultatif"}">
@@ -493,23 +493,23 @@ P.reglages = async (vue, args, params) => {
       <div data-versions-l></div>
     </section>
     <section class="carte" data-rub="historique"><h3>Historique et annulation</h3>
-      ${(e.historique || []).length ? `<div class="lignes">${e.historique.slice(0, 12).map((h, i) => `<div class="ligne" style="padding:7px 2px"><div class="corps"><b style="font-weight:500">${esc(h.libelle)}</b><span>${new Date(h.quand * 1000).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span></div>${i === 0 ? `<button class="bouton petit" data-annuler>${ico("annuler")} Annuler</button>` : ""}</div>`).join("")}</div>` : `<p class="mini discret">Rien à annuler depuis le lancement. (Raccourci : <b>z</b>.)</p>`}
+      ${(e.historique || []).length ? `<div class="lignes">${e.historique.slice(0, 12).map((h, i) => `<div class="ligne" style="padding:7px 2px"><div class="corps"><b style="font-weight:500">${esc(h.libelle)}</b><span>${new Date(h.quand * 1000).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span></div>${i === 0 ? `<button class="bouton petit" data-annuler>Annuler</button>` : ""}</div>`).join("")}</div>` : `<p class="mini discret">Rien à annuler depuis le lancement. (Raccourci : <b>z</b>.)</p>`}
       <p class="mini discret">Chaque modification envoyée sur GitHub est aussi gardée dans l'historique du dépôt (bouton « Historique des versions »).</p>
     </section>
     <section class="carte" data-rub="exporter"><h3>Sauvegarde</h3><div class="flex" style="flex-wrap:wrap"><a class="bouton" href="/api/export/silencio.json" download target="_blank">Tout exporter (JSON)</a></div></section>
     <section class="carte" data-rub="avance"><h3>Données</h3>
-      <p class="petit muet">Notes IMDb : ${e.imdb.present ? `fichier du ${new Date(e.imdb.date * 1000).toLocaleDateString("fr-FR")}` : e.imdb.en_cours ? "téléchargement en cours…" : "pas encore téléchargé"}${e.imdb.erreur ? ` · <span style="color:var(--rouge)">${esc(e.imdb.erreur)}</span>` : ""}</p>
+      <p class="petit muet">Notes IMDb : ${e.imdb.present ? `fichier du ${new Date(e.imdb.date * 1000).toLocaleDateString("fr-FR")}` : e.imdb.en_cours ? "téléchargement en cours…" : "pas encore téléchargé"}${e.imdb.erreur ? `, <span style="color:var(--rouge)">${esc(e.imdb.erreur)}</span>` : ""}</p>
       <button class="bouton petit" data-imdb>Mettre à jour les notes IMDb</button>
       <label class="etiquette">Clé API TMDB personnelle (facultatif)</label><div class="flex"><input class="champ" data-cle placeholder="${a.cle_tmdb ? "•••• (enregistrée)" : "par défaut : la clé de Silencio"}"><button class="bouton" data-cle-ok>OK</button></div>
     </section>
-    <section class="carte" data-rub="avance"><h3>Raccourcis clavier</h3><dl class="tableau-infos petit"><dt>n</dt><dd>Ajouter un visionnage</dd><dt>/</dt><dd>Recherche</dd><dt>1 … 0, puis « . »</dt><dd>Note (dans l'ajout) : 8 puis . = 7,5</dd><dt>Entrée</dt><dd>Valider l'ajout</dd><dt>h · j · s</dt><dd>Accueil · Journal · Stats</dd><dt>z</dt><dd>Annuler la dernière action</dd><dt>Échap</dt><dd>Fermer</dd></dl></section>
-    <p class="mini discret centre" data-rub="avance">Silencio ${esc(e.app)} · données TMDB (ce produit utilise l'API TMDB sans être approuvé ni certifié par TMDB) · notes IMDb : datasets.imdbws.com · prix : Wikidata · plateformes : JustWatch</p>
+    <section class="carte" data-rub="avance"><h3>Raccourcis clavier</h3><dl class="tableau-infos petit"><dt>n</dt><dd>Ajouter un visionnage</dd><dt>/</dt><dd>Recherche</dd><dt>1 … 0, puis « . »</dt><dd>Note (dans l'ajout) : 8 puis . = 7,5</dd><dt>Entrée</dt><dd>Valider l'ajout</dd><dt>h, j, s</dt><dd>Accueil, Journal, Stats</dd><dt>z</dt><dd>Annuler la dernière action</dd><dt>Échap</dt><dd>Fermer</dd></dl></section>
+    <p class="mini discret centre" data-rub="avance">Silencio ${esc(e.app)}, données TMDB (ce produit utilise l'API TMDB sans être approuvé ni certifié par TMDB), notes IMDb : datasets.imdbws.com, prix : Wikidata, plateformes : JustWatch</p>
   </div>`;
   const RUBS = [["affichage", "Affichage", "reglages"], ["tmdb", "Compte TMDB", "sync"], ["amis", "Amis et synchro", "amis"], ["importer", "Importer", "plus"], ["exporter", "Exporter", "lien"], ["historique", "Historique", "annuler"], ["avance", "Avancé", "info"]];
   const rub = args[0];
   $$("[data-rub]", vue).forEach(x => x.classList.toggle("cache", x.dataset.rub !== rub));
-  if (!rub) $(".col", vue).insertAdjacentHTML("afterbegin", `<div class="lignes menu-reglages">${RUBS.map(([k, l, i]) => `<a class="ligne" href="#/reglages/${k}"><span class="icone-bouton">${ico(i)}</span><div class="corps"><b>${l}</b></div>${ico("retour", "fleche-droite")}</a>`).join("")}</div>`);
-  else $(".entete h1", vue).insertAdjacentHTML("beforebegin", `<a class="icone-bouton" href="#/reglages" aria-label="Retour">${ico("retour")}</a>`), $(".entete h1", vue).textContent = RUBS.find(r => r[0] === rub)?.[1] || "Réglages";
+  if (!rub) $(".col", vue).insertAdjacentHTML("afterbegin", `<div class="lignes menu-reglages">${RUBS.map(([k, l, i]) => `<a class="ligne" href="#/reglages/${k}"><div class="corps"><b>${l}</b></div></a>`).join("")}</div>`);
+  else $(".entete h1", vue).insertAdjacentHTML("beforebegin", `<a class="fil" href="#/reglages">Réglages</a>`), $(".entete h1", vue).textContent = RUBS.find(r => r[0] === rub)?.[1] || "Réglages";
   $("[data-sons]", vue).onchange = ev => S.agir("profil", { champs: { reglages: { sons: ev.target.checked } } }, { toast: ev.target.checked ? "Sons activés" : "Sons coupés", sansAnnuler: true });
   if (rub === "affichage") S.api("/api/fournisseurs_liste").then(d => {
     const miennes = new Set(S.reglage("plateformes", []) || []);
@@ -539,7 +539,7 @@ P.reglages = async (vue, args, params) => {
       await new Promise(r => setTimeout(r, 900));
       let t; try { t = await S.api("/api/tache/" + tid); } catch { continue; }
       $("i", ligne).style.width = (t.total ? 100 * t.fait / t.total : 5) + "%";
-      $("[data-t]", ligne).textContent = t.erreur || (t.fini ? `Terminé : ${t.resultat ? `${t.resultat.films} titres, ${t.resultat.journal} visionnages, ${t.resultat.watchlist} en watchlist, ${t.resultat.listes} listes` : ""}${t.non_trouves.length ? ` · ${t.non_trouves.length} non reconnus : ${t.non_trouves.slice(0, 12).join(", ")}${t.non_trouves.length > 12 ? "…" : ""}` : ""}` : `${t.fait}/${t.total} titres reconnus…`);
+      $("[data-t]", ligne).textContent = t.erreur || (t.fini ? `Terminé : ${t.resultat ? `${t.resultat.films} titres, ${t.resultat.journal} visionnages, ${t.resultat.watchlist} en watchlist, ${t.resultat.listes} listes` : ""}${t.non_trouves.length ? `, ${t.non_trouves.length} non reconnus : ${t.non_trouves.slice(0, 12).join(", ")}${t.non_trouves.length > 12 ? "…" : ""}` : ""}` : `${t.fait}/${t.total} titres reconnus…`);
       if (t.fini) { if (!t.erreur) { await S.chargerEtat(); S.chargerBase(true).catch(() => {}); } break; }
     }
   };

@@ -126,7 +126,7 @@ Réglages :
 - `imdb.py`, `wiki.py` : notes IMDb et Wikidata.
 - `imports.py` : imports et exports.
 - `decouverte.py` : recommandations, sorties, notifications.
-- `web/` : l'interface, en JavaScript sans framework (+ d3 pour les graphiques), avec les polices embarquées pour l'hors ligne.
+- `web/` : l'interface, en JavaScript sans framework (+ d3 pour les graphiques).
 - `android/` : l'application Android (Chaquopy et WebView).
 - `tests/` : `python tests/test_unitaires.py` (fusion, chiffrement, imports…) et `python tests/test_interface.py` (parcours complet dans Chromium, avec de faux TMDB, GitHub, IMDb et Wikidata).
 
