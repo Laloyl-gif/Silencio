@@ -115,10 +115,10 @@ S.lienPlateforme = (id, titre, secours) => (RECHERCHE_PLATEFORMES[id] ? RECHERCH
 S.fmtDateP = (d, court) => !d ? "" : d.length === 4 ? d : d.length === 7 ? S.fmtDate(d, court) : S.fmtDate(d, court);
 
 // ------------------------------------------------------------------ ajout d'un visionnage
-S.ouvrirAjout = (cle, ex) => {
+S.ouvrirAjout = (cle, ex, o) => {
   const corps = el(`<div></div>`);
   const m = S.ouvrirModale({ titre: ex ? "Modifier" : "Ajouter", corps, pied: null });
-  if (cle) return formulaire(m, corps, cle, ex);
+  if (cle) return formulaire(m, corps, cle, ex, o);
   corps.innerHTML = `<input class="champ champ-grand" type="search" placeholder="Titre d'un film ou d'une série" autocomplete="off" enterkeyhint="search"><div class="res-recherche" style="margin-top:10px"></div>`;
   const champ = $("input", corps), res = $(".res-recherche", corps);
   let sel = 0, cles = [];
@@ -143,19 +143,20 @@ S.ouvrirAjout = (cle, ex) => {
   champ.focus({ preventScroll: true }); setTimeout(() => champ.focus({ preventScroll: true }), 80);
 };
 
-function formulaire(modale, corps, cle, ex) {
+function formulaire(modale, corps, cle, ex, o = {}) {
   const m = S.info(cle) || {};
   const t = S.monTitre(cle);
   const dejaVu = !!(t.vu || S.journalDe(cle).length);
+  if (o.suite && !ex) ex = { date: S.aujourdhui().slice(0, 4), revision: false };   // vu sans date : à toi de la retrouver
   const e = Object.assign({ cle, date: S.aujourdhui(), note: t.note ?? null, coeur: !!t.coeur, revision: dejaVu, critique: "", critique_privee: true, prive: false, ou: null, prix: null, avec: [], version: "" }, ex || {});
   const detail = Object.assign({}, t.detail || {});
-  $("h2", modale).textContent = ex ? "Modifier" : "J'ai vu";
+  $("h2", modale).textContent = o.suite ? `Compléter, ${o.position}` : ex ? "Modifier" : "J'ai vu";
   const mesCinemas = [...new Map(Object.values(S.vivants(S.moi.journal)).filter(j => j.ou?.type === "cinema" && j.ou.cinema).sort((a, b) => (b.date || "").localeCompare(a.date || "")).map(j => [j.ou.cinema, j.ou])).values()].slice(0, 6);
   const precisionInit = e.date.length === 4 ? "annee" : e.date.length === 7 ? "mois" : "jour";
-  const moment = e.date === S.aujourdhui() ? "auj" : e.date === S.hier() ? "hier" : "autre";
+  const moment = o.suite ? "autre" : e.date === S.aujourdhui() ? "auj" : e.date === S.hier() ? "hier" : "autre";
   let cinema = e.ou?.type === "cinema" ? { nom: e.ou.cinema || "", salle: e.ou.salle || "" } : null;
   corps.innerHTML = `
-    <div class="aj-film">${S.affiche(m, { taille: "w154" })}<div style="min-width:0"><h3>${esc(S.nomTitre(m))}</h3><div class="aj-sous">${[m.a, dejaVu && !ex ? "déjà dans ton journal" : ""].filter(Boolean).join(", ")}</div>${!ex ? `<button class="aj-changer" data-retour>Changer de film</button>` : ""}</div></div>
+    <div class="aj-film">${S.affiche(m, { taille: "w154" })}<div style="min-width:0"><h3>${esc(S.nomTitre(m))}</h3><div class="aj-sous">${[m.a, dejaVu && !ex ? "déjà dans ton journal" : "", o.suite && ex?.approx ? "date approximative (importée)" : "", o.suite && !ex?.id ? "vu, sans date dans ton journal" : ""].filter(Boolean).join(", ")}</div>${!ex ? `<button class="aj-changer" data-retour>Changer de film</button>` : ""}</div></div>
     <section class="panneau aj-panneau">
       <div class="pan-etats deux"><button data-coeur class="${e.coeur ? "actif" : ""}" style="--c:#f0505f">Coup de cœur</button><button data-rev class="${e.revision ? "actif" : ""}" style="--c:#4cc46f">Revisionnage</button></div>
       <div class="prog-note"><div class="pan-tete"><span>Ta note</span><b data-chiffre-aj></b></div><div data-note></div></div>
@@ -186,7 +187,9 @@ function formulaire(modale, corps, cle, ex) {
         <div class="mini-notes">${[["scenario", "Scénario"], ["realisation", "Mise en scène"], ["jeu", "Jeu"], ["image", "Image"], ["musique", "Musique"], ["son", "Son"]].map(([k, lib]) => `<span>${lib}</span><div class="points10" data-detail="${k}">${Array.from({ length: 10 }, (_, i) => `<button class="${(detail[k] || 0) >= i + 1 ? "ok" : ""}" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>`).join("")}</div>
       </div>
     </div>`;
-  const pied = el(`<div class="pied-m">${ex ? `<button class="aj-supprimer" data-suppr>Supprimer</button>` : ""}<button class="bouton principal grand" data-ok>${ex ? "Enregistrer" : "Ajouter au journal"}</button></div>`);
+  const pied = el(o.suite
+    ? `<div class="pied-m pied-completer"><button class="aj-supprimer" data-passer>Passer</button><button class="aj-supprimer" data-garder>Garder tel quel</button><button class="bouton principal grand" data-ok>Enregistrer</button></div>`
+    : `<div class="pied-m">${ex ? `<button class="aj-supprimer" data-suppr>Supprimer</button>` : ""}<button class="bouton principal grand" data-ok>${ex ? "Enregistrer" : "Ajouter au journal"}</button></div>`);
   $(".pied-m", modale)?.remove(); modale.append(pied);
   const chiffreAj = $("[data-chiffre-aj]", corps);
   const ecrireNote = () => { chiffreAj.textContent = e.note == null ? "" : S.fmtNote(e.note); };
@@ -251,16 +254,20 @@ function formulaire(modale, corps, cle, ex) {
       if (!oui) { $("[data-critique-privee]", corps).checked = true; return; }
     }
     const entree = { id: ex?.id, cle, date: (mo === "autre" ? date : mo === "hier" ? S.hier() : S.aujourdhui()), note: e.note, coeur: e.coeur, revision: rev, critique: $("[data-critique]", corps).value.trim(), critique_privee: $("[data-critique-privee]", corps).checked, prive: $("[data-prive]", corps).checked, ou, prix, avec, version };
+    if (o.suite) entree.approx = false;
     $("[data-ok]", pied).disabled = true;
     try {
       await S.agir("journal", { entree }, { toast: ex ? "Modifié" : "Ajouté au journal", sansRendu: true });
       const d = Object.fromEntries(Object.entries(detail).filter(([, v]) => v != null));
       if (JSON.stringify(d) !== JSON.stringify(t.detail || {})) await S.agir("titre", { cle, champs: { detail: d } }, { toast: false, sansRendu: true });
       S.son("ajout");
+      if (o.suite) return o.suite(true);
       S.fermerModale(); S.rafraichir(true);
     } catch { $("[data-ok]", pied).disabled = false; }
   };
   $("[data-ok]", pied).onclick = valider;
+  const pas = $("[data-passer]", pied); if (pas) pas.onclick = () => o.suite(false);
+  const gar = $("[data-garder]", pied); if (gar) gar.onclick = () => o.suite(true);
   const ret = $("[data-retour]", corps); if (ret) ret.onclick = () => { S.fermerModale(); setTimeout(() => S.ouvrirAjout(), 320); };
   const sup = $("[data-suppr]", pied); if (sup) sup.onclick = async () => { await S.agir("suppr_journal", { id: ex.id }, { toast: "Supprimé", sansRendu: true }); S.fermerModale(); S.rafraichir(true); };
   const clavier = ev => {

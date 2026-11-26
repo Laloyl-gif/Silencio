@@ -37,3 +37,6 @@ select { width: auto; margin: 0; background: #121212; }
 .manuel b { display: block; }
 .manuel .boutons { margin-top: 6px; }
 .rapport { white-space: pre-wrap; word-break: break-all; font-size: 11.5px; color: rgba(255,255,255,.7); max-height: 220px; overflow: auto; margin: 10px 0 0; }
+
+.alerte { border-left: 2px solid #ff8a80; }
+.alerte p { margin: 0 0 10px; line-height: 1.45; }

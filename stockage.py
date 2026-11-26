@@ -26,7 +26,7 @@ SECTIONS = ("titres", "journal", "watchlist", "listes", "classements", "favoris"
 # Toujours dans la partie privée : rien de tout ça n'est montré aux amis.
 CHAMPS_TITRE = {"note", "coeur", "vu", "etiquettes", "citations", "detail", "collection", "prive"}
 CHAMPS_JOURNAL = {"cle", "date", "note", "revision", "critique", "critique_privee", "ou", "prix", "avec", "version",
-                  "prive", "coeur"}
+                  "prive", "coeur", "approx"}
 CHAMPS_PROFIL = {"nom", "bio", "banniere", "reglages", "accueil", "couleur"}
 
 

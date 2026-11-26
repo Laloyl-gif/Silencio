@@ -454,6 +454,45 @@ P.notifs = async (vue) => {
   if (d.r.some(n => !n.lu)) S.post("/api/notifs/lues").then(() => { S.etat.notifs = 0; S.majChrome(); });
 };
 
+// ------------------------------------------------------------------ compléter les films importés
+// Les visionnages venus d'un import (Letterboxd, IMDb, TMDB, Twin Picks) et les films « vus » sans date : on les
+// reprend un par un pour ajouter la vraie date, le cinéma, la version… « Garder tel quel » les retire de la liste.
+S.aCompleter = () => {
+  const faits = new Set(S.reglage("completes", []) || []);
+  const journal = Object.entries(S.vivants(S.moi.journal));
+  const avecEntree = new Set(journal.map(([, e]) => e.cle));
+  const entrees = journal.filter(([id, e]) => !/^j/.test(id) && !e.ou && !faits.has(id))
+    .sort((a, b) => (b[1].date || "").localeCompare(a[1].date || "")).map(([id, e]) => ({ id, cle: e.cle, ex: { ...e, id } }));
+  const sansDate = Object.entries(S.vivants(S.moi.titres)).filter(([c, t]) => t.vu && c.startsWith("m:") && !avecEntree.has(c) && !faits.has(c))
+    .map(([c]) => ({ id: c, cle: c, ex: null }));
+  return [...entrees, ...sansDate];
+};
+S.completer = (liste, i = 0) => {
+  if (i >= liste.length) { S.fermerModale(); S.toast("Tout est complété"); S.rafraichir(true); return; }
+  const it = liste[i];
+  if (!S.info(it.cle) && !it.charge) {             // fiche pas encore en mémoire : on la charge d'abord (titre, affiche)
+    it.charge = true;
+    S.api("/api/titre/" + it.cle).then(r => { const d = r && r.d; if (d) S.retenir(d, it.cle[0] === "t" ? "tv" : "movie"); }).catch(() => {}).finally(() => S.completer(liste, i));
+    return;
+  }
+  const suite = async garder => {
+    if (garder) await S.agir("profil", { champs: { reglages: { completes: [...new Set([...(S.reglage("completes", []) || []), it.id])] } } }, { toast: false, sansRendu: true, sansAnnuler: true });
+    S.fermerModale();
+    setTimeout(() => S.completer(liste, i + 1), 260);
+  };
+  S.ouvrirAjout(it.cle, it.ex, { suite, position: `${i + 1} sur ${liste.length}` });
+};
+function rubriqueCompleter(z) {
+  const l = S.aCompleter();
+  const n = l.filter(x => x.ex).length, nd = l.length - n;
+  z.innerHTML = l.length ? `<p class="pf-intro">${S.pluriel(n, "visionnage importé", "visionnages importés")} sans lieu ni date précise, et ${S.pluriel(nd, "film vu")} sans date dans ton journal. Reprends-les un par un pour ajouter la date, le cinéma, la version, avec qui… « Garder tel quel » le retire de cette liste.</p>
+    <div class="toi-actions" style="margin:12px 0 16px"><button class="bouton principal" data-commencer>Commencer</button></div>
+    <div class="lignes">${l.slice(0, 40).map((x, i) => { const m = S.info(x.cle) || {}; return `<div class="ligne" data-i="${i}">${S.affiche(m, { taille: "w92" })}<div class="corps"><b>${esc(S.nomTitre(m))}</b><span>${x.ex ? `${x.ex.date ? S.fmtDate(x.ex.date) : "sans date"}${x.ex.approx ? ", date approximative" : ""}` : "vu, sans date"}</span></div></div>`; }).join("")}</div>
+    ${l.length > 40 ? `<p class="mini discret">Et ${l.length - 40} autres.</p>` : ""}` : `<p class="pf-intro">Rien à compléter : tous tes visionnages ont leurs détails.</p>`;
+  const c = $("[data-commencer]", z); if (c) c.onclick = () => S.completer(l, 0);
+  $$("[data-i]", z).forEach(x => x.onclick = () => S.completer(l, +x.dataset.i));
+}
+
 // ------------------------------------------------------------------ réglages
 function rubriqueCompte(z, e) {
   const c = e.compte || {};
@@ -514,7 +553,7 @@ function plateformes(z, e) {
       <h4>${x.nom}</h4><p class="pf-intro">${intro}</p>
       <div class="aj-lignes">${champs}
         <div class="aj-ligne"><span>À jour</span><b>${S.fmtNombre(x.envoye || 0)}</b></div>
-        <div class="aj-ligne"><span>À envoyer</span><b>${x.depuis || p === "rf" ? S.fmtNombre(x.a_envoyer || 0) : "–"}${x.a_retirer ? `, ${x.a_retirer} à retirer` : ""}</b></div>
+        <div class="aj-ligne"><span>À envoyer</span><b>${x.depuis || p === "rf" ? S.fmtNombre(x.a_envoyer || 0) : "–"}${x.a_retirer ? `, dont ${x.a_retirer} à retirer` : ""}</b></div>
         <div class="aj-ligne"><span>Dernier passage</span><b>${x.passage ? `${quand(x.passage.quand)}${x.passage.echec ? `, ${x.passage.echec} échec${x.passage.echec > 1 ? "s" : ""}` : ""}` : "jamais"}</b></div>
       </div>
       ${p !== "rf" ? `<p class="pf-intro" style="margin-top:10px">${x.depuis ? `Relié depuis le ${quand(x.depuis)} : ` : "Dès le premier passage de l'extension, "}seuls tes ajouts et tes changements faits dans Silencio partent. Rien n'est jamais retiré de ${x.nom}.</p>` : ""}
@@ -567,6 +606,7 @@ P.reglages = async (vue, args, params) => {
       <div class="ligne-champ"><span class="libelle-champ" style="width:auto;flex:1">Sons</span><label class="interrupteur"><input type="checkbox" data-sons ${S.reglage("sons", true) !== false ? "checked" : ""}><span></span></label></div>
       <label class="etiquette">Tes abonnements (filtre « sur mes plateformes »)</label><div class="puces" data-plats>${S.chargement()}</div>
     </section>
+    <section class="carte" data-rub="completer" data-completer></section>
     <section class="carte" data-rub="tmdb"><h3>TMDB</h3><p class="muet petit">Tes notes, ta watchlist, tes coups de cœur et tes listes de films sont recopiés sur ton compte TMDB (dès qu'il y a du réseau).</p>
       ${a.tmdb.connecte ? `<div class="flex"><span class="espace">Connecté : <b>${esc(a.tmdb.nom)}</b>${e.file_tmdb.attente ? `, ${e.file_tmdb.attente} modification(s) en attente` : ""}${e.file_tmdb.erreur ? `, <span style="color:var(--rouge)">${esc(e.file_tmdb.erreur)}</span>` : ""}</span><button class="bouton petit" data-tmdb-off>Déconnecter</button></div>` : `<button class="bouton principal" data-tmdb-on>Connecter mon compte TMDB</button>`}
     </section>
@@ -600,13 +640,14 @@ P.reglages = async (vue, args, params) => {
     <section class="carte" data-rub="avance"><h3>Raccourcis clavier</h3><dl class="tableau-infos petit"><dt>n</dt><dd>Ajouter un visionnage</dd><dt>/</dt><dd>Recherche</dd><dt>1 … 0, puis « . »</dt><dd>Note (dans l'ajout) : 8 puis . = 7,5</dd><dt>Entrée</dt><dd>Valider l'ajout</dd><dt>h, j, s</dt><dd>Accueil, Journal, Stats</dd><dt>z</dt><dd>Annuler la dernière action</dd><dt>Échap</dt><dd>Fermer</dd></dl></section>
     <p class="mini discret centre" data-rub="avance">Silencio ${esc(e.app)}, données TMDB (ce produit utilise l'API TMDB sans être approuvé ni certifié par TMDB), notes IMDb : datasets.imdbws.com, prix : Wikidata, plateformes : JustWatch</p>
   </div>`;
-  const RUBS = [["compte", e.compte?.connecte ? "Compte" : "Compte (à créer)", "moi"], ["affichage", "Affichage", "reglages"], ["plateformes", "Letterboxd, IMDb, Refract", "sync"], ["tmdb", "Compte TMDB", "sync"], ["amis", "Amis et synchro", "amis"], ["importer", "Importer", "plus"], ["exporter", "Exporter", "lien"], ["historique", "Historique", "annuler"], ["avance", "Avancé", "info"]];
+  const RUBS = [["compte", e.compte?.connecte ? "Compte" : "Compte (à créer)", "moi"], ["affichage", "Affichage", "reglages"], ["plateformes", "Letterboxd, IMDb, Refract", "sync"], ["tmdb", "Compte TMDB", "sync"], ["amis", "Amis et synchro", "amis"], ["importer", "Importer", "plus"], ["completer", "Compléter tes films importés", "plus"], ["exporter", "Exporter", "lien"], ["historique", "Historique", "annuler"], ["avance", "Avancé", "info"]];
   const rub = args[0];
   $$("[data-rub]", vue).forEach(x => x.classList.toggle("cache", x.dataset.rub !== rub));
   if (!rub) $(".col", vue).insertAdjacentHTML("afterbegin", `<div class="lignes menu-reglages">${RUBS.map(([k, l, i]) => `<a class="ligne" href="#/reglages/${k}"><div class="corps"><b>${l}</b></div></a>`).join("")}</div>`);
   else $(".entete h1", vue).insertAdjacentHTML("beforebegin", `<a class="fil" href="#/reglages">Réglages</a>`), $(".entete h1", vue).textContent = RUBS.find(r => r[0] === rub)?.[1] || "Réglages";
   if (rub === "plateformes") plateformes($("[data-plateformes]", vue), e);
   if (rub === "compte") rubriqueCompte($("[data-compte]", vue), e);
+  if (rub === "completer") rubriqueCompleter($("[data-completer]", vue));
   $("[data-sons]", vue).onchange = ev => S.agir("profil", { champs: { reglages: { sons: ev.target.checked } } }, { toast: ev.target.checked ? "Sons activés" : "Sons coupés", sansAnnuler: true });
   if (rub === "affichage") S.api("/api/fournisseurs_liste").then(d => {
     const miennes = new Set(S.reglage("plateformes", []) || []);

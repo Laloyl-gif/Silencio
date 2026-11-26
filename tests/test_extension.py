@@ -56,9 +56,22 @@ class Faux(BaseHTTPRequestHandler):
             return self.envoyer(200, FILM.format(slug=slug, lid=lid, fid=fid, tmdb=tmdb), "text/html",
                                 {"x-letterboxd-identifier": lid})
         if p == "/etienne/film/blue-velvet/diary/":
-            return self.envoyer(200, '<table class="diary-table"><a href="/etienne/films/diary/for/2024/03/01/">1</a></table>', "text/html")
+            return self.envoyer(200, '<table class="diary-table"><tr class="diary-entry-row" data-viewing-id="v42"><td><a href="/etienne/films/diary/for/2024/03/01/">1</a></td></tr></table>', "text/html")
         if p.startswith("/etienne/film/"):
             return self.envoyer(404, "", "text/html")
+        self.envoyer(404, {})
+
+    def do_PATCH(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        RECU.append(("PATCH " + self.path, dict(self.headers), self.rfile.read(n).decode()))
+        if self.path.startswith("/api/v0/production-log-entries/"):
+            return self.envoyer(200, {"id": self.path.rsplit("/", 1)[1]})
+        self.envoyer(404, {})
+
+    def do_DELETE(self):
+        RECU.append(("DELETE " + self.path, dict(self.headers), ""))
+        if self.path.startswith("/api/v0/production-log-entries/"):
+            return self.send_response(204) or self.end_headers()
         self.envoyer(404, {})
 
     def do_POST(self):
@@ -104,6 +117,8 @@ def main():
         etats = {r["id"]: r["etat"] for r in rep["resultats"]}
         verifier(etats == {"a": "ok", "b": "deja", "c": "ok", "d": "ok", "e": "echec", "f": "attente"},
                  f"Letterboxd : journal, doublon évité, note, retrait de watchlist, film absent, liste en attente ({etats})")
+        refs = {r["id"]: r.get("ref") for r in rep["resultats"]}
+        verifier(refs["a"] == "x" and refs["b"] == "v42", "journal : l'identifiant de l'entrée revient à Silencio (créée ou déjà là)")
         journal = [r for r in RECU if r[0] == "/api/v0/production-log-entries"]
         verifier(len(journal) == 1, "un seul visionnage posté (le second était déjà au journal)")
         corps = json.loads(journal[0][2])
@@ -118,6 +133,17 @@ def main():
         verifier("__csrf=csrf-2" in wl[2], "le nouveau jeton CSRF renvoyé par le site est réutilisé")
         verifier(rep["cache"]["1018"] == {"slug": "mulholland-drive", "filmId": "51561", "lid": "2a8i"}, "fiches mises en cache")
         verifier(rep["adresses"] == {"note": 0, "wl-": 0}, "les adresses qui marchent sont retenues (pas de rafale d'essais ensuite)")
+        # modifier puis supprimer une entrée du journal
+        rep = pg.evaluate("""async ops => await window.__ecoutes[0]({ type: "silencio-executer", ops, ctx: { csrf: "c", pseudo: "etienne", rapide: true } })""", [
+            {"id": "m", "cle": "vu|j1", "sorte": "vu", "action": "poser", "ref": "x", "tmdb": 1018,
+             "valeur": {"cle": "m:1018", "date": "2024-03-02", "rewatch": False, "note": 3, "like": False, "critique": ""}, "avant": {"date": "2024-03-01"}},
+            {"id": "s", "cle": "vu|j2", "sorte": "vu", "action": "retirer", "tmdb": 793, "valeur": None, "avant": {"date": "2024-03-01"}}])
+        et = {r["id"]: r for r in rep["resultats"]}
+        patch = next(r for r in RECU if r[0] == "PATCH /api/v0/production-log-entries/x")
+        verifier(et["m"]["etat"] == "ok" and json.loads(patch[2])["rating"] == 3 and json.loads(patch[2])["diaryDetails"]["diaryDate"] == "2024-03-02",
+                 "journal : entrée modifiée (date, note)")
+        verifier(et["s"]["etat"] == "ok" and any(r[0] == "DELETE /api/v0/production-log-entries/v42" for r in RECU),
+                 "journal : entrée supprimée (retrouvée sur la page du journal)")
         # une adresse inconnue n'est réessayée qu'une fois par jour
         rep = pg.evaluate("""async ops => await window.__ecoutes[0]({ type: "silencio-executer", ops, ctx: { csrf: "c", pseudo: "etienne", rapide: true,
             adresses: {}, essais: { like: Date.now() } } })""", [{"id": "g", "cle": "like|m:1018", "sorte": "like", "action": "poser", "valeur": 1, "tmdb": 1018}])

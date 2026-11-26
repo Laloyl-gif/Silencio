@@ -50,17 +50,43 @@ class App:
         self._verrou_osm = threading.Lock()
         self._osm_dernier = 0
         self.refract = Refract(self.stock, self._meta)
+        self.reveil_rf = threading.Event()             # réveille la boucle Refract juste après un ajout
 
     # ---- arrière-plan
     def demarrer(self):
         self.synchro.demarrer()
         threading.Thread(target=self._entretien, daemon=True).start()
 
+    def _migrer(self):
+        """v7 : Refract ne reçoit plus que les ajouts faits après sa liaison (et les échecs 429 sont oubliés)."""
+        app = self.stock.appareil
+        if app.get("migre_rf_7") or not self.stock.doc:
+            return
+        depart = (app.get("miroir_depart") or {}).get("rf")
+        if depart:
+            miroir.poser_depart_avant(self.stock, "rf", depart)
+        (app.get("miroir_echecs") or {}).pop("rf", None)
+        # Letterboxd : les entrées du journal déjà envoyées gardent leur valeur complète (note, like, critique),
+        # pour que seules les modifications faites à partir de maintenant partent
+        voulu, fait = miroir.souhaite(self.stock.doc, "lb"), miroir.miroir(self.stock.doc, "lb")
+        maj = {}
+        for k, v in fait.items():
+            if k.startswith("vu|") and isinstance(v, dict) and "note" not in v and k in voulu and \
+                    (v.get("date"), v.get("rewatch")) == (voulu[k]["date"], voulu[k]["rewatch"]):
+                maj[f"lb|{k}"] = dict(voulu[k], **({"ref": v["ref"]} if v.get("ref") else {}))
+        if maj:
+            self.stock.poser_miroirs(maj)
+        app["migre_rf_7"] = True
+        self.stock.sauver_appareil()
+
     def _entretien(self):
         time.sleep(2)
         tour = 0
         while True:
+            vite = self.reveil_rf.is_set()
+            self.reveil_rf.clear()
             try:
+                self._migrer()
                 self.tmdb.vider_file()
                 self.tmdb.assurer_metas(self.cles_utiles())
                 if tour % 5 == 0:
@@ -68,13 +94,13 @@ class App:
                 if tour % 60 == 0 and not imdb.a_jour():
                     imdb.mettre_a_jour()
                 self.notifs.verifier()
-                if tour % 2 == 0 and self.refract.cle:
+                if (vite or tour % 2 == 0) and self.refract.cle:
                     if self.refract.passage():
                         self.synchro.demander(5)
             except Exception:  # noqa: BLE001
                 traceback.print_exc()
             tour += 1
-            time.sleep(30)
+            self.reveil_rf.wait(30)
 
     def cles_utiles(self, amis=True):
         """Tous les titres dont on a besoin pour les stats : les tiens, et ceux de tes amis."""
@@ -266,7 +292,9 @@ class App:
         nouvelles += [m[2].get("cle") for m in res.get("modifs", []) if m[0] == "journal" and m[2]]
         if nouvelles:
             self.tmdb.assurer_metas([c for c in nouvelles if c])
-        self.synchro.demander()
+        self.synchro.demander(4)                       # un ajout part vite vers GitHub…
+        threading.Timer(3, self.reveil_rf.set).start()  # …et vers Refract
+        self.stock.appareil["derniere_modif"] = time.time()
         threading.Thread(target=self.tmdb.vider_file, daemon=True).start()
         return {"modifs": res.get("modifs", []), "version": self.stock.version, "libelle": res.get("libelle")}
 
@@ -402,6 +430,16 @@ class App:
         self.synchro.demander(1)
         return self.etat()
 
+    def a_faire_ext(self):
+        doc = self.stock.doc
+        if not doc:
+            return {}
+        r = {}
+        for p in ("lb", "imdb"):
+            if (self.stock.appareil.get("miroir_depart") or {}).get(p):
+                r[p] = miroir.compter(doc, p).get("a_envoyer", 0)
+        return r
+
     def _apres_compte(self):
         """Juste après une création ou une connexion : vérifie la clé Refract et prépare les plateformes."""
         app = self.stock.appareil
@@ -423,8 +461,10 @@ class App:
             presence, a_importer = self.refract.point_de_depart()
             if a_importer:
                 self.stock.action("import", {"sections": {"watchlist": a_importer}, "libelle": "Import Refract"})
-            miroir.poser_depart(self.stock, "rf", presence)
-            self.stock.appareil.setdefault("miroir_depart", {})["rf"] = time.time()
+            # tout ce que Silencio contient déjà est considéré en place : seuls tes ajouts suivants partiront
+            maintenant_ = time.time() + 1
+            miroir.poser_depart_avant(self.stock, "rf", maintenant_, presence)
+            self.stock.appareil.setdefault("miroir_depart", {})["rf"] = maintenant_
             self.stock.sauver_appareil()
             self.refract.passage()
             self.synchro.demander(3)
@@ -724,7 +764,9 @@ def fabriquer_handler(app):
                 if r == "ext/bonjour":
                     return self._envoyer(200, {"ok": True, "profil": app.stock.pid, "app": config.VERSION,
                                                "pseudo": app.stock.appareil.get("letterboxd_pseudo", ""),
-                                               "modes": app.stock.appareil.get("modes_ext") or {"lb": "auto", "imdb": "clic"}})
+                                               "modes": app.stock.appareil.get("modes_ext") or {"lb": "auto", "imdb": "clic"},
+                                               "modif": app.stock.appareil.get("derniere_modif", 0),
+                                               "a_faire": app.a_faire_ext()})
                 return self._envoyer(404, {"erreur": "inconnu"})
             if r == "etat":
                 return self._envoyer(200, app.etat())

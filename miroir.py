@@ -3,7 +3,8 @@ qui y a déjà été envoyé (section « miroirs » du profil) et en tire une li
 
 Clés (sans le préfixe de plateforme) :
   Letterboxd (lb) — films seulement
-    vu|<jid>          entrée de journal datée          {"date", "rewatch"}
+    vu|<jid>          entrée du journal (diary) datée  {"date", "rewatch", "note", "like", "critique"}
+                      (créée, modifiée et supprimée comme dans Silencio ; « ref » = l'identifiant de l'entrée)
     marque|<cle>      vu sans date exacte              1
     note|<cle>        note en étoiles (0,5 à 5)        3.5
     like|<cle>        coup de cœur                     1
@@ -28,9 +29,10 @@ import time
 
 PLATEFORMES = {"lb": "Letterboxd", "imdb": "IMDb", "rf": "Refract"}
 FAVORIS = "_favoris"                               # la watchlist IMDb, qui reçoit la watchlist Silencio
-# Sur Letterboxd et IMDb, Silencio n'envoie que des ajouts et des changements, jamais de retrait : ce qui y est
-# déjà (1 000 films dans ta watchlist IMDb, par exemple) n'est jamais touché. Refract, lui, suit Silencio en entier.
-RETIRABLE = {"lb": set(), "imdb": set(), "rf": {"wl", "ep"}}
+# Partout, seuls tes ajouts et changements faits dans Silencio après la liaison partent ; ce qui existait avant est
+# considéré comme déjà en place. Sur IMDb, rien n'est jamais retiré (1 000 films dans ta watchlist IMDb restent
+# 1 000) ; sur Letterboxd, une entrée de journal que Silencio a créée suit ses modifications et sa suppression.
+RETIRABLE = {"lb": {"vu"}, "imdb": set(), "rf": {"wl", "ep"}}
 PAUSE_ECHEC = 6 * 3600                             # une opération ratée n'est retentée qu'après ce délai
 
 
@@ -65,7 +67,11 @@ def souhaite(doc, plateforme):
                 continue
             d = e.get("date") or ""
             if len(d) == 10 and not e.get("approx"):
-                r[f"vu|{jid}"] = {"date": d, "rewatch": bool(e.get("revision"))}
+                t = titres.get(c) or {}
+                n = e.get("note") if e.get("note") is not None else t.get("note")
+                r[f"vu|{jid}"] = {"cle": c, "date": d, "rewatch": bool(e.get("revision")), "note": etoiles(n),
+                                  "like": bool(e.get("coeur") or t.get("coeur")),
+                                  "critique": "" if e.get("critique_privee", True) else (e.get("critique") or "").strip()}
                 dates.setdefault(c, []).append(d)
         for c, t in titres.items():
             if not c.startswith("m:") or c in caches:
@@ -127,6 +133,14 @@ def _sans_ref(v):
     return v
 
 
+def _pareil(plateforme, cle, avant, voulu):
+    if plateforme == "lb" and cle.startswith("vu|") and isinstance(avant, dict) and "note" not in avant:
+        # entrée notée avant la v7 (date et revisionnage seulement) : on ne compare que ça
+        return {"date": avant.get("date"), "rewatch": avant.get("rewatch")} == \
+            {"date": (voulu or {}).get("date"), "rewatch": (voulu or {}).get("rewatch")}
+    return _sans_ref(avant) == _sans_ref(voulu)
+
+
 def miroir(doc, plateforme):
     """{clé: valeur} de ce qui a déjà été envoyé (ou trouvé lors de l'import) sur la plateforme."""
     pre = plateforme + "|"
@@ -163,7 +177,7 @@ def operations(doc, plateforme, meta, echecs=None, limite=60, forcer=False):
                 "imdb": m.get("im"), "titre": m.get("t") or "", "vo": m.get("o") or "", "annee": m.get("a")}
 
     for k, v in voulu.items():
-        if _sans_ref(fait.get(k)) == _sans_ref(v):
+        if _pareil(plateforme, k, fait.get(k), v):
             continue
         sorte = k.split("|")[0]
         op = {"cle": k, "sorte": sorte, "action": "poser", "valeur": v, "avant": fait.get(k)}
@@ -171,11 +185,10 @@ def operations(doc, plateforme, meta, echecs=None, limite=60, forcer=False):
         if sorte in ("vu", "critique"):
             e = journal.get(parts[1]) or {}
             op.update(infos(e.get("cle", "")))
-            t = titres.get(e.get("cle", "")) or {}
             if sorte == "vu" and plateforme == "lb":
-                op["extra"] = {"note": etoiles(e.get("note") if e.get("note") is not None else t.get("note")),
-                               "like": bool(t.get("coeur")),
-                               "critique": "" if e.get("critique_privee", True) else (e.get("critique") or "").strip()}
+                op["extra"] = {"note": v.get("note"), "like": v.get("like"), "critique": v.get("critique")}
+                if isinstance(fait.get(k), dict) and fait[k].get("ref"):
+                    op["ref"] = fait[k]["ref"]        # l'entrée existe déjà : on la modifie
         elif sorte == "liste":
             op["liste"] = parts[1]
             if isinstance(fait.get(k), dict) and fait[k].get("ref"):
@@ -210,6 +223,13 @@ def operations(doc, plateforme, meta, echecs=None, limite=60, forcer=False):
             s, _, e = parts[2].partition("x")
             op["saison"], op["episode"] = int(s or 0), int(e or 0)
             op.update(infos(parts[1]))
+        elif sorte == "vu":
+            film_ = (journal.get(parts[1]) or {}).get("cle") or (v.get("cle") if isinstance(v, dict) else None)
+            if not film_:
+                continue                          # entrée supprimée avant la v7 : film inconnu, on n'y touche pas
+            op.update(infos(film_))
+            if isinstance(v, dict) and v.get("ref"):
+                op["ref"] = v["ref"]
         else:
             op.update(infos(parts[-1]))
         ops.append(op)
@@ -235,8 +255,9 @@ def operations(doc, plateforme, meta, echecs=None, limite=60, forcer=False):
 
 def compter(doc, plateforme):
     voulu, fait = souhaite(doc, plateforme), miroir(doc, plateforme)
-    a_faire = sum(1 for k, v in voulu.items() if _sans_ref(fait.get(k)) != _sans_ref(v))
+    a_faire = sum(1 for k, v in voulu.items() if not _pareil(plateforme, k, fait.get(k), v))
     a_retirer = sum(1 for k in fait if k not in voulu and k.split("|")[0] in RETIRABLE.get(plateforme, ()))
+    a_faire += a_retirer
     return {"a_envoyer": a_faire, "a_retirer": a_retirer, "envoye": sum(1 for k in fait if k in voulu)}
 
 
@@ -269,6 +290,24 @@ def appliquer_resultats(stock, plateforme, resultats, ops_connues=None):
     passages[plateforme] = {"quand": time.time(), **bilan}
     stock.sauver_appareil()
     return bilan
+
+
+def _source(doc, cle):
+    """L'entrée de Silencio d'où vient une clé de miroir (pour savoir quand elle a changé)."""
+    sorte, _, reste = cle.partition("|")
+    ident = reste.split("|")[0]
+    section = {"vu": "journal", "critique": "journal", "wl": "watchlist", "fav": "watchlist", "ep": "series",
+               "liste": "listes", "item": "listes"}.get(sorte, "titres")
+    return (doc.get(section) or {}).get(ident) or {}
+
+
+def poser_depart_avant(stock, plateforme, moment, presence=None):
+    """Tout ce qui existait dans Silencio avant « moment » est considéré comme déjà en place sur la plateforme :
+    seuls les ajouts et changements faits ensuite partiront."""
+    voulu = souhaite(stock.doc, plateforme)
+    fait = {k: v for k, v in voulu.items() if (_source(stock.doc, k).get("maj") or 0) <= moment}
+    fait.update(presence or {})
+    return poser_depart(stock, plateforme, fait)
 
 
 def poser_depart(stock, plateforme, presence):

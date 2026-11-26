@@ -117,26 +117,108 @@
     return new RegExp(`/for/${a}/${m}/${j}/`).test(html) || new RegExp(`${a}-${m}-${j}`).test(html.replace(/\s+/g, " ").match(/diary-table[\s\S]*$/)?.[0] || "");
   }
 
-  async function journal(op, f) {
+  // l'identifiant d'une entrée du journal, lu sur ta page /<pseudo>/film/<slug>/diary/ (pour une entrée créée
+  // avant que Silencio ne garde son identifiant)
+  async function trouverEntree(f, date) {
+    if (!pseudo || !date) return "";
+    const r = await F(`/${pseudo}/film/${f.slug}/diary/`, { credentials: "include" });
+    if (!r.ok) return "";
+    const html = await r.text();
+    const [a, m, j] = date.split("-");
+    for (const ligne of html.split(/<tr\b/i).slice(1)) {
+      if (!new RegExp(`/for/${a}/${m}/${j}/|${a}-${m}-${j}`).test(ligne)) continue;
+      const x = ligne.match(/data-(?:viewing-id|log-entry-id|object-id|lid)="([^"]+)"/i) || ligne.match(/viewing:(\w+)/);
+      if (x) return x[1];
+    }
+    return "";
+  }
+
+  const ENTETES_JSON = () => ({ "Content-Type": "application/json", "Accept": "application/json", "X-Requested-With": "XMLHttpRequest", "X-CSRF-TOKEN": csrf });
+  const ADRESSES_JOURNAL = [["/api/v0/production-log-entries", "lid"], ["/api/v0/log-entries", "filmId"]];
+
+  function corpsJournal(op) {
     const v = op.valeur || {}, x = op.extra || {};
-    if (await dejaAuJournal(f, v.date)) return { etat: "deja" };
-    const corps = { diaryDetails: { diaryDate: v.date, rewatch: !!v.rewatch }, tags: [], like: !!x.like };
-    if (x.note) corps.rating = x.note;
-    if (x.critique) corps.review = { text: x.critique, containsSpoilers: false };
-    for (const [chemin, champ] of [["/api/v0/production-log-entries", "lid"], ["/api/v0/log-entries", "filmId"]]) {
+    const note = v.note != null ? v.note : x.note, like = v.like != null ? v.like : x.like;
+    const critique = v.critique != null ? v.critique : x.critique;
+    const corps = { diaryDetails: { diaryDate: v.date, rewatch: !!v.rewatch }, tags: [], like: !!like };
+    corps.rating = note || null;
+    if (critique) corps.review = { text: critique, containsSpoilers: false };
+    return corps;
+  }
+
+  async function envoyerJson(methode, chemin, corps, slug) {
+    return F(chemin, {
+      method: methode, credentials: "include", body: corps ? JSON.stringify(corps) : undefined,
+      referrer: `https://letterboxd.com/film/${slug}/`, headers: ENTETES_JSON()
+    });
+  }
+
+  const idDe = j => j && (j.id || j.lid || (j.data && (j.data.id || j.data.lid)) || (j.logEntry && (j.logEntry.id || j.logEntry.lid)) ||
+    (j.entry && (j.entry.id || j.entry.lid)) || (j.viewing && (j.viewing.id || j.viewing.lid))) || "";
+
+  // créer une entrée (puis garder son identifiant pour la modifier ou la supprimer plus tard)
+  async function journal(op, f) {
+    const v = op.valeur || {};
+    if (op.ref || (op.avant && op.avant.date)) return modifierJournal(op, f);
+    if (await dejaAuJournal(f, v.date)) return { etat: "deja", ref: await trouverEntree(f, v.date) || undefined };
+    const corps = corpsJournal(op);
+    if (!corps.rating) delete corps.rating;
+    for (const [chemin, champ] of ADRESSES_JOURNAL) {
       const b = { ...corps };
       if (champ === "lid" && f.lid) b.productionId = f.lid; else b.filmId = f.filmId;
-      const r = await F(chemin, {
-        method: "POST", credentials: "include", body: JSON.stringify(b), referrer: `https://letterboxd.com/film/${f.slug}/`,
-        headers: { "Content-Type": "application/json", "Accept": "application/json", "X-Requested-With": "XMLHttpRequest", "X-CSRF-TOKEN": csrf }
-      });
+      const r = await envoyerJson("POST", chemin, b, f.slug);
       if (r.status === 404) continue;
       verifier(r);
-      if (r.ok) return { etat: "ok" };
+      if (r.ok) {
+        let j = null;
+        try { j = await r.json(); } catch { /* réponse vide */ }
+        const ref = idDe(j) || await trouverEntree(f, v.date);
+        return { etat: "ok", ref: ref ? String(ref) : undefined };
+      }
       const t = await r.text().catch(() => "");
       return { etat: "echec", erreur: `journal : ${r.status} ${t.replace(/\s+/g, " ").slice(0, 150)}` };
     }
     return { etat: "echec", erreur: "adresse du journal introuvable : calibre l'action avec l'enregistreur" };
+  }
+
+  // modifier une entrée existante (date, note, like, critique, revisionnage)
+  async function modifierJournal(op, f) {
+    const ref = op.ref || await trouverEntree(f, op.avant && op.avant.date);
+    if (!ref) {
+      if (await dejaAuJournal(f, (op.valeur || {}).date)) return { etat: "deja" };
+      return journal({ ...op, ref: undefined, avant: undefined }, f);     // entrée introuvable : on la crée
+    }
+    const corps = corpsJournal(op);
+    const variantes = ADRESSES_JOURNAL.flatMap(([c]) => [["PATCH", `${c}/${ref}`], ["PUT", `${c}/${ref}`]]);
+    const r = await essayerJson("journal-modifier", variantes, corps, f.slug);
+    return r.etat === "ok" ? { etat: "ok", ref } : r;
+  }
+
+  async function supprimerJournal(op, f) {
+    const ref = op.ref || await trouverEntree(f, op.avant && op.avant.date);
+    if (!ref) return { etat: "deja" };                 // déjà absente du journal Letterboxd
+    const variantes = ADRESSES_JOURNAL.map(([c]) => ["DELETE", `${c}/${ref}`]);
+    const r = await essayerJson("journal-supprimer", variantes, null, f.slug, true);
+    return r;
+  }
+
+  // comme essayer(), pour les adresses JSON : celle qui marche est retenue
+  async function essayerJson(sorte, variantes, corps, slug, absentOk) {
+    const ordre = adresses[sorte] != null ? [adresses[sorte], ...variantes.keys()].filter((x, i, t) => t.indexOf(x) === i) : [...variantes.keys()];
+    const explorer = adresses[sorte] == null || Date.now() - (essais[sorte] || 0) > JOUR;
+    let dernier = "";
+    for (const i of explorer ? ordre : ordre.slice(0, 1)) {
+      const [m, chemin] = variantes[i];
+      const r = await envoyerJson(m, chemin, corps, slug);
+      verifier(r);
+      if (r.ok) { adresses[sorte] = i; return { etat: "ok" }; }
+      if (r.status === 404 && absentOk && adresses[sorte] === i) return { etat: "deja" };
+      dernier = `${r.status} ${(await r.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 120)}`;
+      if (r.status !== 404 && r.status !== 405) break;
+      await pause(hasard(1500, 3000));
+    }
+    if (explorer) essais[sorte] = Date.now();
+    return { etat: "echec", erreur: `journal : ${dernier || "adresse inconnue"} (calibre l'action avec l'enregistreur)` };
   }
 
   async function executer(ops, ctx, aBlanc) {
@@ -162,7 +244,7 @@
         if (aBlanc) { resultats.push({ ...base, etat: "blanc", erreur: `/film/${f.slug}/` }); continue; }
         const poser = op.action === "poser";
         let r;
-        if (op.sorte === "vu") r = await journal(op, f);
+        if (op.sorte === "vu") r = poser ? await journal(op, f) : await supprimerJournal(op, f);
         else if (op.sorte === "note") r = await essayer("note", [[`/s/film:${f.filmId}/rate/`, { rating: poser ? String(Math.round(op.valeur * 2)) : "0" }]], f.slug);
         else if (op.sorte === "like") r = await essayer("like", [[`/s/film:${f.filmId}/like/`, { liked: String(poser) }], [`/film/${f.slug}/like/`, { liked: String(poser) }]], f.slug);
         else if (op.sorte === "wl") r = await essayer(poser ? "wl" : "wl-", poser

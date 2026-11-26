@@ -10,8 +10,9 @@ const DEFAUT = {
   cacheLb: {}, journal: [], manuels: [], enregistrements: [], enregistreurJusqua: 0, dernier: null,
   // discrétion : pauses après un refus, quota par jour, onglets ouverts rarement, adresses qui marchent
   pauses: {}, quota: {}, dernierOnglet: {}, adresses: {}, essais: {}, prochain: 0,
-  sites: { lb: true, imdb: true }, attente: { lb: [], imdb: [] }, modes: { lb: "auto", imdb: "clic" }
+  sites: { lb: true, imdb: true }, attente: { lb: [], imdb: [] }, modes: { lb: "auto", imdb: "clic" }, vuModif: 0
 };
+const ORIGINES = ["https://letterboxd.com/*", "https://www.imdb.com/*", "https://m.imdb.com/*", "https://api.graphql.imdb.com/*"];
 const QUOTA_JOUR = 40;                       // actions par site et par jour, au plus
 const hasard = (a, b) => a + Math.random() * (b - a);
 const aujourdhui = () => new Date().toISOString().slice(0, 10);
@@ -41,6 +42,32 @@ async function silencio(chemin, options = {}) {
   return r.json();
 }
 
+// ---------------------------------------------------------------- autorisations
+// Firefox laisse décocher l'accès aux sites (et l'oublie parfois après une mise à jour) : sans lui, « Missing host
+// permission » ou « NetworkError ». La fenêtre de l'extension propose alors de le redonner d'un clic.
+async function autorisationsManquantes() {
+  if (!B.permissions || !B.permissions.contains) return [];
+  const manque = [];
+  for (const o of ORIGINES) if (!(await B.permissions.contains({ origins: [o] }).catch(() => true))) manque.push(o);
+  return manque;
+}
+
+// injecte le script du site puis lui parle (avec quelques essais : la page peut encore se charger)
+async function parler(onglet, message) {
+  await attendreChargement(onglet.id, 30000);
+  try {
+    await B.scripting.executeScript({ target: { tabId: onglet.id }, files: [SCRIPT[message.p]] });
+  } catch (e) {
+    if (/host permission/i.test(e.message)) throw new Error("accès au site refusé par Firefox : ouvre la fenêtre de Silencio Sync et clique « Autoriser l'accès aux sites ».");
+    throw e;
+  }
+  let derniere;
+  for (let i = 0; i < 4; i++) {
+    try { return await B.tabs.sendMessage(onglet.id, message); } catch (e) { derniere = e; await new Promise(r => setTimeout(r, 700 * (i + 1))); }
+  }
+  throw new Error(/Receiving end/i.test(derniere?.message || "") ? "la page du site ne répond pas (rechargée pendant l'envoi ?) : nouvel essai au prochain passage." : (derniere?.message || "le script n'a pas répondu"));
+}
+
 // ---------------------------------------------------------------- onglets
 function attendreChargement(id, max = 45000) {
   return new Promise(ok => {
@@ -60,7 +87,9 @@ async function ongletPour(p, motif) {
   const pret = ouverts.find(t => t.status === "complete" && !t.discarded);
   if (pret) return { id: pret.id, cree: false };
   const c = await cfg();
-  if (motif !== "bouton" && Date.now() - (c.dernierOnglet[p] || 0) < hasard(2, 4) * 3600e3) return null;
+  // juste après un ajout dans Silencio : un onglet discret au plus toutes les 20 à 40 minutes ; sinon toutes les 2 à 4 heures
+  const ecart = motif === "ajout" ? hasard(20, 40) * 60e3 : hasard(2, 4) * 3600e3;
+  if (motif !== "bouton" && Date.now() - (c.dernierOnglet[p] || 0) < ecart) return null;
   const t = await B.tabs.create({ url: SITE[p], active: false });
   await attendreChargement(t.id);
   await poser({ dernierOnglet: { ...c.dernierOnglet, [p]: Date.now() } });
@@ -118,8 +147,7 @@ async function plateforme(p, aBlanc, motif, modes) {
   ctx.adresses = c.adresses[p] || {};
   ctx.essais = c.essais[p] || {};
   try {
-    await B.scripting.executeScript({ target: { tabId: onglet.id }, files: [SCRIPT[p]] });
-    const rep = await B.tabs.sendMessage(onglet.id, { type: "silencio-executer", ops: r.ops, ctx, aBlanc });
+    const rep = await parler(onglet, { type: "silencio-executer", p, ops: r.ops, ctx, aBlanc });
     if (!rep) throw new Error("le script n'a pas répondu");
     const c2 = await cfg();
     const maj = { adresses: { ...c2.adresses, [p]: rep.adresses || ctx.adresses }, essais: { ...c2.essais, [p]: rep.essais || ctx.essais } };
@@ -157,10 +185,16 @@ async function synchroniser(motif, aBlanc = false) {
   const c = await cfg();
   if (!c.actif && motif !== "bouton") return { inactif: true };
   if (!c.jeton) { await noter("Colle d'abord le code d'appairage affiché dans Silencio.", "attente"); return { jeton: false }; }
+  const manque = await autorisationsManquantes();
+  if (manque.length) {
+    await noter("Firefox ne laisse pas l'extension accéder à Letterboxd ou IMDb : ouvre la fenêtre de Silencio Sync et clique « Autoriser l'accès aux sites ».", "erreur");
+    return { autorisations: manque };
+  }
   enCours = true;
   const bilan = {};
   try {
     const b = await silencio("/api/ext/bonjour");
+    if (b.modif) await poser({ vuModif: b.modif });
     if (b.modes) await poser({ modes: b.modes });
     for (const p of ["lb", "imdb"]) {
       if (c.sites && c.sites[p] === false) { bilan[p] = { coupe: true }; continue; }
@@ -195,9 +229,26 @@ B.runtime.onInstalled.addListener(async d => {
 });
 B.runtime.onStartup.addListener(() => planifier(hasard(1, 4)));
 B.alarms.onAlarm.addListener(async a => {
+  if (a.name === "veille") return veille();
   if (a.name !== "silencio") return;
   try { await synchroniser("minuteur"); } finally { await planifier(); }
 });
+
+// Toutes les 2 minutes, une question très légère à Silencio (chez toi, rien ne part sur Internet) : « as-tu été
+// modifié ? ». Après un ajout, la synchro passe dans les minutes qui suivent au lieu d'attendre le prochain tour.
+B.alarms.create("veille", { periodInMinutes: 2 });
+async function veille() {
+  const c = await cfg();
+  if (!c.actif || !c.jeton || enCours) return;
+  let b;
+  try { b = await silencio("/api/ext/bonjour"); } catch { return; }
+  if (!b.modif || b.modif <= (c.vuModif || 0)) return;
+  const a = b.a_faire || {};
+  const auto = p => (b.modes?.[p] || "auto") === "auto" && c.sites?.[p] !== false && a[p] > 0;
+  if (!auto("lb") && !auto("imdb")) { await poser({ vuModif: b.modif }); return; }
+  if (Date.now() - b.modif * 1000 < 45000) return;     // laisse finir la saisie en cours
+  await synchroniser("ajout");
+}
 
 // ---------------------------------------------------------------- enregistreur : pour calibrer une action inconnue
 function masquer(v) {
@@ -242,8 +293,7 @@ async function executerUn(p, id) {
     ctx.rapide = true;                        // c'est toi qui cliques : pas d'attente artificielle
     const onglet = await ongletPour(p, "bouton");
     try {
-      await B.scripting.executeScript({ target: { tabId: onglet.id }, files: [SCRIPT[p]] });
-      const rep = await B.tabs.sendMessage(onglet.id, { type: "silencio-executer", ops: [op], ctx });
+      const rep = await parler(onglet, { type: "silencio-executer", p, ops: [op], ctx });
       const res = (rep && rep.resultats || [])[0];
       if (!res || res.etat === "attente") return { ok: false, erreur: "pas encore possible pour ce type d'action" };
       await silencio("/api/ext/resultats", { method: "POST", body: JSON.stringify({ plateforme: p, resultats: [res] }) });

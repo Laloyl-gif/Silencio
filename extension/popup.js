@@ -8,8 +8,9 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "
 const NOMS = { lb: "Letterboxd", imdb: "IMDb" };
 function libelle(o, p) {
   const v = o.valeur;
+  if (o.action === "retirer") return o.sorte === "vu" ? "Retirer cette entrée du journal" : "Retirer";
   switch (o.sorte) {
-    case "vu": return `Visionnage du ${new Date(v.date + "T12:00").toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}${v.rewatch ? ", revu" : ""}`;
+    case "vu": return `${o.ref || (o.avant && o.avant.date) ? "Modifier l'entrée du journal" : "Visionnage"} du ${new Date(v.date + "T12:00").toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}${v.rewatch ? ", revu" : ""}`;
     case "note": return p === "lb" ? `Note : ${String(v).replace(".", ",")} étoiles` : `Note : ${v}/10`;
     case "like": return "Coup de cœur";
     case "wl": return "Ajouter à la watchlist";
@@ -27,7 +28,20 @@ function lien(o, p) {
   return o.imdb ? `https://www.imdb.com/title/${o.imdb}/` : "https://www.imdb.com/";
 }
 
+const ORIGINES = ["https://letterboxd.com/*", "https://www.imdb.com/*", "https://m.imdb.com/*", "https://api.graphql.imdb.com/*"];
+async function verifierAutorisations() {
+  if (!B.permissions) return;
+  const ok = await B.permissions.contains({ origins: ORIGINES }).catch(() => true);
+  $("[data-autor]").hidden = ok;
+}
+$("[data-autoriser]").onclick = async () => {
+  // doit être appelé directement depuis le clic (Firefox l'exige)
+  const ok = await B.permissions.request({ origins: ORIGINES }).catch(() => false);
+  $("[data-autor]").hidden = ok;
+};
+
 async function peindre() {
+  verifierAutorisations();
   const c = await envoyer({ type: "etat" });
   $("[data-adresse]").value ||= c.adresse;
   if (!$("[data-jeton]").matches(":focus")) $("[data-jeton]").value = c.jeton;

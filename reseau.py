@@ -11,9 +11,9 @@ _CTX = None
 
 
 class ErreurHTTP(Exception):
-    def __init__(self, code, message="", corps=b""):
+    def __init__(self, code, message="", corps=b"", entetes=None):
         super().__init__(f"HTTP {code} {message}".strip())
-        self.code, self.corps = code, corps
+        self.code, self.corps, self.entetes = code, corps, dict(entetes or {})
 
 
 class HorsLigne(Exception):
@@ -59,7 +59,7 @@ def requete(url, methode="GET", params=None, corps=None, entetes=None, delai=15,
                 c = gzip.decompress(c)
         except Exception:  # noqa: BLE001
             c = b""
-        raise ErreurHTTP(e.code, e.reason, c) from None
+        raise ErreurHTTP(e.code, e.reason, c, {k.lower(): v for k, v in (e.headers.items() if e.headers else [])}) from None
     except (urllib.error.URLError, OSError, TimeoutError) as e:
         raise HorsLigne(str(e)) from None
     if brut:

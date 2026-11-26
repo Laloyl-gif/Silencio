@@ -59,9 +59,9 @@ partagés avec tes amis.
 | Service | Ce que fait Silencio |
 |---|---|
 | **TMDB** | Lecture de toutes les infos, et **écriture** sur ton compte : notes, watchlist, coups de cœur, listes de films. Les modifications attendent le retour du réseau. |
-| **Letterboxd** | Par l'extension Firefox **Silencio Sync** (PC et téléphone), avec ta session : visionnages, notes, coups de cœur, watchlist. Seulement des ajouts et changements, jamais de retrait. Import de ton export .zip possible. |
+| **Letterboxd** | Par l'extension Firefox **Silencio Sync** (PC et téléphone), avec ta session : journal (diary : ajout, modification, suppression d'une entrée), notes, coups de cœur, watchlist. Rien d'autre n'est jamais retiré. Import de ton export .zip possible. |
 | **IMDb** | Par la même extension : notes, watchlist Silencio vers ta watchlist IMDb, listes ; critiques publiques à coller à la main. Jamais de retrait. Par défaut, chaque envoi se fait d'un clic dans la fenêtre de l'extension (IMDb n'autorise pas les robots sans accord écrit). Notes IMDb publiques lues dans les fichiers d'IMDb. |
-| **Refract** | Par son **API officielle** (clé personnelle rfk_…) : films vus, épisodes, watchlist, tout seul. Les notes attendent : Silencio relit chaque jour la description de l'API Refract et les envoie dès qu'elle les accepte. |
+| **Refract** | Par son **API officielle** (clé personnelle rfk_…) : films vus, épisodes, watchlist et notes, tout seul, quelques secondes après chaque ajout. Seuls tes ajouts faits après la liaison partent ; si Refract demande de ralentir, Silencio attend et reprend tout seul. |
 | **Twin Picks** | Import des notes d'un profil Twin Picks (fichier profils.json). |
 | **Amis** | Par un dépôt GitHub : chacun écrit son profil avec son propre compte et lit ceux des autres. |
 
@@ -122,7 +122,8 @@ Réglages :
 
 - **Connecter mon compte TMDB** ;
 - importer ton export **Letterboxd** (.zip), **IMDb** (.csv), ton compte **TMDB** ou un profil **Twin Picks** ;
-- relier **Letterboxd, IMDb, Refract** et installer l'extension Silencio Sync.
+- relier **Letterboxd, IMDb, Refract** et installer l'extension Silencio Sync ;
+- **Compléter tes films importés** : reprendre un par un les visionnages importés et les films vus sans date (date, cinéma, version…).
 
 ## Pour les curieux
 

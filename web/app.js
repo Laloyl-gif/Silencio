@@ -268,6 +268,7 @@ async function rendre(garderPosition) {
   const n = ++rendus;
   const y = window.scrollY;
   vue.className = page.plein ? "plein" : "";
+  document.body.classList.remove("avec-barre-film");
   S.theme && S.theme(r.nom);
   try {
     const res = page(vue, r.args, r.params, r);

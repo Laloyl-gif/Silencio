@@ -16,11 +16,23 @@ from reseau import ErreurHTTP, HorsLigne, requete
 AGENT = "Silencio/" + config.VERSION
 
 
+class Ralentir(Exception):
+    """Refract demande d'attendre (429) : on s'arrête là, rien n'est compté comme raté."""
+
+    def __init__(self, secondes):
+        super().__init__(f"Refract demande d'attendre {secondes} s")
+        self.secondes = secondes
+
+
+ENTRE_DEUX = 1.2                                       # secondes entre deux requêtes (rythme tranquille)
+PAR_PASSAGE = 25                                       # opérations au plus par passage (un passage par minute)
+
+
 class Refract:
     def __init__(self, stock, meta):
         self.stock = stock
         self.meta = meta                                   # fonction : clé -> fiche compacte (identifiant IMDb…)
-        self.etat = {"erreur": "", "dernier": 0, "en_cours": False}
+        self.etat = {"erreur": "", "dernier": 0, "en_cours": False, "pause_jusqua": 0}
 
     @property
     def cle(self):
@@ -39,23 +51,21 @@ class Refract:
                 if e.code == 409 and "concurrent_modification" in texte and essai < 2:
                     time.sleep(0.5)
                     continue
-                if e.code in (429, 500, 502, 503) and essai < 2:
+                if e.code == 429:
+                    try:
+                        attente = int(float((getattr(e, "entetes", None) or {}).get("retry-after") or 0))
+                    except ValueError:
+                        attente = 0
+                    raise Ralentir(max(60, min(attente or 300, 3600))) from None
+                if e.code in (500, 502, 503) and essai < 2:
                     time.sleep(3 * (essai + 1))
                     continue
                 raise
+            finally:
+                time.sleep(ENTRE_DEUX * (0 if methode == "GET" and chemin == "me" else 1))
 
     def moi(self):
         return self._req("GET", "me")
-        try:
-            doc = requete(config.API_REFRACT.rstrip("/") + "/openapi.json", entetes={"User-Agent": AGENT}, delai=20)
-        except HorsLigne:
-            return caps
-        except (ErreurHTTP, ValueError):
-            doc = None
-        caps = {"verifie": time.time(), "notes": lire_notes(doc) if doc else None}
-        app["refract_caps"] = caps
-        self.stock.sauver_appareil()
-        return caps
 
     # ---- identifiants Refract (mis en cache sur l'appareil)
     def identifiant(self, cle):
@@ -158,9 +168,9 @@ class Refract:
             return "ok", None
         return "attente", None
 
-    def passage(self, limite=80):
+    def passage(self, limite=PAR_PASSAGE):
         """Envoie ce qui manque chez Refract. Renvoie le bilan."""
-        if not self.cle or not self.stock.doc or self.etat["en_cours"]:
+        if not self.cle or not self.stock.doc or self.etat["en_cours"] or time.time() < self.etat["pause_jusqua"]:
             return None
         self.etat["en_cours"] = True
         try:
@@ -172,6 +182,10 @@ class Refract:
                     etat, ref = self.executer(op)
                 except HorsLigne:
                     self.etat["erreur"] = "hors ligne"
+                    break
+                except Ralentir as r:
+                    self.etat["pause_jusqua"] = time.time() + r.secondes
+                    self.etat["erreur"] = ""          # normal : on reprend tout seul un peu plus tard
                     break
                 except ErreurHTTP as e:
                     if e.code in (401, 403):
@@ -185,7 +199,6 @@ class Refract:
                      "titre": op.get("titre", "")}
                 if etat != "attente":
                     resultats.append(r)
-                time.sleep(0.25)
             else:
                 self.etat["erreur"] = ""
             bilan = miroir.appliquer_resultats(self.stock, "rf", resultats)

@@ -186,8 +186,8 @@ with sync_playwright() as p:
 
     # page film (téléphone), série, personne
     pg.goto(URL + "/#/titre/m:1018")
-    pg.wait_for_selector(".prog-tete")
-    pg.wait_for_selector(".prog-prix div")
+    pg.wait_for_selector(".ff-tete")
+    pg.wait_for_selector(".ff-prix span")
     pg.wait_for_timeout(900)
     capture(pg, "07_tel_film")
     pg.evaluate("document.head.insertAdjacentHTML('beforeend', '<style id=sans-toast>#toasts{display:none}</style>')")
@@ -244,6 +244,29 @@ with sync_playwright() as p:
     pg.goto(URL + "/#/reglages/compte")
     pg.wait_for_selector("[data-mdp]")
     capture(pg, "12d_tel_compte", plein=True)
+    # compléter les films importés
+    api("/api/action", {"type": "import", "sections": {"journal": {"lbimport0001": {"cle": "m:275", "date": "2015-06-01", "note": 8, "revision": False},
+                                                                   "imimport0002": {"cle": "m:837", "date": "2019-03-04", "note": 7, "revision": False, "approx": True}},
+                                                       "titres": {"m:30018": {"vu": True}}}, "libelle": "Import test"})
+    pg.goto(URL + "/#/reglages/completer")
+    pg.wait_for_selector("[data-commencer]")
+    capture(pg, "12e_tel_completer")
+    pg.click("[data-commencer]")
+    pg.wait_for_selector(".modale [data-garder]")
+    titre_m = pg.inner_text(".modale h2")
+    assert titre_m.startswith("Compléter, 1 sur"), titre_m
+    capture(pg, "12f_tel_completer_film")
+    pg.click(".modale [data-garder]")
+    pg.wait_for_function("document.querySelector('.modale h2') && document.querySelector('.modale h2').textContent.startsWith('Compléter, 2 sur')")
+    pg.click(".modale [data-cine]")
+    pg.fill(".modale [data-cine-recherche]", "Le Champo")
+    pg.wait_for_timeout(500)
+    pg.click(".modale [data-ok]")
+    pg.wait_for_function("!document.querySelector('.modale h2') || document.querySelector('.modale h2').textContent.startsWith('Compléter, 3 sur')")
+    ent = api("/api/etat")["profil"]
+    assert ent["profil"]["reglages"].get("completes") and any(v.get("ou", {}) and v.get("ou", {}).get("cinema") == "Le Champo" and k.startswith("lb") for k, v in ent["journal"].items()), "complété"
+    pg.keyboard.press("Escape")
+    pg.wait_for_timeout(400)
     pg.goto(URL + "/#/reglages/plateformes")
     pg.wait_for_selector("[data-lb-pseudo]")
     pg.fill("[data-lb-pseudo]", "etienne")
@@ -356,11 +379,12 @@ with sync_playwright() as p:
     pp.wait_for_timeout(1500)
     capture(pp, "20_pc_accueil")
     pp.goto(URL + "/#/titre/m:1018")
-    pp.wait_for_selector(".prog-tete")
+    pp.wait_for_selector(".ff-tete")
     pp.wait_for_timeout(1200)
     capture(pp, "21_pc_film")
     # anneau : toucher, puis la rangée ; annulation au clavier
-    pp.locator(".prog-note .case-note").nth(8).click()
+    pp.click(".ff-note .anneau")
+    pp.locator(".ff-note .case-note").nth(8).click()
     pp.wait_for_timeout(900)
     assert api("/api/etat")["profil"]["titres"]["m:1018"]["note"] == 9
     pp.keyboard.press("z")

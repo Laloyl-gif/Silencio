@@ -55,7 +55,9 @@
 <h2>4. Ce qui part, et ce qui ne part jamais</h2>
 <ul>
   <li>Au premier passage de l'extension, tout ce qui est déjà dans Silencio est considéré comme réglé. Ensuite, seuls tes <b>ajouts et changements</b> faits dans Silencio partent : un visionnage, une note, un coup de cœur, un film en watchlist (ta watchlist IMDb), un film dans une liste, une critique publique.</li>
-  <li><b>Rien n'est jamais retiré</b> de Letterboxd ni d'IMDb : si ta watchlist IMDb compte 1 000 films et que tu en ajoutes un dans Silencio, elle en comptera 1 001.</li>
+  <li>Sur Letterboxd, un visionnage ajouté dans Silencio va dans ton <b>journal (diary)</b> ; si tu le modifies dans Silencio (date, note, coup de cœur, critique publique), l'entrée du journal est modifiée ; si tu le supprimes, elle est supprimée.</li>
+  <li>À part ça, <b>rien n'est jamais retiré</b> de Letterboxd ni d'IMDb : si ta watchlist IMDb compte 1 000 films et que tu en ajoutes un dans Silencio, elle en comptera 1 001.</li>
+  <li>Juste après un ajout dans Silencio, l'extension s'en rend compte en 2 minutes environ et passe dans les minutes qui suivent.</li>
   <li>Les films cachés, les visionnages cachés, les listes privées et les critiques privées (par défaut) restent dans Silencio.</li>
 </ul>
 <h2>5. Trois façons d'envoyer, site par site</h2>
@@ -70,6 +72,11 @@
   <li>L'extension profite d'abord d'un onglet Letterboxd ou IMDb que tu as déjà ouvert. Sinon, elle n'ouvre un onglet en arrière-plan qu'une fois toutes les 2 à 4 heures.</li>
   <li>3 à 6 actions par passage, espacées de 5 à 13 secondes, 40 au plus par jour et par site, à des heures irrégulières.</li>
   <li>Une adresse qui marche est retenue ; les autres ne sont essayées qu'une fois par jour. Au moindre refus du site, l'extension se met en pause 12 à 24 heures.</li>
+</ul>
+<h2>Si rien ne part</h2>
+<ul>
+  <li>« Missing host permission » ou « NetworkError » : Firefox n'a pas (ou plus) donné l'accès aux sites. Ouvre la fenêtre de Silencio Sync : un bouton <b>Autoriser l'accès aux sites</b> apparaît, clique dessus et accepte. Sinon : menu de Firefox, <b>Extensions et thèmes</b>, Silencio Sync, onglet <b>Autorisations</b>, coche tout.</li>
+  <li>« Receiving end does not exist » : la page du site s'est rechargée pendant l'envoi. L'extension réessaie toute seule au passage suivant.</li>
 </ul>
 <h2>Bon à savoir</h2>
 <p class="note">Letterboxd et IMDb n'ont pas d'API ouverte : l'extension agit comme toi, avec ta session, à un rythme humain. Ce n'est pas illégal, mais leurs conditions d'utilisation n'aiment pas l'automatisation : le risque, pour ton compte, est faible à ce rythme, il n'est pas nul. IMDb n'autorise les robots qu'avec un accord écrit ; sa réponse automatique (les fichiers de données non commerciaux) n'en est pas un. D'où le mode « un clic par action » par défaut pour IMDb, et « à la main » si tu veux rester au plus près de ses conditions.</p>

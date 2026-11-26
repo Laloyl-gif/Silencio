@@ -276,81 +276,72 @@ function rendreTitre(vue, cle, data) {
   const recos = (d.recommendations?.results || []).map(r => S.retenir(r, tv ? "tv" : "movie")).filter(c => c && !S.monTitre(c).vu).slice(0, 16);
   const motscles = ((tv ? d.keywords?.results : d.keywords?.keywords) || []).slice(0, 5);
   const ratio = d.budget > 1000 && d.revenue ? d.revenue / d.budget : null;
-  const rentab = ratio == null ? "" : ratio < 1 ? "Un échec : le box-office n'a pas couvert le budget." : ratio < 2.5 ? `Rentabilité fragile : ${S.fmtNote(ratio)} fois le budget.` : `Un succès : ${S.fmtNote(ratio)} fois le budget.`;
+  const verdict = ratio == null ? null : ratio < 1 ? ["Un échec", "mauvais"] : ratio < 2.5 ? ["Juste rentable", "moyen"] : ratio < 5 ? ["Un succès", "bon"] : ["Un triomphe", "bon"];
   const groupes = [["flatrate", "En abonnement"], ["free", "Gratuit"], ["ads", "Gratuit avec publicité"], ["rent", "En location"], ["buy", "À l'achat"]].filter(([k]) => fourn[k]?.length);
   const titreRecherche = d.title || d.name;
   const vt = "affiche-" + cle.replace(":", "-");
   const annees = date ? date.slice(0, 4) + (tv && d.last_air_date && d.status !== "Returning Series" && d.last_air_date.slice(0, 4) !== date.slice(0, 4) ? "–" + d.last_air_date.slice(0, 4) : "") : "";
+  const vuDeja = journal.length || t.vu;
   vue.className = "";
   vue.innerHTML = `<div class="fond-film">${d.poster_path ? `<img src="${S.img(d.poster_path, "w342")}" alt="">` : ""}</div>
-  <article class="programme">
-    <header class="prog-tete">
-      <div class="prog-affiche">${S.affiche(m, { taille: "w780", vt })}</div>
-      <div class="prog-entete">
-        <h1 class="prog-titre">${esc(S.nomTitre(m))}</h1>
-        ${S.autreTitre(m) ? `<div class="prog-vo">${esc(S.autreTitre(m))}</div>` : ""}
-        <div class="prog-credit">${annees ? `<span>${annees}</span>` : ""}${reals.length ? `<span>${tv ? "créée par " : "de "}${reals.map(r => `<a href="#/personne/${r.id}">${esc(r.name)}</a>`).join(", ")}</span>` : ""}${duree ? `<span>${duree}</span>` : ""}</div>
-        <div class="prog-genres">${(d.genres || []).map(g => `<a href="#/decouvrir/explorer?genre=${g.id}&type=${tv ? "tv" : "movie"}">${esc(S.GENRES[g.id] || g.name)}</a>`).join(", ")}</div>
-        <div class="prog-notes">${data.imdb ? `<span>${S.LOGOS.imdb}${S.fmtNote(data.imdb[0])}</span>` : ""}${d.vote_count ? `<span>${S.LOGOS.tmdb}${S.fmtNote(d.vote_average)}</span>` : ""}</div>
+  <article class="ff">
+    <header class="ff-tete">
+      <div class="ff-affiche">${S.affiche(m, { taille: "w500", vt })}</div>
+      <div class="ff-titres">
+        <h1>${esc(S.nomTitre(m))}</h1>
+        ${S.autreTitre(m) ? `<div class="ff-vo">${esc(S.autreTitre(m))}</div>` : ""}
+        <div class="ff-ligne">${annees ? `<span>${annees}</span>` : ""}${reals.length ? `<span>${tv ? "créée par " : "de "}${reals.map(r => `<a href="#/personne/${r.id}">${esc(r.name)}</a>`).join(", ")}</span>` : ""}</div>
+        <div class="ff-tags">${(d.genres || []).map(g => `<a href="#/decouvrir/explorer?genre=${g.id}&type=${tv ? "tv" : "movie"}">${esc(S.GENRES[g.id] || g.name)}</a>`).join("")}${motscles.map(k => `<a class="mc" href="#/motcle/${k.id}">${esc(k.name)}</a>`).join("")}</div>
+        <div class="ff-notes">${data.imdb ? `<span>${S.LOGOS.imdb}<b>${S.fmtNote(data.imdb[0])}</b></span>` : ""}${d.vote_count ? `<span>${S.LOGOS.tmdb}<b>${S.fmtNote(d.vote_average)}</b></span>` : ""}</div>
       </div>
     </header>
-    <div class="prog-corps">
-    ${d.tagline ? `<p class="prog-accroche">${esc(d.tagline)}</p>` : ""}
-    ${d.overview || d.overview_en ? `<p class="prog-synopsis" data-synopsis>${esc(d.overview || d.overview_en)}</p>` : ""}
-    <div class="prog-prix" data-prix></div>
-    <section class="panneau">
-      <div class="pan-etats">
-        <button data-etat-vu class="${t.vu || journal.length ? "actif" : ""}" style="--c:#4cc46f">Vu</button>
-        <button data-coeur class="${t.coeur ? "actif" : ""}" style="--c:#f0505f">Coup de cœur</button>
-        <button data-wl class="${wl ? "actif" : ""}" style="--c:#6f9bff">Watchlist</button>
-      </div>
-      <div class="prog-note">
-        <div class="pan-tete"><span>${t.note == null ? "Note ce film" : "Ta note"}</span><b data-chiffre>${t.note == null ? "" : S.fmtNote(t.note)}</b></div>
-        <div data-reglette></div>
-      </div>
-      <button class="pan-ligne" data-vu>${journal.length || t.vu ? "Ajouter un visionnage" : "Ajouter au journal"}</button>
-      <button class="pan-ligne" data-liste>Ajouter à une liste</button>
-      ${!tv ? `<button class="pan-ligne" data-collection>${t.collection ? `Dans ta collection, ${esc(t.collection.format || "")}` : "Ajouter à ta collection"}</button>` : ""}
+    <div class="ff-prix" data-prix></div>
+    <section class="ff-cartes">
+      <div class="ff-carte ff-note"><div data-anneau></div>
+        <div class="ff-etats"><button data-etat-vu class="${vuDeja ? "actif" : ""}">${vuDeja ? "Vu" : "Pas vu"}</button><button data-coeur class="${t.coeur ? "actif" : ""}">Coup de cœur</button></div></div>
+      ${duree ? `<div class="ff-carte"><span>Durée</span><b>${duree}</b></div>` : ""}
+      ${tv ? `<div class="ff-carte"><span>Épisodes</span><b>${d.number_of_episodes || "–"}</b><small>${S.pluriel(d.number_of_seasons || 0, "saison")}</small></div>` : ""}
+      ${d.budget ? `<div class="ff-carte"><span>Budget</span><b>${S.argent(d.budget)}</b>${ratio != null ? `<div class="ff-jauge ${verdict[1]}" title="Box-office ${S.argent(d.revenue)}"><i style="width:${Math.min(100, ratio / 6 * 100)}%"></i><em style="left:${2.5 / 6 * 100}%"></em></div><small>${verdict[0]}, ${S.fmtNote(ratio)} fois le budget</small>` : `<small>Box-office inconnu</small>`}</div>` : ""}
+      ${d.revenue ? `<div class="ff-carte"><span>Box-office</span><b>${S.argent(d.revenue)}</b>${sortieFR ? `<small>Sorti en France le ${S.fmtDate(sortieFR)}</small>` : ""}</div>` : ""}
     </section>
-    ${tv ? `<section class="prog-section" data-saisons></section>` : ""}
-    <section class="prog-section">
-      <div class="prog-onglets" data-fiche>${cast.length ? `<button data-f="cast" class="actif">Casting</button>` : ""}${Object.keys(equipe).length ? `<button data-f="equipe">Équipe</button>` : ""}<button data-f="infos">Infos</button></div>
-      ${cast.length ? `<div data-panneau="cast"><div class="prog-cast">${cast.map(c => `<a href="#/personne/${c.id}"><div class="tete-acteur">${c.profile_path ? `<img loading="lazy" src="${S.img(c.profile_path, "w185")}" alt="">` : `<span>${esc(S.initiales(c.name))}</span>`}</div><b>${esc(c.name)}</b><em>${esc(tv ? (c.roles || []).map(r => r.character).filter(Boolean)[0] || "" : c.character || "")}</em></a>`).join("")}</div></div>` : ""}
-      ${Object.keys(equipe).length ? `<div data-panneau="equipe" class="cache"><dl class="prog-equipe">${Object.entries(equipe).map(([lib, l]) => `<dt>${lib}</dt><dd>${l.map(p => `<a href="#/personne/${p.id}">${esc(p.nom)}</a>`).join("")}</dd>`).join("")}</dl></div>` : ""}
-      <div data-panneau="infos" class="cache"><dl class="prog-equipe">
-        ${d.budget ? `<dt>Budget</dt><dd>${S.argent(d.budget)}</dd>` : ""}${d.revenue ? `<dt>Box-office</dt><dd>${S.argent(d.revenue)}${rentab ? `<small>${rentab}</small>` : ""}</dd>` : ""}
-        ${date ? `<dt>${tv ? "Première diffusion" : "Sortie"}</dt><dd>${S.fmtDate(date)}</dd>` : ""}${sortieFR && sortieFR !== date ? `<dt>En France</dt><dd>${S.fmtDate(sortieFR)}</dd>` : ""}
-        ${tv && d.status ? `<dt>Statut</dt><dd>${esc({ "Returning Series": "En cours", Ended: "Terminée", Canceled: "Annulée", "In Production": "En production" }[d.status] || d.status)}</dd>` : ""}
-        ${pays.length ? `<dt>Pays</dt><dd>${pays.map(p => esc(S.pays(p))).join(", ")}</dd>` : ""}
-        ${(d.production_companies || []).length ? `<dt>Production</dt><dd>${d.production_companies.slice(0, 6).map(c => esc(c.name)).join(", ")}</dd>` : ""}
-        ${tv && (d.networks || []).length ? `<dt>Chaîne</dt><dd>${d.networks.map(n => esc(n.name)).join(", ")}</dd>` : ""}
-        ${motscles.length ? `<dt>Thèmes</dt><dd>${motscles.map(k => `<a href="#/motcle/${k.id}" style="display:inline">${esc(k.name)}</a>`).join(", ")}</dd>` : ""}
-      </dl></div>
-    </section>
-    <section class="prog-section"><div class="prog-onglets"><button data-o="toi" class="actif">Ton journal</button>${amis.length ? `<button data-o="amis">Tes amis</button>` : ""}</div><div data-onglet-toi></div><div data-onglet-amis class="cache"></div></section>
-    ${groupes.length ? `<section class="prog-section"><h2>Le regarder</h2><div class="prog-dispo">${groupes.map(([k, l]) => `<div><span>${l}</span>${fourn[k].map(p => `<a href="${esc(S.lienPlateforme(p.provider_id, titreRecherche, fourn.link || "#"))}" target="_blank" rel="noopener" title="${esc(p.provider_name)}"><img src="${S.img(p.logo_path, "w92")}" alt="${esc(p.provider_name)}"></a>`).join("")}</div>`).join("")}</div></section>` : ""}
-    ${data.collection?.parts?.length > 1 ? `<section class="prog-section"><h2>${esc(data.collection.name)}</h2><div class="prog-rangee">${data.collection.parts.sort((a, b) => (a.release_date || "9").localeCompare(b.release_date || "9")).map(p => S.vignette(S.retenir(p, "movie"), { vu: S.monTitre("m:" + p.id).vu })).join("")}</div></section>` : ""}
-    ${recos.length ? `<section class="prog-section"><h2>Dans le même esprit</h2><div class="prog-rangee">${recos.map(c => S.vignette(c)).join("")}</div></section>` : ""}
-    </div>
-  </article>`;
+    <div class="ff-boutons"><button data-synopsis>Synopsis</button><button data-infos>Infos</button></div>
+    ${tv ? `<section class="ff-section" data-saisons></section>` : ""}
+    ${cast.length ? `<section class="ff-section"><h2>Casting</h2><div class="ff-cast">${cast.map(c => `<a href="#/personne/${c.id}"><div class="tete-acteur">${c.profile_path ? `<img loading="lazy" src="${S.img(c.profile_path, "w185")}" alt="">` : `<span>${esc(S.initiales(c.name))}</span>`}</div><b>${esc(c.name)}</b><em>${esc(tv ? (c.roles || []).map(r => r.character).filter(Boolean)[0] || "" : c.character || "")}</em></a>`).join("")}</div></section>` : ""}
+    ${Object.keys(equipe).length ? `<section class="ff-section"><h2>Équipe</h2><div class="ff-equipe">${Object.entries(equipe).map(([lib, l]) => `<div><span>${lib}</span>${l.map(p => `<a href="#/personne/${p.id}">${esc(p.nom)}</a>`).join("")}</div>`).join("")}</div></section>` : ""}
+    <section class="ff-section"><div class="ff-onglets"><button data-o="toi" class="actif">Toi</button>${amis.length ? `<button data-o="amis">Amis <span>${amis.length}</span></button>` : ""}</div><div data-onglet-toi></div><div data-onglet-amis class="cache"></div></section>
+    ${groupes.length ? `<section class="ff-section"><h2>Regarder</h2><div class="ff-dispo">${groupes.map(([k, l]) => `<div><span>${l}</span><p>${fourn[k].map(p => `<a href="${esc(S.lienPlateforme(p.provider_id, titreRecherche, fourn.link || "#"))}" target="_blank" rel="noopener" title="${esc(p.provider_name)}"><img src="${S.img(p.logo_path, "w92")}" alt="${esc(p.provider_name)}"></a>`).join("")}</p></div>`).join("")}</div></section>` : ""}
+    ${data.collection?.parts?.length > 1 ? `<section class="ff-section"><h2>${esc(data.collection.name)}</h2><div class="prog-rangee">${data.collection.parts.sort((a, b) => (a.release_date || "9").localeCompare(b.release_date || "9")).map(p => S.vignette(S.retenir(p, "movie"), { vu: S.monTitre("m:" + p.id).vu })).join("")}</div></section>` : ""}
+    ${recos.length ? `<section class="ff-section"><h2>Dans le même esprit</h2><div class="prog-rangee">${recos.map(c => S.vignette(c)).join("")}</div></section>` : ""}
+  </article>
+  <nav class="barre-film">
+    <button class="bouton principal" data-vu>${vuDeja ? "Revu" : "J'ai vu"}</button>
+    <button class="texte-action ${wl ? "actif" : ""}" data-wl>${wl ? "Dans ta watchlist" : "Watchlist"}</button>
+    <button class="texte-action" data-liste>Liste</button>
+    ${!tv ? `<button class="texte-action ${t.collection ? "actif" : ""}" data-collection>Collection</button>` : ""}
+  </nav>`;
+  document.body.classList.add("avec-barre-film");
   if (d.poster_path) S.couleursAffiche(S.img(d.poster_path, "w92")).then(c => {
     if (!c || !location.hash.includes(cle)) return;
     document.body.style.setProperty("--accent-film", S.accentLisible(c[0]).join(","));
   });
-  // ta note : le gros chiffre suit la réglette
-  const chiffre = $("[data-chiffre]", vue);
-  const ecrire = v => { chiffre.textContent = v == null ? "" : S.fmtNote(v); chiffre.previousElementSibling.textContent = v == null ? "Note ce film" : "Ta note"; };
-  const reglette = S.rangee(t.note, v => (v != null && $("[data-etat-vu]", vue)?.classList.add("actif"), S.agir("noter", { cle, note: v }, { toast: v == null ? "Note retirée" : `Noté ${S.fmtNote(v)}`, sansRendu: true })), { grande: true, delai: 450 });
-  reglette.addEventListener("click", () => setTimeout(() => ecrire(reglette.valeur()), 0));
-  $("[data-reglette]", vue).append(reglette);
-  $("[data-coeur]", vue).onclick = ev => { const b = ev.currentTarget; const nv = !b.classList.contains("actif"); b.classList.toggle("actif", nv);  S.agir("coeur", { cle, val: nv }, { toast: nv ? "Coup de cœur" : "Cœur retiré", sansRendu: true }); };
+  // ta note : l'anneau, toucher pour noter
+  const an = S.anneau(t.note, v => { if (v != null) { const b = $("[data-etat-vu]", vue); if (b) { b.classList.add("actif"); b.textContent = "Vu"; } } S.agir("noter", { cle, note: v }, { toast: v == null ? "Note retirée" : `Noté ${S.fmtNote(v)}`, sansRendu: true }); });
+  $("[data-anneau]", vue).append(an);
+  $("[data-coeur]", vue).onclick = ev => { const b = ev.currentTarget; const nv = !b.classList.contains("actif"); b.classList.toggle("actif", nv); S.agir("coeur", { cle, val: nv }, { toast: nv ? "Coup de cœur" : "Cœur retiré", sansRendu: true }); };
+  $("[data-etat-vu]", vue).onclick = () => S.agir("vu", { cle, val: !vuDeja }, { toast: vuDeja ? "Marqué pas vu" : "Marqué vu" });
   $("[data-vu]", vue).onclick = () => S.ouvrirAjout(cle);
   $("[data-wl]", vue).onclick = () => S.agir("watchlist", { cle, val: !wl }, { toast: wl ? "Retiré de ta watchlist" : "Ajouté à ta watchlist" });
-  $("[data-etat-vu]", vue).onclick = () => { const vu = t.vu || journal.length; S.agir("vu", { cle, val: !vu }, { toast: vu ? "Marqué pas vu" : "Marqué vu" }); };
-  const syn = $("[data-synopsis]", vue); if (syn) syn.onclick = () => syn.classList.toggle("ouvert");
-  $$("[data-fiche] button", vue).forEach(b => b.onclick = () => { $$("[data-fiche] button", vue).forEach(x => x.classList.toggle("actif", x === b)); $$("[data-panneau]", vue).forEach(p => p.classList.toggle("cache", p.dataset.panneau !== b.dataset.f)); });
   $("[data-liste]", vue).onclick = () => S.choisirListe(cle);
   const col = $("[data-collection]", vue); if (col) col.onclick = () => collection(cle);
+  $("[data-synopsis]", vue).onclick = () => S.ouvrirModale({ titre: "Synopsis", corps: `${d.tagline ? `<p class="ff-accroche">${esc(d.tagline)}</p>` : ""}<p class="ff-synopsis">${esc(d.overview || d.overview_en || "Pas de synopsis.")}</p>` });
+  $("[data-infos]", vue).onclick = () => S.ouvrirModale({ titre: "Infos", corps: `<dl class="tableau-infos">
+    ${date ? `<dt>${tv ? "Première diffusion" : "Sortie"}</dt><dd>${S.fmtDate(date)}</dd>` : ""}${sortieFR && sortieFR !== date ? `<dt>En France</dt><dd>${S.fmtDate(sortieFR)}</dd>` : ""}
+    ${tv && d.status ? `<dt>Statut</dt><dd>${esc({ "Returning Series": "En cours", Ended: "Terminée", Canceled: "Annulée", "In Production": "En production" }[d.status] || d.status)}</dd>` : ""}
+    ${pays.length ? `<dt>Pays</dt><dd>${pays.map(p => esc(S.pays(p))).join(", ")}</dd>` : ""}
+    ${d.budget ? `<dt>Budget</dt><dd>${S.argent(d.budget)}</dd>` : ""}${d.revenue ? `<dt>Box-office</dt><dd>${S.argent(d.revenue)}</dd>` : ""}
+    ${(d.production_companies || []).length ? `<dt>Production</dt><dd>${d.production_companies.slice(0, 6).map(c => esc(c.name)).join(", ")}</dd>` : ""}
+    ${tv && (d.networks || []).length ? `<dt>Chaîne</dt><dd>${d.networks.map(n => esc(n.name)).join(", ")}</dd>` : ""}
+  </dl>` });
   const toi = $("[data-onglet-toi]", vue), am = $("[data-onglet-amis]", vue);
   monJournal(toi, cle, t, journal);
   am.innerHTML = amis.map(([pid, a]) => `<div class="ami-ligne"><b>${esc(a.nom)}</b>${a.note != null ? `<span class="n">${S.fmtNote(a.note)}</span>` : "<span></span>"}<small>${a.vu ? (a.coeur ? "coup de cœur" : "l'a vu") : a.watchlist ? "veut le voir" : ""}</small>${a.critiques.map(c => `<p>${esc(c.texte)}</p>`).join("")}</div>`).join("");
@@ -359,7 +350,7 @@ function rendreTitre(vue, cle, data) {
   const pz = $("[data-prix]", vue);
   const peindrePrix = r => {
     if (!r || (!r.gagnes.length && !r.nominations.length)) return;
-    pz.innerHTML = `${r.gagnes.map(p => `<div>${esc(p.prix)}${p.annee ? `, ${p.annee}` : ""}</div>`).join("")}${r.nominations.length ? `<button data-nom>et ${S.pluriel(r.nominations.length, "nomination")}</button><div class="nominations cache">${r.nominations.map(p => `<div>${esc(p.prix)}${p.annee ? `, ${p.annee}` : ""}</div>`).join("")}</div>` : ""}`;
+    pz.innerHTML = `${r.gagnes.map(p => `<span>${esc(p.prix)}${p.annee ? ` <em>${p.annee}</em>` : ""}</span>`).join("")}${r.nominations.length ? `<button class="nomination" data-nom>et ${S.pluriel(r.nominations.length, "nomination")}</button><div class="nominations cache">${r.nominations.map(p => `<div>${esc(p.prix)}${p.annee ? `, ${p.annee}` : ""}</div>`).join("")}</div>` : ""}`;
     const b = $("[data-nom]", pz); if (b) b.onclick = () => { $(".nominations", pz).classList.toggle("cache"); b.remove(); };
   };
   if (S.memo["prix:" + cle]) peindrePrix(S.memo["prix:" + cle]);

@@ -258,7 +258,8 @@ ms.action("liste", {"liste": {"id": "lB", "nom": "Secrète", "items": ["m:638"],
 ms.action("episodes", {"cle": "t:1920", "episodes": ["1x1", "1x2"], "val": True})
 lb = miroir.souhaite(ms.doc, "lb")
 jids = {e["cle"]: k for k, e in ms.doc["journal"].items()}
-verifier(lb[f"vu|{jids['m:1018']}"] == {"date": "2024-03-01", "rewatch": False} and lb["marque|m:793"] == 1, "miroir Letterboxd : journal daté, vu sans date")
+verifier(lb[f"vu|{jids['m:1018']}"] == {"cle": "m:1018", "date": "2024-03-01", "rewatch": False, "note": 4.5, "like": True, "critique": "Rêve"}
+         and lb["marque|m:793"] == 1, "miroir Letterboxd : journal daté (note, like, critique publique), vu sans date")
 verifier(lb["note|m:1018"] == 4.5 and lb["note|m:793"] == 4.0 and lb["like|m:1018"] == 1 and lb["wl|m:490"] == 1, "miroir Letterboxd : notes en étoiles, coup de cœur, watchlist")
 verifier(not any("m:6977" in k for k in lb) and "liste|lB" not in lb and "wl|t:1920" not in lb, "miroir : films cachés, listes privées et séries jamais envoyés à Letterboxd")
 verifier(lb["item|lA|m:1018"] == 1 and lb["item|lA|m:793"] == 2 and "item|lA|t:1920" not in lb, "miroir : liste classée (films seulement sur Letterboxd)")
@@ -306,6 +307,18 @@ md.action("watchlist", {"cle": "m:155", "val": True})
 md.action("watchlist", {"cle": "m:550", "val": False})
 o = miroir.operations(md.doc, "imdb", meta)["ops"]
 verifier([(x["cle"], x["action"]) for x in o] == [("fav|m:155", "poser")], "IMDb : seul l'ajout part, rien n'est retiré de la liste")
+# Refract : relié aujourd'hui, seuls les ajouts faits ensuite partent
+mr = Stock(tempfile.mkdtemp(prefix="silencio_rf_"))
+mr.choisir_profil("e", "E")
+mr.action("journal", {"entree": {"cle": "m:671", "date": "2020-01-01", "note": 8}})
+mr.action("watchlist", {"cle": "m:550", "val": True})
+moment = time.time() + 0.01
+miroir.poser_depart_avant(mr, "rf", moment)
+time.sleep(0.05)
+mr.action("journal", {"entree": {"cle": "m:603", "date": "2026-11-26", "note": 9}})
+orf = miroir.operations(mr.doc, "rf", meta)["ops"]
+verifier({x["cle"].split("|")[0] for x in orf} == {"vu", "note"} and all("m:671" not in json.dumps(x) for x in orf),
+         "Refract : ce qui existait à la liaison ne part pas, seul le nouveau film part")
 # Refract par son API officielle
 faux_services.REFRACT.clear()
 rf = Refract(ms, meta)
@@ -330,6 +343,22 @@ verifier(notes and all(m == "PUT" for m, p, _, _ in faux_services.REFRACT if p.s
 verifier(bilan["echec"] == 0 and miroir.operations(ms.doc, "rf", meta)["ops"] == [], "Refract : 409 IN_LIBRARY accepté, plus rien à faire")
 idem = [i for m, p, _, i in faux_services.REFRACT if p == "/history/movies"]
 verifier(all(idem) and len(set(idem)) == len(idem), "Refract : une clé d'idempotence par visionnage")
+# journal Letterboxd : une entrée créée par Silencio garde son identifiant, suit ses modifications et sa suppression
+jv = jids["m:1018"]
+miroir.appliquer_resultats(ms, "lb", [{"cle": f"vu|{jv}", "action": "poser", "valeur": miroir.souhaite(ms.doc, "lb")[f"vu|{jv}"], "ref": "e1x", "etat": "ok"}])
+ms.action("journal", {"entree": dict(ms.doc["journal"][jv], id=jv, note=8)})
+o2 = [x for x in miroir.operations(ms.doc, "lb", meta)["ops"] if x["sorte"] == "vu"]
+verifier(len(o2) == 1 and o2[0]["ref"] == "e1x" and o2[0]["valeur"]["note"] == 4.0 and o2[0]["action"] == "poser", "Letterboxd : note d'une entrée modifiée, l'entrée du journal est éditée")
+miroir.appliquer_resultats(ms, "lb", [dict(o2[0], etat="ok", ref="e1x")])
+# une entrée envoyée avant la v7 (date seule) : rien ne repart tant que sa date ne change pas
+ms.action("journal", {"entree": {"cle": "m:793", "date": "2020-05-05", "note": 7}})
+jn = [k for k, e in ms.doc["journal"].items() if e.get("cle") == "m:793" and e.get("date") == "2020-05-05"][0]
+ms.poser_miroirs({f"lb|vu|{jn}": {"date": "2020-05-05", "rewatch": miroir.souhaite(ms.doc, "lb")[f"vu|{jn}"]["rewatch"]}})
+verifier(not any(x["cle"] == f"vu|{jn}" for x in miroir.operations(ms.doc, "lb", meta)["ops"]), "Letterboxd : entrée ancienne, pas d'envoi en masse")
+ms.action("suppr_journal", {"id": jv})
+o3 = [x for x in miroir.operations(ms.doc, "lb", meta)["ops"] if x["cle"] == f"vu|{jv}"]
+verifier(len(o3) == 1 and o3[0]["action"] == "retirer" and o3[0]["ref"] == "e1x" and o3[0]["tmdb"] == 1018, "Letterboxd : entrée supprimée dans Silencio, supprimée du journal")
+miroir.appliquer_resultats(ms, "lb", [dict(o3[0], etat="ok")])
 shutil.rmtree(mdoss, ignore_errors=True)
 
 # ---------------------------------------------------------------- comptes : identifiant + mot de passe
