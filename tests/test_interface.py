@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 
 ICI = os.path.dirname(os.path.abspath(__file__))
@@ -23,7 +24,7 @@ DONNEES = tempfile.mkdtemp(prefix="silencio_ui_")
 ENV = dict(os.environ, SILENCIO_DONNEES=DONNEES, SILENCIO_PORT=str(PS), SILENCIO_SANS_NAVIGATEUR="1",
            SILENCIO_TMDB=f"http://127.0.0.1:{PF}/tmdb/3", SILENCIO_TMDB_IMG=f"http://127.0.0.1:{PF}/img/",
            SILENCIO_GITHUB=f"http://127.0.0.1:{PF}/github", SILENCIO_WIKIDATA=f"http://127.0.0.1:{PF}/wikidata",
-           SILENCIO_IMDB=f"http://127.0.0.1:{PF}/imdb.tsv.gz", SILENCIO_MONDE=f"http://127.0.0.1:{PF}/monde.json", SILENCIO_NOMINATIM=f"http://127.0.0.1:{PF}/nominatim")
+           SILENCIO_IMDB=f"http://127.0.0.1:{PF}/imdb.tsv.gz", SILENCIO_REFRACT=f"http://127.0.0.1:{PF}/refract/v1", SILENCIO_MONDE=f"http://127.0.0.1:{PF}/monde.json", SILENCIO_NOMINATIM=f"http://127.0.0.1:{PF}/nominatim")
 os.environ.update({k: v for k, v in ENV.items() if k.startswith("SILENCIO_")})
 import faux_services  # noqa: E402
 faux_services.lancer(PF)
@@ -221,6 +222,65 @@ with sync_playwright() as p:
     pg.wait_for_timeout(400)
     assert 8 in api("/api/etat")["profil"]["profil"]["reglages"]["plateformes"]
     capture(pg, "12b_tel_reglages_affichage")
+    # Letterboxd, IMDb, Refract : Silencio maître
+    pg.goto(URL + "/#/reglages/plateformes")
+    pg.wait_for_selector("[data-lb-pseudo]")
+    pg.fill("[data-lb-pseudo]", "etienne")
+    pg.press("[data-lb-pseudo]", "Tab")
+    pg.wait_for_timeout(1200)
+    pg.fill("[data-rf-cle]", "rfk_test")
+    pg.click("[data-rf-ok]")
+    pg.wait_for_timeout(2500)
+    e = api("/api/etat")["plateformes"]
+    assert e["rf"]["connecte"] and e["rf"]["nom_compte"] == "etienne" and e["lb"]["pseudo"] == "etienne", e["rf"]
+    for _ in range(30):
+        if api("/api/etat")["plateformes"]["rf"]["envoye"] > 3:
+            break
+        time.sleep(0.5)
+    assert api("/api/etat")["plateformes"]["rf"]["envoye"] > 3, "Refract : envois"
+    pg.goto(URL + "/#/reglages/plateformes")
+    pg.wait_for_selector("[data-pf=rf]")
+    capture(pg, "12c_tel_plateformes", plein=True)
+    try:
+        api("/api/ext/ops?p=lb")
+        raise AssertionError("sans code d'appairage, l'extension doit être refusée")
+    except urllib.error.HTTPError as er:
+        assert er.code == 403
+    jeton = api("/api/etat")["plateformes"]["jeton"]
+    api("/api/plateformes/depart", {"plateforme": "lb", "vide": True})
+    api("/api/plateformes/depart", {"plateforme": "imdb", "vide": True})
+    # l'extension (background.js) avec une fausse API Firefox : elle lit les opérations et rend ses résultats
+    pe = tel.new_page()
+    pe.goto(URL + "/extension/LISEZMOI.html")
+    pe.evaluate("""() => {
+      const store = {}, ecoutes = [];
+      globalThis.browser = {
+        storage: { local: { get: async d => ({ ...d, ...JSON.parse(JSON.stringify(store)) }), set: async o => { Object.assign(store, o); } } },
+        alarms: { clear: async () => {}, create() {}, onAlarm: { addListener() {} } },
+        runtime: { onInstalled: { addListener() {} }, onStartup: { addListener() {} }, onMessage: { addListener(f) { ecoutes.push(f); } }, openOptionsPage: async () => {} },
+        tabs: { query: async () => [{ id: 1, status: "complete" }], create: async () => ({ id: 2 }), get: async () => ({ status: "complete" }), remove: async () => {},
+                onUpdated: { addListener() {}, removeListener() {} },
+                sendMessage: async (id, m) => ({ cache: {}, bloque: "", resultats: m.ops.map(o => ({ id: o.id, cle: o.cle, action: o.action, valeur: o.valeur, titre: o.titre,
+                  etat: o.sorte === "critique" ? "manuel" : "ok", lien: o.sorte === "critique" ? "https://www.imdb.com/review/create/?tconst=" + o.imdb : undefined,
+                  ref: o.sorte === "liste" ? "ls9" : undefined })) }) },
+        scripting: { executeScript: async () => [] },
+        cookies: { get: async () => ({ value: "tok" }), getAll: async () => [{ name: "x" }] },
+        webRequest: { onBeforeRequest: { addListener() {} } }
+      };
+      window.__msg = m => ecoutes[0](m);
+    }""")
+    pe.add_script_tag(path=os.path.join(RACINE, "extension", "background.js"))
+    pe.evaluate("async j => await window.__msg({ type: 'reglages', valeurs: { adresse: location.origin, jeton: j } })", jeton)
+    for _ in range(4):
+        bilan = pe.evaluate("async () => await window.__msg({ type: 'synchroniser' })")
+        assert 1 <= bilan["lb"].get("fait", 0) <= 6 and 1 <= bilan["imdb"].get("fait", 0) <= 6, bilan
+    pl = api("/api/etat")["plateformes"]
+    assert pl["lb"]["envoye"] >= 4 and pl["imdb"]["envoye"] >= 4 and pl["extension_vue"].get("lb"), pl["lb"]
+    etat_ext = pe.evaluate("async () => await window.__msg({ type: 'etat' })")
+    assert etat_ext["quota"]["lb"]["n"] >= 4, etat_ext["quota"]
+    etat_ext = pe.evaluate("async () => await window.__msg({ type: 'etat' })")
+    assert etat_ext["journal"] and etat_ext["dernier"]["bilan"]["lb"], etat_ext["journal"][:3]
+    pe.close()
     pg.goto(URL + "/#/profil")
     pg.wait_for_selector(".profil-tete")
     pg.wait_for_timeout(600)

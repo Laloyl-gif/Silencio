@@ -18,6 +18,7 @@ sys.path.insert(0, ICI)
 DOSSIER = tempfile.mkdtemp(prefix="silencio_test_")
 PORT = 9912
 os.environ.update(SILENCIO_DONNEES=DOSSIER, SILENCIO_TMDB=f"http://127.0.0.1:{PORT}/tmdb/3",
+                  SILENCIO_REFRACT=f"http://127.0.0.1:{PORT}/refract/v1",
                   SILENCIO_TMDB_IMG=f"http://127.0.0.1:{PORT}/img/", SILENCIO_GITHUB=f"http://127.0.0.1:{PORT}/github",
                   SILENCIO_WIKIDATA=f"http://127.0.0.1:{PORT}/wikidata", SILENCIO_IMDB=f"http://127.0.0.1:{PORT}/imdb.tsv.gz")
 
@@ -237,6 +238,93 @@ verifier(imdb.note("tt0166924") == (7.9, 390000) and imdb.note("tt9999999") is N
 p = wiki.palmares("palme")
 verifier([f["cle"] for f in p["films"]] == ["m:1235", "m:290", "m:496243"], "palmarès Wikidata")
 verifier(wiki.prix_personne(5602)[1]["cle"] == "m:1018", "prix d'une personne")
+
+# ---------------------------------------------------------------- Silencio maître : miroirs Letterboxd, IMDb, Refract
+import miroir  # noqa: E402
+from refract import Refract  # noqa: E402
+mdoss = tempfile.mkdtemp(prefix="silencio_miroir_")
+ms = Stock(mdoss)
+ms.choisir_profil("etienne", "Etienne")
+ms.action("journal", {"entree": {"cle": "m:1018", "date": "2024-03-01", "note": 9, "coeur": True, "critique": "Rêve",
+                                 "critique_privee": False}})
+ms.action("journal", {"entree": {"cle": "m:793", "date": "2019", "note": 7.5}})
+ms.action("journal", {"entree": {"cle": "m:638", "date": "2023-05-05", "note": 8, "critique": "Secret"}})
+ms.action("titre", {"cle": "m:6977", "champs": {"prive": True}})
+ms.action("journal", {"entree": {"cle": "m:6977", "date": "2024-02-02", "note": 6}})
+ms.action("watchlist", {"cle": "m:490", "val": True})
+ms.action("watchlist", {"cle": "t:1920", "val": True})
+ms.action("liste", {"liste": {"id": "lA", "nom": "Lynch", "items": ["m:1018", "m:793", "t:1920"], "classee": True}})
+ms.action("liste", {"liste": {"id": "lB", "nom": "Secrète", "items": ["m:638"], "privee": True}})
+ms.action("episodes", {"cle": "t:1920", "episodes": ["1x1", "1x2"], "val": True})
+lb = miroir.souhaite(ms.doc, "lb")
+jids = {e["cle"]: k for k, e in ms.doc["journal"].items()}
+verifier(lb[f"vu|{jids['m:1018']}"] == {"date": "2024-03-01", "rewatch": False} and lb["marque|m:793"] == 1, "miroir Letterboxd : journal daté, vu sans date")
+verifier(lb["note|m:1018"] == 4.5 and lb["note|m:793"] == 4.0 and lb["like|m:1018"] == 1 and lb["wl|m:490"] == 1, "miroir Letterboxd : notes en étoiles, coup de cœur, watchlist")
+verifier(not any("m:6977" in k for k in lb) and "liste|lB" not in lb and "wl|t:1920" not in lb, "miroir : films cachés, listes privées et séries jamais envoyés à Letterboxd")
+verifier(lb["item|lA|m:1018"] == 1 and lb["item|lA|m:793"] == 2 and "item|lA|t:1920" not in lb, "miroir : liste classée (films seulement sur Letterboxd)")
+meta = lambda c: {"m:1018": {"im": "tt0166924", "t": "Mulholland Drive"}, "m:793": {"im": "tt0090756"}, "m:638": {"im": "tt0116922"},
+                  "m:490": {"im": "tt0050976"}, "t:1920": {"im": "tt0098936"}, "m:155": {"im": "tt0468569"}}.get(c, {})
+o = miroir.operations(ms.doc, "lb", meta)
+sortes = [x["sorte"] for x in o["ops"]]
+verifier(sortes[0] == "liste" and "item" not in sortes and o["en_attente"] == 2, "opérations : la liste d'abord, ses films attendent qu'elle existe")
+vu = next(x for x in o["ops"] if x["cle"] == f"vu|{jids['m:1018']}")
+verifier(vu["extra"] == {"note": 4.5, "like": True, "critique": "Rêve"} and vu["tmdb"] == 1018, "opération journal : note, coup de cœur et critique publique")
+vu2 = next(x for x in o["ops"] if x["cle"] == f"vu|{jids['m:638']}")
+verifier(vu2["extra"]["critique"] == "", "critique privée par défaut : jamais envoyée")
+res = [{"cle": x["cle"], "id": x["id"], "action": x["action"], "valeur": x["valeur"], "etat": "ok",
+        "ref": "https://letterboxd.com/etienne/list/lynch/" if x["sorte"] == "liste" else None} for x in o["ops"]]
+miroir.appliquer_resultats(ms, "lb", res)
+o = miroir.operations(ms.doc, "lb", meta)
+verifier([x["sorte"] for x in o["ops"]] == ["item", "item"] and o["ops"][0]["ref"].endswith("/lynch/"), "après création de la liste : ses films partent")
+miroir.appliquer_resultats(ms, "lb", [dict(x, etat="ok") for x in o["ops"]])
+verifier(miroir.operations(ms.doc, "lb", meta)["ops"] == [], "tout envoyé : plus rien à faire")
+ms.action("watchlist", {"cle": "m:490", "val": False})
+ms.action("noter", {"cle": "m:1018", "note": 7})
+o = miroir.operations(ms.doc, "lb", meta)
+verifier({(x["sorte"], x["action"]) for x in o["ops"]} == {("note", "poser")} and o["ops"][0]["valeur"] == 3.5,
+         "Letterboxd : la note modifiée part, le retrait de la watchlist ne touche jamais Letterboxd")
+miroir.appliquer_resultats(ms, "lb", [{"cle": o["ops"][0]["cle"], "id": o["ops"][0]["id"], "etat": "echec", "erreur": "x"}])
+verifier(miroir.operations(ms.doc, "lb", meta, ms.appareil["miroir_echecs"]["lb"])["ops"] == [] and
+         len(miroir.operations(ms.doc, "lb", meta, ms.appareil["miroir_echecs"]["lb"], forcer=True)["ops"]) == 1, "un échec est mis en pause")
+ms.action("watchlist", {"cle": "m:155", "val": True})
+im = miroir.souhaite(ms.doc, "imdb")
+verifier(im["note|m:1018"] == 7 and im["note|m:793"] == 8 and im["fav|m:155"] == 1 and "fav|t:1920" not in im and f"critique|{jids['m:1018']}" in im and
+         f"critique|{jids['m:638']}" not in im, "miroir IMDb : notes entières, watchlist vers Favoris, critiques publiques seules")
+o = miroir.operations(ms.doc, "imdb", meta)
+fav = next((x for x in o["ops"] if x["cle"] == "liste|_favoris"), None)
+verifier(fav and fav["valeur"]["nom"] == "Favoris" and not any(x["sorte"] == "fav" for x in o["ops"]), "IMDb : la liste Favoris est créée avant d'y ranger la watchlist")
+pub, priv = separer(ms.doc)
+verifier(pub["miroirs"] == {} and len(priv["miroirs"]) > 5, "miroirs : jamais dans la partie publique")
+# import Letterboxd : ce qui y est déjà est noté présent
+# départ : ce qui est déjà dans Silencio au moment de relier ne part pas, seuls les ajouts suivants
+md = Stock(tempfile.mkdtemp(prefix="silencio_depart_"))
+md.choisir_profil("e", "E")
+md.action("watchlist", {"cle": "m:550", "val": True})
+miroir.poser_depart(md, "imdb", miroir.souhaite(md.doc, "imdb"))
+md.poser_miroirs({"imdb|liste|_favoris": {"nom": "Favoris", "ref": "ls1"}})
+md.action("watchlist", {"cle": "m:155", "val": True})
+md.action("watchlist", {"cle": "m:550", "val": False})
+o = miroir.operations(md.doc, "imdb", meta)["ops"]
+verifier([(x["cle"], x["action"]) for x in o] == [("fav|m:155", "poser")], "IMDb : seul l'ajout part, rien n'est retiré de la liste")
+# Refract par son API officielle
+faux_services.REFRACT.clear()
+rf = Refract(ms, meta)
+ms.appareil["refract"] = {"cle": "rfk_test"}
+presence, a_importer = rf.point_de_depart()
+verifier(presence == {"wl|m:490": 1} and "m:490" in a_importer, "Refract : sa watchlist entre dans Silencio")
+miroir.poser_depart(ms, "rf", presence)
+ms.action("watchlist", {"cle": "m:603", "val": True})
+bilan = rf.passage()
+ecrits = [(m, p) for m, p, _, _ in faux_services.REFRACT if m != "GET"]
+verifier(("POST", "/history/movies") in ecrits and ("PUT", "/watchlist/rf-m-155") in ecrits and
+         ("PUT", "/history/episodes/rf-s-1920/1/1") in ecrits and ("DELETE", "/watchlist/rf-m-490") in ecrits, "Refract : films vus, watchlist, épisodes, retrait")
+films = [c for m, p, c, _ in faux_services.REFRACT if p == "/history/movies"]
+verifier(all(f["watched_at"].endswith("T20:00:00Z") for f in films) and not any(f["movie_id"] == "rf-m-6977" for f in films) and
+         any(f["watched_at"].startswith("2019-01-01") for f in films), "Refract : dates (même partielles), films cachés exclus")
+verifier(bilan["echec"] == 0 and miroir.operations(ms.doc, "rf", meta)["ops"] == [], "Refract : 409 IN_LIBRARY accepté, plus rien à faire")
+idem = [i for m, p, _, i in faux_services.REFRACT if p == "/history/movies"]
+verifier(all(idem) and len(set(idem)) == len(idem), "Refract : une clé d'idempotence par visionnage")
+shutil.rmtree(mdoss, ignore_errors=True)
 
 print(f"{OK} vérifications réussies")
 shutil.rmtree(DOSSIER, ignore_errors=True)

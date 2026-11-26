@@ -59,9 +59,9 @@ partagés avec tes amis.
 | Service | Ce que fait Silencio |
 |---|---|
 | **TMDB** | Lecture de toutes les infos, et **écriture** sur ton compte : notes, watchlist, coups de cœur, listes de films. Les modifications attendent le retour du réseau. |
-| **Letterboxd** | Pas d'API ouverte (accès sur demande seulement) : import de ton export .zip ; export d'un fichier à importer sur letterboxd.com/import ; bouton pour demander l'API à Letterboxd. |
-| **IMDb** | Pas d'API gratuite : import de ton export CSV ; notes IMDb lues dans les fichiers publics d'IMDb (une fois par semaine). |
-| **Refract** | Pas d'API : Refract importe depuis Letterboxd, donc même fichier d'export. |
+| **Letterboxd** | Par l'extension Firefox **Silencio Sync** (PC et téléphone), avec ta session : visionnages, notes, coups de cœur, watchlist. Seulement des ajouts et changements, jamais de retrait. Import de ton export .zip possible. |
+| **IMDb** | Par la même extension : notes, watchlist Silencio vers ta liste « Favoris », listes ; critiques publiques à coller à la main. Jamais de retrait. Notes IMDb publiques lues dans les fichiers d'IMDb. |
+| **Refract** | Par son **API officielle** (clé personnelle rfk_…) : films vus, épisodes, watchlist, tout seul. Notes et listes dès que Refract les ouvrira. |
 | **Twin Picks** | Import des notes d'un profil Twin Picks (fichier profils.json). |
 | **Amis** | Par un dépôt GitHub : chacun écrit son profil avec son propre compte et lit ceux des autres. |
 
@@ -125,10 +125,13 @@ Réglages :
 - `tmdb.py` : lecture avec cache, file d'écriture, fiches compactes pour les stats.
 - `imdb.py`, `wiki.py` : notes IMDb et Wikidata.
 - `imports.py` : imports et exports.
+- `miroir.py` : ce qui doit partir vers Letterboxd, IMDb et Refract (Silencio est le maître).
+- `refract.py` : l'API officielle de Refract.
+- `extension/` : l'extension Firefox Silencio Sync (à faire signer sur addons.mozilla.org, guide dans `web/extension/LISEZMOI.html`).
 - `decouverte.py` : recommandations, sorties, notifications.
 - `web/` : l'interface, en JavaScript sans framework (+ d3 pour les graphiques).
 - `android/` : l'application Android (Chaquopy et WebView).
-- `tests/` : `python tests/test_unitaires.py` (fusion, chiffrement, imports…) et `python tests/test_interface.py` (parcours complet dans Chromium, avec de faux TMDB, GitHub, IMDb et Wikidata).
+- `tests/` : `python tests/test_unitaires.py` (fusion, chiffrement, imports, miroirs, Refract…), `python tests/test_extension.py` (scripts de l'extension contre un faux Letterboxd et un faux IMDb) et `python tests/test_interface.py` (parcours complet dans Chromium, avec de faux TMDB, GitHub, IMDb et Wikidata).
 
 Ce produit utilise l'API TMDB sans être approuvé ni certifié par TMDB. Plateformes : JustWatch (via TMDB). Notes IMDb :
 datasets.imdbws.com, usage personnel et non commercial.

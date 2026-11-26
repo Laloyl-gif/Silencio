@@ -1226,3 +1226,23 @@ select.champ { background-color: #161616; }
 .w-sur { font: 600 16px var(--police); color: rgba(255,255,255,.75); }
 .w-pers-l em { font-size: 13px; color: rgba(255,255,255,.6); }
 .pastille-type { text-transform: none; letter-spacing: 0; }
+/* réglages : Letterboxd, IMDb, Refract */
+.pf { margin-top: 22px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.1); }
+.pf h4 { margin: 0; font: 600 16px var(--police); }
+.pf-intro { margin: 4px 0 6px; font-size: 14px; color: var(--texte-2); line-height: 1.45; }
+.pf .aj-ligne b { font-weight: 600; text-align: right; }
+.pf .aj-sous-ligne > div { align-items: stretch; min-width: 0; flex: 1; max-width: 340px; }
+.pf .aj-sous-ligne .aj-champ { text-align: left; }
+.pf-alerte { margin: 10px 0 2px; font-size: 14px; color: #ffb4a8; line-height: 1.45; }
+.pf-echecs { margin-top: 10px; font-size: 14px; }
+.pf-echecs summary { cursor: pointer; color: #ffb4a8; padding: 6px 0; }
+.pf-echecs div { display: flex; flex-direction: column; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+.pf-echecs div span { color: var(--texte-3); font-size: 13px; }
+.pf-jeton { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; letter-spacing: .02em; user-select: all; }
+.pf .toi-actions a { font-size: 14.5px; color: var(--texte-2); text-decoration: underline; text-underline-offset: 4px; text-decoration-color: rgba(255,255,255,.3); padding: 6px 0; }
+/* question oui / non */
+.modale.question { max-height: none; }
+@media (min-width: 900px) { .modale.question { width: 440px; } }
+.question-texte { margin: 0; font-size: 15.5px; line-height: 1.5; color: var(--texte); }
+.pied-question { display: flex; gap: 10px; width: 100%; }
+.pied-question .bouton { flex: 1; height: 46px; }

@@ -147,7 +147,7 @@ function formulaire(modale, corps, cle, ex) {
   const m = S.info(cle) || {};
   const t = S.monTitre(cle);
   const dejaVu = !!(t.vu || S.journalDe(cle).length);
-  const e = Object.assign({ cle, date: S.aujourdhui(), note: t.note ?? null, coeur: !!t.coeur, revision: dejaVu, critique: "", critique_privee: false, prive: false, ou: null, prix: null, avec: [], version: "" }, ex || {});
+  const e = Object.assign({ cle, date: S.aujourdhui(), note: t.note ?? null, coeur: !!t.coeur, revision: dejaVu, critique: "", critique_privee: true, prive: false, ou: null, prix: null, avec: [], version: "" }, ex || {});
   const detail = Object.assign({}, t.detail || {});
   $("h2", modale).textContent = ex ? "Modifier" : "J'ai vu";
   const mesCinemas = [...new Map(Object.values(S.vivants(S.moi.journal)).filter(j => j.ou?.type === "cinema" && j.ou.cinema).sort((a, b) => (b.date || "").localeCompare(a.date || "")).map(j => [j.ou.cinema, j.ou])).values()].slice(0, 6);
@@ -244,6 +244,12 @@ function formulaire(modale, corps, cle, ex) {
     const ou = cinema && cinema.nom !== undefined && $("[data-cine]", corps).checked ? { type: "cinema", cinema: cinema.nom, salle: $("[data-salle]", corps).value.trim() } : (ex?.ou && ex.ou.type !== "cinema" ? ex.ou : null);
     const avec = [...$$("[data-ami].actif", corps).map(b => b.dataset.ami), ...$("[data-avec-libre]", corps).value.split(",").map(s => s.trim()).filter(Boolean)];
     const prix = ou?.type === "cinema" && $("[data-prix]", corps).value !== "" ? +$("[data-prix]", corps).value : null;
+    const critique = $("[data-critique]", corps).value.trim(), privee = $("[data-critique-privee]", corps).checked;
+    const dejaPublique = ex && ex.critique_privee === false && (ex.critique || "").trim() === critique;
+    if (critique && !privee && !dejaPublique) {
+      const oui = await S.demander("Critique publique", "Cette critique sera visible par tes amis et publiée sur Letterboxd et IMDb. Tu confirmes ?", "Publier", "La garder privée");
+      if (!oui) { $("[data-critique-privee]", corps).checked = true; return; }
+    }
     const entree = { id: ex?.id, cle, date: (mo === "autre" ? date : mo === "hier" ? S.hier() : S.aujourdhui()), note: e.note, coeur: e.coeur, revision: rev, critique: $("[data-critique]", corps).value.trim(), critique_privee: $("[data-critique-privee]", corps).checked, prive: $("[data-prive]", corps).checked, ou, prix, avec, version };
     $("[data-ok]", pied).disabled = true;
     try {

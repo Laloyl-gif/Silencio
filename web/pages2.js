@@ -455,6 +455,49 @@ P.notifs = async (vue) => {
 };
 
 // ------------------------------------------------------------------ réglages
+// Letterboxd, IMDb (par l'extension Firefox) et Refract (par son API) : Silencio est la référence
+function plateformes(z, e) {
+  const P = e.plateformes || {};
+  const quand = t => t ? new Date(t * 1000).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "jamais";
+  const bloc = (p, intro, champs) => { const x = P[p] || {}; return `<div class="pf" data-pf="${p}">
+      <h4>${x.nom}</h4><p class="pf-intro">${intro}</p>
+      <div class="aj-lignes">${champs}
+        <div class="aj-ligne"><span>À jour</span><b>${S.fmtNombre(x.envoye || 0)}</b></div>
+        <div class="aj-ligne"><span>À envoyer</span><b>${x.depuis || p === "rf" ? S.fmtNombre(x.a_envoyer || 0) : "–"}${x.a_retirer ? `, ${x.a_retirer} à retirer` : ""}</b></div>
+        <div class="aj-ligne"><span>Dernier passage</span><b>${x.passage ? `${quand(x.passage.quand)}${x.passage.echec ? `, ${x.passage.echec} échec${x.passage.echec > 1 ? "s" : ""}` : ""}` : "jamais"}</b></div>
+      </div>
+      ${p !== "rf" ? `<p class="pf-intro" style="margin-top:10px">${x.depuis ? `Relié depuis le ${quand(x.depuis)} : ` : "Dès le premier passage de l'extension, "}seuls tes ajouts et tes changements faits dans Silencio partent. Rien n'est jamais retiré de ${x.nom}.</p>` : ""}
+      ${(x.echecs || []).length ? `<details class="pf-echecs"><summary>${x.echecs.length} opération${x.echecs.length > 1 ? "s" : ""} en échec</summary>${x.echecs.slice(0, 20).map(f => `<div><b>${esc(f.titre || f.cle)}</b><span>${esc(f.erreur || f.etat || "")}</span></div>`).join("")}<button class="lien-souligne" data-reessayer="${p}">Réessayer maintenant</button></details>` : ""}
+    </div>`; };
+  const rf = P.rf || {}, lb = P.lb || {}, im = P.imdb || {};
+  z.innerHTML = `<p class="muet petit" style="margin-top:0">Silencio est la référence : ce que tu ajoutes, notes, retires ou ranges ici est recopié sur tes autres comptes. Les films cachés, les visionnages cachés, les listes privées et les critiques privées ne partent jamais.</p>
+    ${bloc("rf", "Par l'API officielle de Refract, toute seule, toutes les minutes. Refract n'accepte pas encore les notes ni les listes : elles partiront dès qu'il les ouvrira.", `
+      <div class="aj-ligne"><span>Compte</span><b>${rf.connecte ? esc(rf.nom_compte || "relié") : "pas relié"}</b></div>
+      <div class="aj-ligne aj-sous-ligne"><span>Clé personnelle</span><div><input class="aj-champ" data-rf-cle placeholder="${rf.connecte ? "•••• (enregistrée)" : "rfk_…"}" autocomplete="off"><div class="toi-actions" style="margin-top:4px"><button data-rf-ok>${rf.connecte ? "Changer la clé" : "Relier Refract"}</button>${rf.connecte ? `<button data-rf-off>Délier</button>` : ""}</div></div></div>
+      ${rf.erreur ? `<p class="pf-alerte">${esc(rf.erreur)}</p>` : ""}`)}
+    ${bloc("lb", "Par l'extension Silencio Sync dans Firefox, sur ton PC et ton téléphone, avec ta session Letterboxd déjà ouverte, discrètement : quelques actions à la fois, espacées.", `
+      <div class="aj-ligne"><span>Ton pseudo Letterboxd</span><input class="aj-valeur" style="width:160px" data-lb-pseudo value="${esc(lb.pseudo || "")}" placeholder="pseudo"></div>
+      <div class="aj-ligne"><span>Extension vue</span><b>${quand(e.plateformes?.extension_vue?.lb)}</b></div>`)}
+    ${bloc("imdb", "Par la même extension, avec ta session IMDb. Ta watchlist Silencio va dans ta liste IMDb « Favoris » ; tes critiques publiques t'attendent sur la page de critique IMDb.", `
+      <div class="aj-ligne aj-sous-ligne"><span>Ta liste « Favoris »</span><div><input class="aj-champ" data-im-fav value="${esc(im.favoris || "")}" placeholder="ls… (vide : créée toute seule)"></div></div>
+      <div class="aj-ligne"><span>Extension vue</span><b>${quand(e.plateformes?.extension_vue?.imdb)}</b></div>`)}
+    <div class="pf">
+      <h4>Extension Silencio Sync</h4>
+      <p class="pf-intro">Colle ce code d'appairage dans l'extension, une seule fois par appareil.</p>
+      <div class="aj-lignes"><div class="aj-ligne"><span>Code</span><b class="pf-jeton" data-jeton>${esc(P.jeton || "")}</b></div>
+        <div class="aj-ligne"><span>Adresse de Silencio</span><b>${esc(location.origin)}</b></div></div>
+      <div class="toi-actions"><button data-copier>Copier le code</button><button data-nouveau-jeton>Nouveau code</button><a href="extension/LISEZMOI.html" target="_blank">Installer l'extension</a></div>
+    </div>`;
+  const enreg = async (corps, toast) => { try { await S.post("/api/reglages", corps); S.toast(toast); S.rafraichir(true); } catch (er) { S.toast(er.message); } };
+  $("[data-rf-ok]", z).onclick = () => { const v = $("[data-rf-cle]", z).value.trim(); if (v) enreg({ refract_cle: v }, "Refract relié"); };
+  const off = $("[data-rf-off]", z); if (off) off.onclick = () => { if (confirm("Délier Refract de Silencio ?")) enreg({ refract_cle: "" }, "Refract délié"); };
+  $("[data-lb-pseudo]", z).onchange = ev => enreg({ letterboxd_pseudo: ev.target.value }, "Pseudo enregistré");
+  $("[data-im-fav]", z).onchange = ev => enreg({ imdb_favoris: ev.target.value }, ev.target.value ? "Liste Favoris enregistrée" : "La liste Favoris sera créée");
+  $("[data-copier]", z).onclick = () => { navigator.clipboard?.writeText(P.jeton || "").then(() => S.toast("Code copié"), () => S.toast("Sélectionne le code pour le copier")); };
+  $("[data-nouveau-jeton]", z).onclick = () => { if (confirm("Créer un nouveau code ? Il faudra le recoller dans l'extension sur chaque appareil.")) enreg({ nouveau_jeton: true }, "Nouveau code créé"); };
+  $$("[data-reessayer]", z).forEach(b => b.onclick = async () => { await S.post("/api/plateformes/reessayer", { plateforme: b.dataset.reessayer }); S.toast("Nouvel essai au prochain passage"); S.rafraichir(true); });
+}
+
 P.reglages = async (vue, args, params) => {
   const e = await S.chargerEtat();
   const a = e.appareil, g = a.github, s = e.sync || {};
@@ -471,11 +514,7 @@ P.reglages = async (vue, args, params) => {
     <section class="carte" data-rub="tmdb"><h3>TMDB</h3><p class="muet petit">Tes notes, ta watchlist, tes coups de cœur et tes listes de films sont recopiés sur ton compte TMDB (dès qu'il y a du réseau).</p>
       ${a.tmdb.connecte ? `<div class="flex"><span class="espace">Connecté : <b>${esc(a.tmdb.nom)}</b>${e.file_tmdb.attente ? `, ${e.file_tmdb.attente} modification(s) en attente` : ""}${e.file_tmdb.erreur ? `, <span style="color:var(--rouge)">${esc(e.file_tmdb.erreur)}</span>` : ""}</span><button class="bouton petit" data-tmdb-off>Déconnecter</button></div>` : `<button class="bouton principal" data-tmdb-on>Connecter mon compte TMDB</button>`}
     </section>
-    <section class="carte" data-rub="exporter"><h3>Letterboxd, IMDb, Refract</h3>
-      <p class="muet petit">Letterboxd ne donne son API que sur demande, IMDb n'en a pas de gratuite, Refract n'en a pas : Silencio ne peut donc pas écrire directement dans ces comptes. À la place : un fichier à importer chez eux (Letterboxd, et Refract qui importe depuis Letterboxd), et les liens vers chaque film.</p>
-      <div class="flex" style="flex-wrap:wrap"><a class="bouton" href="/api/export/letterboxd.csv" download target="_blank">Journal pour Letterboxd / Refract</a><a class="bouton" href="/api/export/watchlist.csv" download target="_blank">Watchlist pour Letterboxd</a><a class="bouton" href="mailto:api@letterboxd.com?subject=${encodeURIComponent("Demande d'accès à l'API Letterboxd (usage personnel)")}&body=${corpsMail}">Demander l'API Letterboxd</a></div>
-      <p class="mini discret">Import sur Letterboxd : letterboxd.com/import. Notes converties sur 5 (7,5 → 4 étoiles).</p>
-    </section>
+    <section class="carte" data-rub="plateformes" data-plateformes></section>
     <section class="carte" data-rub="importer"><h3>Importer ton historique</h3>
       <label class="etiquette">Letterboxd</label><div class="mini discret" style="margin-bottom:6px">Réglages Letterboxd → Import &amp; Export → Export your data : glisse le fichier .zip ici (journal, notes, critiques, listes, watchlist, likes).</div><input type="file" accept=".zip" data-imp="letterboxd" class="champ" style="padding-top:8px">
       <label class="etiquette">IMDb</label><div class="mini discret" style="margin-bottom:6px">Tes notes (Your ratings → Export) ou ta watchlist, en .csv.</div><input type="file" accept=".csv" data-imp="imdb" class="champ" style="padding-top:8px">
@@ -496,7 +535,7 @@ P.reglages = async (vue, args, params) => {
       ${(e.historique || []).length ? `<div class="lignes">${e.historique.slice(0, 12).map((h, i) => `<div class="ligne" style="padding:7px 2px"><div class="corps"><b style="font-weight:500">${esc(h.libelle)}</b><span>${new Date(h.quand * 1000).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span></div>${i === 0 ? `<button class="bouton petit" data-annuler>Annuler</button>` : ""}</div>`).join("")}</div>` : `<p class="mini discret">Rien à annuler depuis le lancement. (Raccourci : <b>z</b>.)</p>`}
       <p class="mini discret">Chaque modification envoyée sur GitHub est aussi gardée dans l'historique du dépôt (bouton « Historique des versions »).</p>
     </section>
-    <section class="carte" data-rub="exporter"><h3>Sauvegarde</h3><div class="flex" style="flex-wrap:wrap"><a class="bouton" href="/api/export/silencio.json" download target="_blank">Tout exporter (JSON)</a></div></section>
+    <section class="carte" data-rub="exporter"><h3>Fichiers</h3><div class="flex" style="flex-wrap:wrap"><a class="bouton" href="/api/export/letterboxd.csv" download target="_blank">Journal au format Letterboxd</a><a class="bouton" href="/api/export/watchlist.csv" download target="_blank">Watchlist au format Letterboxd</a><a class="bouton" href="/api/export/silencio.json" download target="_blank">Tout exporter (JSON)</a></div></section>
     <section class="carte" data-rub="avance"><h3>Données</h3>
       <p class="petit muet">Notes IMDb : ${e.imdb.present ? `fichier du ${new Date(e.imdb.date * 1000).toLocaleDateString("fr-FR")}` : e.imdb.en_cours ? "téléchargement en cours…" : "pas encore téléchargé"}${e.imdb.erreur ? `, <span style="color:var(--rouge)">${esc(e.imdb.erreur)}</span>` : ""}</p>
       <button class="bouton petit" data-imdb>Mettre à jour les notes IMDb</button>
@@ -505,11 +544,12 @@ P.reglages = async (vue, args, params) => {
     <section class="carte" data-rub="avance"><h3>Raccourcis clavier</h3><dl class="tableau-infos petit"><dt>n</dt><dd>Ajouter un visionnage</dd><dt>/</dt><dd>Recherche</dd><dt>1 … 0, puis « . »</dt><dd>Note (dans l'ajout) : 8 puis . = 7,5</dd><dt>Entrée</dt><dd>Valider l'ajout</dd><dt>h, j, s</dt><dd>Accueil, Journal, Stats</dd><dt>z</dt><dd>Annuler la dernière action</dd><dt>Échap</dt><dd>Fermer</dd></dl></section>
     <p class="mini discret centre" data-rub="avance">Silencio ${esc(e.app)}, données TMDB (ce produit utilise l'API TMDB sans être approuvé ni certifié par TMDB), notes IMDb : datasets.imdbws.com, prix : Wikidata, plateformes : JustWatch</p>
   </div>`;
-  const RUBS = [["affichage", "Affichage", "reglages"], ["tmdb", "Compte TMDB", "sync"], ["amis", "Amis et synchro", "amis"], ["importer", "Importer", "plus"], ["exporter", "Exporter", "lien"], ["historique", "Historique", "annuler"], ["avance", "Avancé", "info"]];
+  const RUBS = [["affichage", "Affichage", "reglages"], ["plateformes", "Letterboxd, IMDb, Refract", "sync"], ["tmdb", "Compte TMDB", "sync"], ["amis", "Amis et synchro", "amis"], ["importer", "Importer", "plus"], ["exporter", "Exporter", "lien"], ["historique", "Historique", "annuler"], ["avance", "Avancé", "info"]];
   const rub = args[0];
   $$("[data-rub]", vue).forEach(x => x.classList.toggle("cache", x.dataset.rub !== rub));
   if (!rub) $(".col", vue).insertAdjacentHTML("afterbegin", `<div class="lignes menu-reglages">${RUBS.map(([k, l, i]) => `<a class="ligne" href="#/reglages/${k}"><div class="corps"><b>${l}</b></div></a>`).join("")}</div>`);
   else $(".entete h1", vue).insertAdjacentHTML("beforebegin", `<a class="fil" href="#/reglages">Réglages</a>`), $(".entete h1", vue).textContent = RUBS.find(r => r[0] === rub)?.[1] || "Réglages";
+  if (rub === "plateformes") plateformes($("[data-plateformes]", vue), e);
   $("[data-sons]", vue).onchange = ev => S.agir("profil", { champs: { reglages: { sons: ev.target.checked } } }, { toast: ev.target.checked ? "Sons activés" : "Sons coupés", sansAnnuler: true });
   if (rub === "affichage") S.api("/api/fournisseurs_liste").then(d => {
     const miennes = new Set(S.reglage("plateformes", []) || []);

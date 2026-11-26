@@ -201,6 +201,16 @@ S.fermerModale = (depuisHistorique) => {
   m.fermerCb && m.fermerCb();
   if (!depuisHistorique) { ignorerPop = true; history.back(); }
 };
+// petite question oui / non, par-dessus ce qui est ouvert : renvoie une promesse (true / false)
+S.demander = (titre, texte, oui = "Oui", non = "Non") => new Promise(ok => {
+  let fini = false;
+  const finir = v => { if (fini) return; fini = true; ok(v); };
+  const pied = el(`<div class="pied-question"><button class="bouton" data-non>${esc(non)}</button><button class="bouton principal" data-oui>${esc(oui)}</button></div>`);
+  const m = S.ouvrirModale({ titre, corps: `<p class="question-texte">${texte}</p>`, pied, fermer: () => finir(false) });
+  m.classList.add("question");
+  $("[data-oui]", m).onclick = () => { finir(true); S.fermerModale(); };
+  $("[data-non]", m).onclick = () => { finir(false); S.fermerModale(); };
+});
 let ignorerPop = false, navRetour = false;
 window.addEventListener("popstate", () => {
   if (ignorerPop) { ignorerPop = false; return; }
