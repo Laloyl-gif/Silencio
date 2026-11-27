@@ -70,7 +70,7 @@
   let maWatchlist = "";
   async function executer(ops, ctx, aBlanc) {
     session = ctx.session || "";
-    vitesse = ctx.rapide ? 0.005 : 1;
+    vitesse = ctx.vitesse || (ctx.rapide ? 0.005 : 1);
     if (!aBlanc) await pause(hasard(2000, 6000));
     const resultats = [];
     let bloque = "";

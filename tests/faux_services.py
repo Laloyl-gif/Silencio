@@ -310,6 +310,10 @@ class H(BaseHTTPRequestHandler):
                 return self.envoyer(200, {"data": []})
             t = "s" if q.get("type") == "show" else "m"
             return self.envoyer(200, {"data": [{"ids": {"refract": f"rf-{t}-{m.group(2)}", "tmdb": m.group(2)}}]})
+        if p.startswith("/ratings/") and methode == "GET":
+            return self.envoyer(404, {"code": "not_found"})
+        if p == "/history/movies" and methode == "POST":
+            return self.envoyer(201, {"data": {"id": "play-1"}})
         if p == "/watchlist" and methode == "GET":
             return self.envoyer(200, {"data": [{"ids": {"refract": "rf-m-490", "tmdb": 490}, "type": "movie"}],
                                       "has_more": False})
@@ -408,6 +412,8 @@ class H(BaseHTTPRequestHandler):
             return self.envoyer(200, {"request_token": "jeton-test"})
         if p == "/account":
             return self.envoyer(200, {"id": 42, "username": "etienne_test"})
+        if re.fullmatch(r"/movie/\d+/account_states", p):
+            return self.envoyer(200, {"watchlist": False, "rated": False, "favorite": False})
         m = re.fullmatch(r"/account/42/(\w+)/(movies|tv)|/account/42/lists", p)
         if m:
             if p.endswith("rated/movies"):
@@ -460,7 +466,7 @@ class H(BaseHTTPRequestHandler):
                 return self.envoyer(404, {"message": "Not Found"})
             r = m.group(1)
             if r == "":
-                return self.envoyer(200, {"default_branch": "main"})
+                return self.envoyer(200, {"default_branch": "main", "permissions": {"pull": True, "push": bool(auth)}})
             mm = re.fullmatch(r"/branches/(\w+)", r)
             if mm:
                 return self.envoyer(200 if mm.group(1) in DEPOT["branches"] else 404, {})

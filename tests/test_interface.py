@@ -329,7 +329,8 @@ with sync_playwright() as p:
       globalThis.browser = {
         storage: { local: { get: async d => ({ ...d, ...JSON.parse(JSON.stringify(store)) }), set: async o => { Object.assign(store, o); } } },
         alarms: { clear: async () => {}, create() {}, onAlarm: { addListener() {} } },
-        runtime: { onInstalled: { addListener() {} }, onStartup: { addListener() {} }, onMessage: { addListener(f) { ecoutes.push(f); } }, openOptionsPage: async () => {} },
+        runtime: { onInstalled: { addListener() {} }, onStartup: { addListener() {} }, onMessage: { addListener(f) { ecoutes.push(f); } }, openOptionsPage: async () => {},
+                   getManifest: () => ({ version: "1.11.0" }), getPlatformInfo: async () => ({ os: "android" }), getBrowserInfo: async () => ({ name: "Firefox", version: "145.0" }) },
         tabs: { query: async () => [{ id: 1, status: "complete" }], create: async () => ({ id: 2 }), get: async () => ({ status: "complete" }), remove: async () => {},
                 onUpdated: { addListener() {}, removeListener() {} },
                 sendMessage: async (id, m) => ({ cache: {}, bloque: "", resultats: m.ops.map(o => ({ id: o.id, cle: o.cle, action: o.action, valeur: o.valeur, titre: o.titre,
@@ -347,7 +348,9 @@ with sync_playwright() as p:
         imdb: async ops => ({ resultats: ops.map(o => ({ id: o.id, cle: o.cle, action: o.action, valeur: o.valeur, titre: o.titre, etat: "ok" })) })
       };
       const envoi = browser.tabs.sendMessage;
-      browser.tabs.sendMessage = async (id, m) => { window.__onglets.push(m.p); return envoi(id, m); };
+      browser.tabs.sendMessage = async (id, m) => {
+        if (m.type === "silencio-diagnostic") return { etapes: [{ etat: "ok", texte: "Connecté à Letterboxd en tant que " + m.ctx.pseudo }, { etat: m.complet ? "ok" : "info", texte: "Watchlist : ajout" }] };
+        window.__onglets.push(m.p); return envoi(id, m); };
     }""")
     pe.add_script_tag(path=os.path.join(RACINE, "extension", "background.js"))
     pe.evaluate("async j => await window.__msg({ type: 'reglages', valeurs: { adresse: location.origin, jeton: j } })", jeton)
@@ -385,6 +388,33 @@ with sync_playwright() as p:
     assert api("/api/ext/bonjour", entetes={"X-Silencio-Jeton": jeton})["a_faire"]["lb"] == 0, "envoi juste après l'ajout"
     etat_ext = pe.evaluate("async () => await window.__msg({ type: 'etat' })")
     assert etat_ext["journal"] and etat_ext["dernier"]["bilan"]["lb"], etat_ext["journal"][:3]
+    # Tester la synchro (test complet) : Silencio teste TMDB, Refract, GitHub ; l'extension, Letterboxd et IMDb
+    miroirs_avant = {p: api("/api/etat")["plateformes"][p]["envoye"] for p in ("lb", "imdb", "rf")}
+    n_rf = len(faux_services.REFRACT)
+    pg.goto(URL + "/#/reglages/test")
+    pg.wait_for_selector("[data-lancer]")
+    pg.click("[data-lancer='1']")
+    pg.click(".modale [data-oui]")
+    for _ in range(60):
+        d = api("/api/diagnostic")["etat"]
+        if d and d["fini_serveur"]:
+            break
+        time.sleep(0.5)
+    assert api("/api/ext/bonjour", entetes={"X-Silencio-Jeton": jeton})["diagnostic"]["complet"], "l'extension reçoit la demande"
+    pe.evaluate("async () => await window.__msg({ type: 'veille' })")
+    d = api("/api/diagnostic")["etat"]
+    assert d["fini"] and d["ext"] and d["ext"]["env"]["android"], d.get("attente_ext")
+    txt = d["texte"]
+    print(txt)
+    for attendu in ("RAPPORT SILENCIO", "Refract (par son API)", "TMDB (ton compte)", "Letterboxd (par l'extension)", "IMDb (par l'extension)",
+                    "Compte TMDB pas relié", "[OK] Note : retrait", "[OK] Jeton GitHub accepté", "Android", "[OK] Journal : visionnage supprimé"):
+        assert attendu in txt, attendu
+    assert not api("/api/ext/bonjour", entetes={"X-Silencio-Jeton": jeton}).get("diagnostic"), "demande retirée après la réponse"
+    assert {p: api("/api/etat")["plateformes"][p]["envoye"] for p in ("lb", "imdb", "rf")} == miroirs_avant, "le test ne touche pas aux envois"
+    rf_test = [x for x in faux_services.REFRACT[n_rf:] if x[0] != "GET"]
+    assert ("PUT", "/watchlist/rf-m-6", {}, None) in [(a, b, c, None) for a, b, c, _ in rf_test] and any(x[0] == "DELETE" and x[1] == "/history/movies/play-1" for x in rf_test), rf_test
+    pg.wait_for_selector("[data-copier]")
+    capture(pg, "12d_tel_test_synchro", plein=True)
     pe.close()
     pg.goto(URL + "/#/profil")
     pg.wait_for_selector(".profil-tete")

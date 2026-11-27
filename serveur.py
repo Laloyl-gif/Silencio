@@ -19,6 +19,7 @@ import wiki
 from reseau import ErreurHTTP, HorsLigne, requete
 from stockage import SECTIONS, Stock, ecrire_json, lire_json, slug
 import compte
+import diagnostic
 import miroir
 from refract import Refract
 from synchro import Synchro
@@ -51,6 +52,7 @@ class App:
         self._osm_dernier = 0
         self.refract = Refract(self.stock, self._meta)
         self.reveil_rf = threading.Event()             # réveille la boucle Refract juste après un ajout
+        self.diag = diagnostic.Diagnostic(self)
 
     # ---- arrière-plan
     def demarrer(self):
@@ -1060,6 +1062,7 @@ def fabriquer_handler(app):
             if r.startswith("ext/"):
                 if not self._jeton_ok():
                     return self._envoyer(403, {"erreur": "jeton d'appairage invalide"})
+                self._noter_extension()
                 if r == "ext/ops":
                     return self._envoyer(200, app.ext_ops(q.get("p", ""), min(80, int(q.get("n") or 40)),
                                                           q.get("forcer") == "1"))
@@ -1068,7 +1071,7 @@ def fabriquer_handler(app):
                                                "pseudo": app.stock.appareil.get("letterboxd_pseudo", ""),
                                                "modes": app.stock.appareil.get("modes_ext") or {"lb": "auto", "imdb": "clic"},
                                                "modif": app.stock.appareil.get("derniere_modif", 0),
-                                               "a_faire": app.a_faire_ext()})
+                                               "a_faire": app.a_faire_ext(), "diagnostic": app.diag.demande_ext()})
                 return self._envoyer(404, {"erreur": "inconnu"})
             if r == "etat":
                 return self._envoyer(200, app.etat())
@@ -1141,6 +1144,8 @@ def fabriquer_handler(app):
                 return self._envoyer(200, app.envoi_titre(urllib.parse.unquote(r[6:])))
             if r == "envois":
                 return self._envoyer(200, app.envois())
+            if r == "diagnostic":
+                return self._envoyer(200, app.diag.lire())
             if r == "plateformes/attente":
                 return self._envoyer(200, app.en_attente(q.get("p", "")))
             if r == "tableau":
@@ -1184,6 +1189,15 @@ def fabriquer_handler(app):
             self._envoyer(200, corps, type_ + "; charset=utf-8",
                           {"Content-Disposition": f'attachment; filename="{fichier}"'})
 
+        def _noter_extension(self):
+            """La version de l'extension et le navigateur (envoyés par Silencio Sync 1.11 et plus), pour le test."""
+            x = self.headers.get("X-Silencio-Ext") or ""
+            info = app.stock.appareil.setdefault("extension_info", {})
+            info["t"] = time.time()
+            if x:
+                v, _, nav = x.partition(";")
+                info.update(version=v.strip()[:20], navigateur=nav.strip()[:80])
+
         def _jeton_ok(self):
             return self.headers.get("X-Silencio-Jeton") == app.jeton_extension()
 
@@ -1191,9 +1205,14 @@ def fabriquer_handler(app):
             if r.startswith("ext/"):
                 if not self._jeton_ok():
                     return self._envoyer(403, {"erreur": "jeton d'appairage invalide"})
+                self._noter_extension()
                 if r == "ext/resultats":
                     return self._envoyer(200, app.ext_resultats(self._json()))
+                if r == "ext/diagnostic":
+                    return self._envoyer(200, app.diag.resultat_ext(self._json()))
                 return self._envoyer(404, {"erreur": "inconnu"})
+            if r == "diagnostic":
+                return self._envoyer(200, app.diag.lancer(bool(self._json().get("complet"))))
             if r == "raccourci":
                 return self._envoyer(200, app.creer_raccourci())
             if r == "synchroniser":

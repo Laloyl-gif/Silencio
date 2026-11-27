@@ -692,6 +692,7 @@ P.reglages = async (vue, args, params) => {
       ${a.tmdb.connecte ? `<div class="flex"><span class="espace">Connecté : <b>${esc(a.tmdb.nom)}</b>${e.file_tmdb.attente ? `, ${e.file_tmdb.attente} modification(s) en attente` : ""}${e.file_tmdb.erreur ? `, <span style="color:var(--rouge)">${esc(e.file_tmdb.erreur)}</span>` : ""}</span><button class="bouton petit" data-tmdb-off>Déconnecter</button></div>` : `<button class="bouton principal" data-tmdb-on>Connecter mon compte TMDB</button>`}
     </section>
     <section class="carte" data-rub="plateformes" data-plateformes></section>
+    <section class="carte" data-rub="test" data-test></section>
     <section class="carte" data-rub="importer"><h3>Importer ton historique</h3>
       <label class="etiquette">Letterboxd</label><div class="mini discret" style="margin-bottom:6px">Réglages Letterboxd → Import &amp; Export → Export your data : glisse le fichier .zip ici (journal, notes, critiques, listes, watchlist, likes).</div><input type="file" accept=".zip" data-imp="letterboxd" class="champ" style="padding-top:8px">
       <label class="etiquette">IMDb</label><div class="mini discret" style="margin-bottom:6px">Tes notes (Your ratings → Export) ou ta watchlist, en .csv.</div><input type="file" accept=".csv" data-imp="imdb" class="champ" style="padding-top:8px">
@@ -722,12 +723,13 @@ P.reglages = async (vue, args, params) => {
     <section class="carte" data-rub="avance"><h3>Raccourcis clavier</h3><dl class="tableau-infos petit"><dt>n</dt><dd>Ajouter un visionnage</dd><dt>/</dt><dd>Recherche</dd><dt>1 … 0, puis « . »</dt><dd>Note (dans l'ajout) : 8 puis . = 7,5</dd><dt>Entrée</dt><dd>Valider l'ajout</dd><dt>h, j, s</dt><dd>Accueil, Journal, Stats</dd><dt>z</dt><dd>Annuler la dernière action</dd><dt>Échap</dt><dd>Fermer</dd></dl></section>
     <p class="mini discret centre" data-rub="avance">Silencio ${esc(e.app)}, données TMDB (ce produit utilise l'API TMDB sans être approuvé ni certifié par TMDB), notes IMDb : datasets.imdbws.com, prix : Wikidata, plateformes : JustWatch</p>
   </div>`;
-  const RUBS = [["compte", e.compte?.connecte ? "Compte" : "Compte : se connecter ou en créer un", "moi"], ["affichage", "Affichage", "reglages"], ["plateformes", "Letterboxd, IMDb, Refract, TMDB", "sync"], ["tmdb", "Compte TMDB", "sync"], ["amis", "Amis et synchro", "amis"], ["importer", "Importer", "plus"], ["completer", "Compléter tes films importés", "plus"], ["exporter", "Exporter", "lien"], ["historique", "Historique", "annuler"], ["avance", "Avancé", "info"]];
+  const RUBS = [["compte", e.compte?.connecte ? "Compte" : "Compte : se connecter ou en créer un", "moi"], ["affichage", "Affichage", "reglages"], ["plateformes", "Letterboxd, IMDb, Refract, TMDB", "sync"], ["test", "Tester la synchro", "sync"], ["tmdb", "Compte TMDB", "sync"], ["amis", "Amis et synchro", "amis"], ["importer", "Importer", "plus"], ["completer", "Compléter tes films importés", "plus"], ["exporter", "Exporter", "lien"], ["historique", "Historique", "annuler"], ["avance", "Avancé", "info"]];
   const rub = args[0];
   $$("[data-rub]", vue).forEach(x => x.classList.toggle("cache", x.dataset.rub !== rub));
   if (!rub) $(".col", vue).insertAdjacentHTML("afterbegin", `<div class="lignes menu-reglages">${RUBS.map(([k, l, i]) => `<a class="ligne" href="#/reglages/${k}"><div class="corps"><b>${l}</b></div></a>`).join("")}</div>`);
   else $(".entete h1", vue).insertAdjacentHTML("beforebegin", `<a class="fil" href="#/reglages">Réglages</a>`), $(".entete h1", vue).textContent = RUBS.find(r => r[0] === rub)?.[1] || "Réglages";
   if (rub === "plateformes") plateformes($("[data-plateformes]", vue), e);
+  if (rub === "test") rubriqueTest($("[data-test]", vue));
   if (rub === "compte") rubriqueCompte($("[data-compte]", vue), e);
   if (rub === "completer") rubriqueCompleter($("[data-completer]", vue));
   $("[data-sons]", vue).onchange = ev => S.agir("profil", { champs: { reglages: { sons: ev.target.checked } } }, { toast: ev.target.checked ? "Sons activés" : "Sons coupés", sansAnnuler: true });
@@ -808,3 +810,57 @@ P.envois = async (vue, args, params) => {
   $("[data-l]", vue).innerHTML = html ? `<div class="lignes">${html}</div>` : S.vide("Rien pour l'instant", "Chaque envoi vers Letterboxd, IMDb, Refract et TMDB apparaîtra ici.");
 };
 })();
+
+// ------------------------------------------------------------------ tester la synchro
+function rubriqueTest(z) {
+  const S = window.Silencio;
+  const $ = (q, r = document) => r.querySelector(q);
+  const esc = x => String(x ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const LIB = { ok: "OK", attention: "À voir", erreur: "Erreur", info: "Info", saute: "Sauté" };
+  z.innerHTML = `<p class="petit muet" style="margin-top:0">Vérifie une à une les pièces qui envoient tes films ailleurs : GitHub, TMDB et Refract depuis Silencio, puis Letterboxd et IMDb depuis l'extension dans Firefox. Le rapport se copie en un clic pour être recollé tel quel.</p>
+    <p class="petit muet">Chaque appareil a son propre Silencio et sa propre extension : lance le test sur ton PC, puis sur ton téléphone (Firefox ouvert dans les deux cas).</p>
+    <div class="flex" style="flex-wrap:wrap;margin-top:10px"><button class="bouton principal" data-lancer="0">Test rapide</button><button class="bouton" data-lancer="1">Test complet</button></div>
+    <p class="mini discret" style="margin-top:8px">Rapide : lectures seulement, rien n'est modifié. Complet : sur un film témoin absent de ton profil, chaque envoi (watchlist, note, coup de cœur, journal) est fait puis aussitôt défait, partout.</p>
+    <div data-res></div>`;
+  let minuteur = null;
+  const peindre = r => {
+    const res = $("[data-res]", z);
+    if (!r) { res.innerHTML = ""; return; }
+    const sections = [...r.sections, ...((r.ext && r.ext.sections) || [])];
+    const tout = sections.flatMap(s => s.lignes);
+    const n = k => tout.filter(l => l.etat === k).length;
+    const ext = r.ext ? "" : r.attente_ext === "muette"
+      ? `<div class="diag-attente erreur"><b>L'extension n'a pas répondu.</b> Firefox est-il ouvert sur cet appareil, avec Silencio Sync 1.11.0 et le code d'appairage ? Tu peux aussi ouvrir la fenêtre de l'extension : le test démarre à son prochain passage (dans la minute).</div>`
+      : `<div class="diag-attente">${r.attente_ext === "recu" ? "L'extension fait sa part du test dans Firefox…" : "En attente de l'extension dans Firefox (elle répond dans la minute)…"}</div>`;
+    res.innerHTML = `<div class="diag-tete"><b>${esc(r.appareil.nom)}</b> <span class="muet">${esc(r.appareil.detail)}</span>
+        <span class="espace"></span><span class="diag-bilan">${n("ok")} OK, ${n("attention")} à voir, ${n("erreur")} erreur${n("erreur") > 1 ? "s" : ""}</span></div>
+      ${r.fini_serveur ? "" : `<div class="diag-attente">Silencio teste ses envois…</div>`}
+      ${sections.map(s => `<div class="diag-sec"><h4>${esc(s.nom)}</h4>${s.lignes.map(l => `<div class="diag-l"><span class="diag-e" data-e="${l.etat}">${LIB[l.etat] || l.etat}</span><div><div>${esc(l.texte)}</div>${l.detail ? `<div class="mini discret">${esc(l.detail)}</div>` : ""}</div></div>`).join("")}</div>`).join("")}
+      ${ext}
+      ${r.fini ? `<label class="etiquette">Rapport à copier</label><textarea class="champ diag-texte" readonly rows="8">${esc(r.texte)}</textarea>
+        <div class="flex" style="flex-wrap:wrap;margin-top:8px"><button class="bouton principal" data-copier>Copier le rapport</button>${navigator.share ? `<button class="bouton" data-partager>Partager</button>` : ""}</div>` : ""}`;
+    const t = $(".diag-texte", res);
+    const copier = $("[data-copier]", res);
+    if (copier) copier.onclick = async () => {
+      try { await navigator.clipboard.writeText(r.texte); S.toast("Rapport copié"); }
+      catch { t.focus(); t.select(); try { document.execCommand("copy"); S.toast("Rapport copié"); } catch { S.toast("Sélectionne le texte et copie-le"); } }
+    };
+    const part = $("[data-partager]", res);
+    if (part) part.onclick = () => navigator.share({ title: "Rapport Silencio", text: r.texte }).catch(() => {});
+  };
+  const suivre = async () => {
+    clearTimeout(minuteur);
+    if (!document.body.contains(z)) return;
+    let d; try { d = await S.api("/api/diagnostic"); } catch { minuteur = setTimeout(suivre, 4000); return; }
+    peindre(d.etat);
+    z.querySelectorAll("[data-lancer]").forEach(b => b.disabled = !!(d.etat && !d.etat.fini));
+    if (d.etat && !d.etat.fini) minuteur = setTimeout(suivre, 2000);
+  };
+  z.querySelectorAll("[data-lancer]").forEach(b => b.onclick = async () => {
+    const complet = b.dataset.lancer === "1";
+    if (complet && !(await S.demander("Lancer le test complet ?", "Pendant une à deux minutes, un film témoin absent de ton profil est ajouté puis retiré de ta watchlist, noté puis dé-noté, et une entrée de journal datée d'aujourd'hui est créée puis supprimée, sur chaque plateforme reliée. Tes amis peuvent l'apercevoir dans ton activité Letterboxd pendant ce court moment.", "Lancer", "Annuler"))) return;
+    try { await S.post("/api/diagnostic", { complet }); } catch (x) { S.toast(x.message); return; }
+    suivre();
+  });
+  suivre();
+}

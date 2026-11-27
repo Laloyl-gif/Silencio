@@ -263,7 +263,7 @@
   }
 
   async function executer(ops, ctx, aBlanc) {
-    vitesse = ctx.rapide ? 0.005 : 1;
+    vitesse = ctx.vitesse || (ctx.rapide ? 0.005 : 1);
     csrf = csrfDeLaPage() || ctx.csrf;
     pseudo = ctx.pseudo || "";
     cache = ctx.cache || {};
@@ -305,8 +305,81 @@
     return { resultats, cache, bloque, adresses, essais };
   }
 
+  // ---- test de la synchro (Réglages de Silencio, « Tester la synchro ») : lectures, puis, en test complet,
+  // chaque écriture faite puis défaite sur un film témoin absent de ton profil
+  async function diagnostic(ctx, t, complet) {
+    const etapes = [];
+    const E = (etat, texte, detail = "") => etapes.push({ etat, texte, detail: String(detail || "").slice(0, 300) });
+    pseudo = ctx.pseudo || ""; csrf = csrfDeLaPage() || ctx.csrf || ""; cache = {};
+    adresses = { ...(ctx.adresses || {}) }; essais = {};
+    if (!FOND) {
+      const html = document.documentElement.innerHTML.slice(0, 40000);
+      if (/cf-chl|challenge-platform|Just a moment/i.test(html)) E("erreur", "La page Letterboxd est bloquée par Cloudflare", "ouvre letterboxd.com dans Firefox et passe la vérification");
+      const lien = pseudo && [...document.querySelectorAll("a[href]")].some(a => (a.getAttribute("href") || "").toLowerCase() === `/${pseudo.toLowerCase()}/`);
+      const connexion = document.querySelector('a[href="/sign-in/"], a[href*="/sign-in"], a[href*="signin"]');
+      if (lien) E("ok", `Connecté à Letterboxd en tant que ${pseudo}`);
+      else if (connexion) E("erreur", "Pas connecté à Letterboxd dans Firefox", "ouvre letterboxd.com et connecte-toi (coche « rester connecté »)");
+      else E("attention", "Connexion Letterboxd non vérifiable sur cette page", `${location.pathname}${pseudo ? ` : aucun lien vers /${pseudo}/` : ""}`);
+    }
+    E(csrf ? "ok" : "erreur", csrf ? "Jeton anti-falsification (CSRF) trouvé" : "Jeton anti-falsification (CSRF) introuvable", FOND ? "sans onglet" : `page ${location.pathname}`);
+    if (!t) return { etapes };
+    let f;
+    try { f = await film(t.tmdb); } catch (e) {
+      E("erreur", "Fiche du film témoin", e.message);
+      return { etapes, bloque: e instanceof Bloque ? e.message : "" };
+    }
+    if (!f || !f.filmId) { E("erreur", "Fiche du film témoin introuvable", f ? `/film/${f.slug}/ sans identifiant de film` : `tmdb ${t.tmdb}`); return { etapes }; }
+    E("ok", "Recherche d'un film (TMDB → Letterboxd)", `/film/${f.slug}/, id ${f.filmId}${f.lid ? `, lid ${f.lid}` : ""}${f.note ? `, note moyenne ${f.note}` : ", pas de note moyenne lue"}`);
+    let entrees = null;
+    if (!pseudo) E("erreur", "Lecture du journal impossible : pseudo Letterboxd absent dans Silencio");
+    else {
+      try { entrees = await entreesLb(f); E("ok", "Lecture de ton journal Letterboxd", `${entrees.length} entrée(s) pour ce film`); }
+      catch (e) { E("erreur", "Lecture de ton journal Letterboxd", e.message); }
+    }
+    if (!complet) return { etapes, adresses };
+    const base = { id: "diag", tmdb: t.tmdb, imdb: t.imdb, titre: t.titre, type: "m" };
+    let stop = "";
+    const faire = async (texte, op) => {
+      if (stop) { E("saute", texte, "test arrêté : " + stop); return null; }
+      const r = await executer([{ ...base, ...op }], { ...ctx, csrf, cache, adresses, essais, vitesse: 0.2 }, false);
+      cache = r.cache || cache; adresses = r.adresses || adresses; essais = r.essais || essais;
+      if (r.bloque) { stop = r.bloque; E("erreur", texte, r.bloque); return null; }
+      const x = (r.resultats || [])[0] || {};
+      E(["ok", "deja"].includes(x.etat) ? "ok" : x.etat === "manuel" ? "attention" : "erreur", texte,
+        x.etat === "deja" ? "déjà dans cet état" : (x.erreur || (x.ref ? `entrée ${x.ref}` : "")));
+      return x;
+    };
+    const ok = x => x && ["ok", "deja"].includes(x.etat);
+    const c = t.cle;
+    if (ok(await faire("Watchlist : ajout", { cle: `wl|${c}`, sorte: "wl", action: "poser", valeur: 1 })))
+      await faire("Watchlist : retrait", { cle: `wl|${c}`, sorte: "wl", action: "retirer", valeur: null });
+    const note = await faire("Note : envoi (3,5 étoiles)", { cle: `note|${c}`, sorte: "note", action: "poser", valeur: 3.5 });
+    if (ok(await faire("Coup de cœur : ajout", { cle: `like|${c}`, sorte: "like", action: "poser", valeur: 1 })))
+      await faire("Coup de cœur : retrait", { cle: `like|${c}`, sorte: "like", action: "retirer", valeur: null });
+    if (ok(note)) await faire("Note : retrait", { cle: `note|${c}`, sorte: "note", action: "retirer", valeur: null });
+    if (entrees && entrees.length) E("saute", "Journal : le film témoin est déjà dans ton journal Letterboxd, test sauté pour ne rien perdre");
+    else if (!pseudo) E("saute", "Journal : pseudo Letterboxd absent, test sauté");
+    else {
+      const jour = new Date().toISOString().slice(0, 10);
+      const v = { date: jour, rewatch: false, note: null, like: false, critique: "" };
+      const cree = await faire("Journal : entrée créée (aujourd'hui)", { cle: "vu|diag", sorte: "vu", action: "poser", valeur: v, extra: {}, nb: 1 });
+      if (ok(cree)) {
+        const ref = cree.ref;
+        if (!ref) E("attention", "Journal : identifiant de l'entrée non renvoyé par Letterboxd", "retrouvée ensuite par sa date");
+        await faire("Journal : entrée modifiée (note 3 étoiles)", { cle: "vu|diag", sorte: "vu", action: "poser", valeur: { ...v, note: 3 }, ref, avant: v, nb: 1 });
+        await faire("Journal : entrée supprimée", { cle: "vu|diag", sorte: "vu", action: "retirer", valeur: null, ref, avant: v });
+        const reste = await entreesLb(f).catch(() => null);
+        if (reste) E(reste.length ? "erreur" : "ok", "Journal : vérification après suppression", reste.length ? `${reste.length} entrée(s) encore là : supprime-la à la main sur /${pseudo}/film/${f.slug}/diary/` : "plus aucune entrée");
+        await faire("Note : retrait (laissée par l'entrée)", { cle: `note|${c}`, sorte: "note", action: "retirer", valeur: null });
+      }
+      await faire("Vu : marque retirée (nettoyage)", { cle: `marque|${c}`, sorte: "marque", action: "retirer", valeur: null });
+    }
+    return { etapes, adresses };
+  }
+
   if (FOND) (globalThis.__silencioExec ||= {}).lb = executer;
   else B.runtime.onMessage.addListener(m => {
     if (m && m.type === "silencio-executer") return executer(m.ops, m.ctx || {}, !!m.aBlanc);
+    if (m && m.type === "silencio-diagnostic") return diagnostic(m.ctx || {}, m.temoin, !!m.complet).catch(e => ({ etapes: [{ etat: "erreur", texte: "Le test Letterboxd a planté", detail: String(e && e.message || e) }] }));
   });
 })();

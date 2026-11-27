@@ -29,12 +29,26 @@ async function noter(texte, niveau = "info") {
 
 class Refus extends Error {}
 
+// qui parle (version de l'extension, Firefox ordinateur ou Android) : affiché dans le test de la synchro
+let quiSuisJe = null;
+async function identite() {
+  if (quiSuisJe) return quiSuisJe;
+  const pi = B.runtime.getPlatformInfo ? await B.runtime.getPlatformInfo().catch(() => ({})) : {};
+  const bi = B.runtime.getBrowserInfo ? await B.runtime.getBrowserInfo().catch(() => ({})) : {};
+  let version = "?";
+  try { version = B.runtime.getManifest().version; } catch { /* hors de Firefox (tests) */ }
+  quiSuisJe = { version, os: pi.os || "?", android: pi.os === "android",
+    navigateur: `${bi.name || "Firefox"} ${bi.version || ""} ${pi.os === "android" ? "Android" : pi.os || ""}`.trim() };
+  return quiSuisJe;
+}
+
 async function silencio(chemin, options = {}) {
   const c = await cfg();
+  const moi = await identite();
   let r;
   try {
     r = await fetch(c.adresse.replace(/\/+$/, "") + chemin, {
-      ...options, headers: { "X-Silencio-Jeton": c.jeton, "Content-Type": "application/json", ...(options.headers || {}) }
+      ...options, headers: { "X-Silencio-Jeton": c.jeton, "X-Silencio-Ext": `${moi.version}; ${moi.navigateur}`, "Content-Type": "application/json", ...(options.headers || {}) }
     });
   } catch (e) {
     throw new Refus(`Silencio injoignable à ${c.adresse}. Sur PC : lance Silencio. Sur téléphone : ouvre l'appli Silencio.`);
@@ -85,6 +99,7 @@ async function cookiesDu(url) {
 }
 // Quand l'extension parle elle-même à Letterboxd ou IMDb, ses requêtes partent comme celles du site : avec ta session
 // (les cookies du site, lus par l'API cookies) et l'origine du site. Seules les requêtes de l'extension sont touchées.
+let sessionJointe = false;                   // l'écoute qui joint ta session aux requêtes de l'extension est en place
 if (B.webRequest && B.webRequest.onBeforeSendHeaders) {
   try {
     B.webRequest.onBeforeSendHeaders.addListener(async d => {
@@ -98,6 +113,7 @@ if (B.webRequest && B.webRequest.onBeforeSendHeaders) {
       if (d.method !== "GET" && d.method !== "HEAD") h.push({ name: "Origin", value: site });
       return { requestHeaders: h };
     }, { urls: ["https://letterboxd.com/*", "https://www.imdb.com/*", "https://api.graphql.imdb.com/*"] }, ["blocking", "requestHeaders"]);
+    sessionJointe = true;
   } catch (e) { /* navigateur sans webRequest bloquant : on passera par un onglet */ }
 }
 
@@ -321,9 +337,12 @@ B.alarms.onAlarm.addListener(async a => {
 (B.alarms.get ? B.alarms.get("veille") : Promise.resolve(null)).then(a => { if (!a) B.alarms.create("veille", { periodInMinutes: 1 }); }).catch(() => {});
 async function veille() {
   const c = await cfg();
-  if (!c.actif || !c.jeton || enCours) return;
+  if (!c.jeton || enCours) return;
   let b;
   try { b = await silencio("/api/ext/bonjour"); } catch { if (!c.silencioAbsent) await poser({ silencioAbsent: true }); return; }
+  // « Tester la synchro » a été lancé dans Silencio : l'extension fait sa part du test
+  if (b.diagnostic && b.diagnostic.id && b.diagnostic.id !== c.diagFait) { await diagnostiquer(b, c); return; }
+  if (!c.actif) return;
   // Silencio vient d'être lancé : une synchro 2 minutes après
   if (c.silencioAbsent) { await poser({ silencioAbsent: false, apresLancement: Date.now() + 2 * 60e3 }); return; }
   if (c.apresLancement && Date.now() >= c.apresLancement) { await poser({ apresLancement: 0 }); await synchroniser("ajout"); return; }
@@ -343,6 +362,119 @@ function badge(a, modes) {
   const n = (a.lb || 0) + (a.imdb || 0);
   B.action.setBadgeText({ text: n ? String(Math.min(n, 99)) : "" }).catch(() => {});
   B.action.setBadgeBackgroundColor?.({ color: (modes?.imdb === "clic" && a.imdb) ? "#f0505f" : "#555" })?.catch?.(() => {});
+}
+
+// ---------------------------------------------------------------- test de la synchro (demandé depuis Silencio)
+// Lectures d'abord (connexion, jeton, recherche d'un film, journal) ; en test complet, chaque écriture est faite
+// puis défaite sur un film témoin absent de ton profil. Rien n'est noté comme envoyé dans Silencio.
+async function diagnostiquer(b, c) {
+  const d = b.diagnostic;
+  await poser({ diagFait: d.id });
+  enCours = true;
+  const sections = [];
+  const sec = nom => { const s = { nom, lignes: [] }; sections.push(s); return s; };
+  const L = (s, etat, texte, detail = "") => s.lignes.push({ etat, texte, detail: String(detail || "").slice(0, 400) });
+  const moi = await identite();
+  try {
+    await silencio("/api/ext/diagnostic", { method: "POST", body: JSON.stringify({ id: d.id, recu: true }) }).catch(() => {});
+    // --- Firefox et l'extension
+    const e = sec("Extension dans Firefox" + (moi.android ? " (Android)" : " (ordinateur)"));
+    L(e, "info", `Silencio Sync ${moi.version} sur ${moi.navigateur}`);
+    L(e, "ok", `Silencio joignable à ${c.adresse}`, `profil ${b.profil}, Silencio v${b.app}`);
+    const manque = await autorisationsManquantes();
+    L(e, manque.length ? "erreur" : "ok", manque.length ? "Accès aux sites refusé par Firefox" : "Accès aux sites Letterboxd et IMDb autorisé",
+      manque.length ? `manque : ${manque.join(", ")} (fenêtre de l'extension → « Autoriser l'accès aux sites »)` : "");
+    L(e, sessionJointe ? "ok" : "erreur", sessionJointe ? "Session des sites jointe aux requêtes de l'extension" : "Impossible de joindre ta session aux requêtes (webRequest bloquant absent)");
+    L(e, B.tabs.hide ? "ok" : "info", B.tabs.hide ? "Onglets cachés disponibles" : "Onglets cachés indisponibles",
+      B.tabs.hide ? "" : moi.android ? "normal sur Android : l'onglet Letterboxd s'ouvre en arrière-plan quelques secondes" : "l'onglet Letterboxd sera visible pendant l'envoi");
+    L(e, c.actif ? "ok" : "attention", c.actif ? "Synchro automatique activée dans l'extension" : "Synchro automatique coupée dans l'extension");
+    const modes = b.modes || {};
+    for (const p of ["lb", "imdb"]) {
+      const m = modes[p] || "auto";
+      L(e, c.sites?.[p] === false ? "attention" : "info", `${NOM[p]} : mode « ${m} »${c.sites?.[p] === false ? ", coupé dans l'extension" : ""}`,
+        `${(b.a_faire || {})[p] || 0} en attente`);
+      if ((c.pauses[p] || 0) > Date.now())
+        L(e, "attention", `${NOM[p]} en pause jusqu'à ${new Date(c.pauses[p]).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`,
+          (c.cloudflare || {})[p] ? `vérification anti-robot (Cloudflare) ${(c.cloudflare || {})[p]} fois de suite` : "après un refus du site");
+      const q = c.quota[p] && c.quota[p].jour === aujourdhui() ? c.quota[p].n : 0;
+      if (q >= QUOTA_JOUR * 0.8) L(e, "attention", `${NOM[p]} : ${q}/${QUOTA_JOUR} actions aujourd'hui (quota presque atteint)`);
+      if ((c.fondKo || {})[p] && Date.now() - c.fondKo[p] < 6 * 3600e3) L(e, "attention", `${NOM[p]} : la voie sans onglet a échoué récemment, passage par un onglet`);
+    }
+    if (c.dernier) L(e, "info", `Dernière synchro de l'extension : ${new Date(c.dernier.quand).toLocaleString("fr-FR")} (${c.dernier.motif})`, JSON.stringify(c.dernier.bilan || {}).slice(0, 300));
+    const errs = (c.journal || []).filter(x => x.niveau === "erreur" && Date.now() - x.t < 3 * 86400e3).slice(0, 8);
+    for (const x of errs) L(e, "attention", `Erreur récente (${new Date(x.t).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })})`, x.texte);
+    // --- Letterboxd
+    const lb = sec("Letterboxd (par l'extension)");
+    if (c.sites?.lb === false) L(lb, "saute", "Letterboxd coupé dans l'extension");
+    else await diagLb(lb, L, d, c, b);
+    // --- IMDb
+    const im = sec("IMDb (par l'extension)");
+    if (c.sites?.imdb === false) L(im, "saute", "IMDb coupé dans l'extension");
+    else await diagImdb(im, L, d);
+  } catch (x) {
+    L(sec("Test de l'extension interrompu"), "erreur", "Le test a planté", x.message || String(x));
+  } finally {
+    enCours = false;
+  }
+  try {
+    await silencio("/api/ext/diagnostic", { method: "POST", body: JSON.stringify({ id: d.id, env: moi, sections }) });
+  } catch (x) { await noter("Test de la synchro : résultat non transmis à Silencio (" + x.message + ")", "erreur"); }
+  await noter(`Test de la synchro fait (${d.complet ? "complet" : "rapide"}) : le rapport est dans Silencio.`);
+}
+
+const delai = (p, ms, quoi) => Promise.race([p, new Promise((_, non) => setTimeout(() => non(new Error(quoi + " : pas de réponse en " + Math.round(ms / 1000) + " s")), ms))]);
+
+async function diagLb(s, L, d, c, b) {
+  const pseudo = d.pseudo || b.pseudo || "";
+  if (!pseudo) L(s, "erreur", "Pseudo Letterboxd absent dans Silencio", "Réglages → Plateformes → Letterboxd");
+  const ks = await cookiesDu("https://letterboxd.com/");
+  L(s, ks.length ? "ok" : "erreur", ks.length ? `Cookies Letterboxd présents (${ks.length})` : "Aucun cookie Letterboxd : jamais ouvert ou pas connecté dans ce Firefox");
+  if (!ks.length) return;
+  let onglet = null;
+  try {
+    onglet = await delai(ongletPour("lb", "bouton"), 60000, "ouverture de l'onglet Letterboxd");
+    L(s, "ok", onglet.cree ? "Onglet Letterboxd ouvert en arrière-plan" : "Onglet Letterboxd déjà ouvert réutilisé");
+    const ctx = await contexte("lb", { pseudo }, c);
+    ctx.adresses = c.adresses.lb || {};
+    const r = await delai(parler(onglet, { type: "silencio-diagnostic", p: "lb", ctx, temoin: d.temoin, complet: d.complet }), 240000, "test Letterboxd");
+    for (const x of (r && r.etapes) || []) L(s, x.etat, x.texte, x.detail);
+    if (r && r.bloque) L(s, "erreur", "Letterboxd a bloqué le test", r.bloque);
+  } catch (x) {
+    L(s, "erreur", "Test Letterboxd impossible", x.message || String(x));
+  } finally {
+    if (onglet && onglet.cree) B.tabs.remove(onglet.id).catch(() => {});
+  }
+}
+
+async function diagImdb(s, L, d) {
+  const ks = await cookiesDu("https://www.imdb.com/");
+  const connecte = ks.some(k => k.name === "at-main" || k.name === "sess-at-main");
+  L(s, connecte ? "ok" : ks.length ? "erreur" : "erreur", connecte ? "Cookie de connexion IMDb présent" : ks.length ? "Pas connecté à IMDb dans ce Firefox (cookies sans connexion)" : "Aucun cookie IMDb : jamais ouvert dans ce Firefox",
+    `${ks.length} cookie(s)`);
+  const exec = (globalThis.__silencioExec || {}).imdb;
+  if (!exec) { L(s, "erreur", "Module IMDb de l'extension non chargé"); return; }
+  const ctx = { session: (ks.find(k => k.name === "session-id") || {}).value || "", vitesse: 0.15 };
+  const t = d.temoin;
+  const un = async (texte, op) => {
+    const r = await delai(exec([{ id: "diag", tmdb: t?.tmdb, imdb: t?.imdb, titre: t?.titre, type: "m", ...op }], ctx, false), 60000, texte);
+    if (r.bloque) { L(s, "erreur", texte, r.bloque); return null; }
+    const x = (r.resultats || []).find(y => y.id === "diag") || {};
+    L(s, ["ok", "deja"].includes(x.etat) ? "ok" : x.etat === "manuel" ? "attention" : "erreur", texte, x.etat === "deja" ? "déjà dans cet état" : (x.erreur || (x.ref ? `id ${x.ref}` : "")));
+    return x;
+  };
+  let wl;
+  try { wl = await un("Requête à IMDb sans onglet (lecture de ta watchlist)", { cle: "liste|_favoris", sorte: "liste", action: "poser", valeur: { nom: "Watchlist", watchlist: true } }); }
+  catch (x) { L(s, "erreur", "Requête à IMDb impossible", x.message); return; }
+  if (!d.complet || !t) return;
+  if (!t.imdb) { L(s, "saute", "Film témoin sans identifiant IMDb : écritures non testées"); return; }
+  try {
+    const n = await un("Note : envoi (7/10)", { cle: `note|${t.cle}`, sorte: "note", action: "poser", valeur: 7 });
+    if (n && n.etat === "ok") await un("Note : retrait", { cle: `note|${t.cle}`, sorte: "note", action: "retirer", valeur: null });
+    if (wl && wl.ref) {
+      const a = await un("Watchlist : ajout", { cle: `fav|${t.cle}`, sorte: "fav", action: "poser", valeur: 1, liste: "_favoris", ref: wl.ref });
+      if (a && a.etat === "ok") await un("Watchlist : retrait", { cle: `fav|${t.cle}`, sorte: "fav", action: "retirer", valeur: null, liste: "_favoris", ref: wl.ref });
+    }
+  } catch (x) { L(s, "erreur", "Écritures IMDb interrompues", x.message); }
 }
 
 // ---------------------------------------------------------------- enregistreur : pour calibrer une action inconnue
@@ -429,6 +561,10 @@ B.runtime.onMessage.addListener(async m => {
   if (m?.type === "effacer-journal") { await poser({ journal: [] }); return { ok: true }; }
   if (m?.type === "executer-un") return executerUn(m.p, m.id);
   if (m?.type === "veille") { await veille(); return { ok: true }; }
+  if (m?.type === "diagnostic") {
+    try { const c = await cfg(); const b = await silencio("/api/ext/bonjour"); if (b.diagnostic) { await diagnostiquer(b, c); return { ok: true }; } return { ok: false, erreur: "aucun test demandé dans Silencio" }; }
+    catch (e) { return { ok: false, erreur: e.message }; }
+  }
   if (m?.type === "imdb-gql") {
     try {
       const r = await fetch("https://api.graphql.imdb.com/", { method: "POST", credentials: "include", headers: m.entetes || {}, body: m.corps });

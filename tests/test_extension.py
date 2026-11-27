@@ -190,6 +190,24 @@ def main():
         verifier(rep["resultats"][0]["etat"] == "echec" and "demain" in rep["resultats"][0]["erreur"] and
                  not any("/like/" in r[0] for r in RECU[n_avant:]), "exploration d'adresses limitée à une fois par jour")
 
+        # ---- test de la synchro (Réglages → Tester la synchro) : lectures puis écritures défaites, film témoin Eraserhead
+        n_avant = len(RECU)
+        rep = pg.evaluate("""async () => await window.__ecoutes[0]({ type: "silencio-diagnostic", ctx: { csrf: "c", pseudo: "etienne" },
+            temoin: { cle: "m:985", tmdb: 985, imdb: "tt0074486", titre: "Eraserhead" }, complet: true })""")
+        et = {e["texte"]: e["etat"] for e in rep["etapes"]}
+        verifier(et.get("Recherche d'un film (TMDB → Letterboxd)") == "ok" and et.get("Lecture de ton journal Letterboxd") == "ok"
+                 and et.get("Jeton anti-falsification (CSRF) trouvé") == "ok", "test : lectures (jeton, film, journal)")
+        verifier(all(et.get(k) == "ok" for k in ("Watchlist : ajout", "Watchlist : retrait", "Note : envoi (3,5 étoiles)", "Note : retrait",
+                                                  "Journal : entrée créée (aujourd'hui)", "Journal : entrée modifiée (note 3 étoiles)",
+                                                  "Journal : entrée supprimée", "Journal : vérification après suppression")), et)
+        faits = [r[0] for r in RECU[n_avant:]]
+        verifier("/api/v0/production-log-entries" in faits and "DELETE /api/v0/production-log-entries/x" in faits and
+                 "PATCH /api/v0/production-log-entries/x" in faits, "test : l'entrée de journal créée est modifiée puis supprimée")
+        rep = pg.evaluate("""async () => await window.__ecoutes[0]({ type: "silencio-diagnostic", ctx: { csrf: "c", pseudo: "etienne" },
+            temoin: { cle: "m:793", tmdb: 793, titre: "Blue Velvet" }, complet: true })""")
+        verifier(any(e["etat"] == "saute" and e["texte"].startswith("Journal") for e in rep["etapes"]),
+                 "test : film témoin déjà au journal Letterboxd → test du journal sauté")
+
         # ---- IMDb
         gql = []
 
