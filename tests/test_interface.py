@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 ICI = os.path.dirname(os.path.abspath(__file__))
@@ -24,7 +25,7 @@ DONNEES = tempfile.mkdtemp(prefix="silencio_ui_")
 ENV = dict(os.environ, SILENCIO_DONNEES=DONNEES, SILENCIO_PORT=str(PS), SILENCIO_SANS_NAVIGATEUR="1",
            SILENCIO_TMDB=f"http://127.0.0.1:{PF}/tmdb/3", SILENCIO_TMDB_IMG=f"http://127.0.0.1:{PF}/img/",
            SILENCIO_GITHUB=f"http://127.0.0.1:{PF}/github", SILENCIO_WIKIDATA=f"http://127.0.0.1:{PF}/wikidata",
-           SILENCIO_IMDB=f"http://127.0.0.1:{PF}/imdb.tsv.gz", SILENCIO_REFRACT=f"http://127.0.0.1:{PF}/refract/v1", SILENCIO_MONDE=f"http://127.0.0.1:{PF}/monde.json", SILENCIO_NOMINATIM=f"http://127.0.0.1:{PF}/nominatim")
+           SILENCIO_IMDB=f"http://127.0.0.1:{PF}/imdb.tsv.gz", SILENCIO_REFRACT=f"http://127.0.0.1:{PF}/refract/v1", SILENCIO_ALLOCINE=f"http://127.0.0.1:{PF}/allocine", SILENCIO_IMDB_GQL=f"http://127.0.0.1:{PF}/imdbgql", SILENCIO_MONDE=f"http://127.0.0.1:{PF}/monde.json", SILENCIO_NOMINATIM=f"http://127.0.0.1:{PF}/nominatim")
 os.environ.update({k: v for k, v in ENV.items() if k.startswith("SILENCIO_")})
 import faux_services  # noqa: E402
 faux_services.lancer(PF)
@@ -261,9 +262,13 @@ with sync_playwright() as p:
     capture(pg, "12_tel_reglages")
     pg.goto(URL + "/#/reglages/affichage")
     pg.wait_for_selector("[data-plat]")
+    avant_8 = 8 in (api("/api/etat")["profil"]["profil"]["reglages"].get("plateformes") or [])
     pg.click("[data-plat='8']")
     pg.wait_for_timeout(400)
-    assert 8 in api("/api/etat")["profil"]["profil"]["reglages"]["plateformes"]
+    assert (8 in api("/api/etat")["profil"]["profil"]["reglages"]["plateformes"]) != avant_8, "abonnement coché / décoché"
+    if avant_8:
+        pg.click("[data-plat='8']")
+        pg.wait_for_timeout(400)
     capture(pg, "12b_tel_reglages_affichage")
     # Letterboxd, IMDb, Refract : Silencio maître
     ec = api("/api/etat")
@@ -551,6 +556,80 @@ with sync_playwright() as p:
     pp.goto(URL + "/#/notifs")
     pp.wait_for_selector(".entete")
     capture(pp, "33_pc_notifs")
+    # ---- v21 : notes détaillées (nouveaux critères, « non noté »), stats Critères et Cinémas, abonnement
+    api("/api/action", {"type": "titre", "cle": "m:1018", "champs": {"detail": {"scenario": 9, "image": 10, "musique": 10, "montage": 8, "decors": 9, "costumes": 0, "originalite": 10}}})
+    api("/api/action", {"type": "titre", "cle": "m:793", "champs": {"detail": {"image": 8, "musique": 9, "montage": 7, "originalite": 9}}})
+    api("/api/action", {"type": "titre", "cle": "m:638", "champs": {"detail": {"image": 7, "musique": 8, "montage": 6, "originalite": 8}}})
+    api("/api/action", {"type": "titre", "cle": "m:985", "champs": {"detail": {"image": 9, "musique": 7, "montage": 9, "originalite": 10}}})
+    pp.goto(URL + "/#/stats?o=criteres")
+    pp.reload()
+    pp.wait_for_selector("[data-bloc=crit_moy] .barre-h")
+    pp.wait_for_timeout(500)
+    assert pp.locator("[data-bloc=crit_moy] .barre-h").count() >= 4, "moyennes par critère"
+    capture(pp, "34_pc_stats_criteres", plein=True)
+    api("/api/action", {"type": "abonnement", "abonnement": {"nom": "Pathé", "prix": 21.9, "debut": "2026-09", "fin": "", "sauf": ["2026-10"]}})
+    pp.goto(URL + "/#/stats?o=cinemas")
+    pp.reload()
+    pp.wait_for_selector("[data-bloc=cines] .cines-l .ligne")
+    pp.wait_for_selector("[data-bloc=depenses] .chiffres")
+    txt = pp.inner_text("[data-bloc=depenses]")
+    assert "Pathé" in txt and "€" in txt, txt[:200]
+    capture(pp, "35_pc_stats_cinemas", plein=True)
+    pp.click("[data-bloc=cines] .cines-l .ligne")
+    pp.wait_for_selector("[data-bloc=cine_un] [data-salles] .barre-h")
+    capture(pp, "36_pc_stats_un_cinema", plein=True)
+    # recherche avancée
+    pp.goto(URL + "/#/avancee")
+    pp.wait_for_selector(".rech-grille")
+    pp.select_option("[data-f=crit]", "image")
+    pp.wait_for_selector("[data-f=critMin]")
+    pp.select_option("[data-f=critMin]", "9")
+    pp.wait_for_timeout(300)
+    n = pp.locator("[data-g] .vignette").count()
+    assert n == 2, ("photographie ≥ 9 : Mulholland Drive et Eraserhead", n)
+    capture(pp, "37_pc_recherche_avancee")
+    # fiche : anecdotes, bande originale, similaires, partage
+    pp.goto(URL + "/#/titre/m:1018")
+    pp.wait_for_selector("[data-anecdotes]:not([hidden]) .anec li")
+    pp.wait_for_selector("[data-bo]:not([hidden]) .bo-liens a")
+    assert "Lynch a écrit" in pp.inner_text("[data-anecdotes]")
+    pp.locator("[data-similaires]").scroll_into_view_if_needed()
+    pp.wait_for_selector("[data-similaires] .sim-crit button.actif")
+    pp.wait_for_timeout(800)
+    capture(pp, "38_pc_fiche_enrichie", plein=True)
+    pp.click("[data-partager]")
+    pp.wait_for_selector(".modale [data-canvas]")
+    pp.wait_for_timeout(800)
+    capture(pp, "39_pc_partage")
+    pp.keyboard.press("Escape")
+    # ouvrir un lien IMDb dans Silencio
+    pp.goto(URL + "/#/ouvrir?url=" + urllib.parse.quote("https://www.imdb.com/title/tt0166924/"))
+    pp.wait_for_timeout(1500)
+    # duels sur une vraie liste
+    lid = next(k for k, v in api("/api/etat")["profil"]["listes"].items() if v.get("nom") == "Lynch, du meilleur au pire")
+    pp.goto(URL + f"/#/duels/{lid}")
+    pp.reload()
+    pp.wait_for_selector(".duel-film")
+    for _ in range(6):
+        pp.locator(".duel-film").first.click()
+        pp.wait_for_timeout(150)
+    capture(pp, "40_pc_duels")
+    pp.click("[data-voir]")
+    pp.click("[data-appliquer]")
+    pp.wait_for_timeout(800)
+    duels = api("/api/etat")["profil"]["duels"][lid]["c"]
+    assert len(duels) == 6, duels
+    assert api("/api/etat")["profil"]["listes"][lid]["classee"], "liste classée par les duels"
+    # accueil : synchro réduite, sorties de la semaine
+    pp.goto(URL + "/#/")
+    pp.wait_for_selector(".tdb")
+    assert pp.locator(".tdb-ligne").count() <= 3
+    capture(pp, "41_pc_accueil_v21", plein=True)
+    # réglages : tes cinémas
+    pp.goto(URL + "/#/reglages/affichage")
+    pp.wait_for_selector("[data-cinemas] .ligne")
+    assert "Pathé Valenciennes" in pp.inner_text("[data-cinemas]")
+    assert set(api("/api/etat")["profil"]["profil"]["reglages"]["plateformes"]) >= {8, 11, 119, 381, 337, 234}, "plateformes ajoutées au profil"
     nav.close()
 
 serveur.terminate()

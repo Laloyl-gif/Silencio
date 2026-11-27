@@ -1468,3 +1468,46 @@ body.avec-barre-film #principal { padding-bottom: calc(var(--barre-bas) + 96px +
 .diag-attente { margin-top: 14px; padding: 10px 12px; border: 1px solid rgba(255,255,255,.1); border-radius: 2px; font-size: 13.5px; color: var(--texte-2); }
 .diag-attente.erreur { border-color: rgba(239,83,80,.5); color: var(--texte); }
 .diag-texte { width: 100%; font-size: 12px; line-height: 1.45; min-height: 140px; resize: vertical; }
+/* notes détaillées : un critère peut être « pas noté sur ce film » */
+.mini-notes-aide { margin: 14px 0 0; }
+.mn-lib { background: none; border: 0; padding: 0; text-align: left; font: inherit; font-size: 14px; color: var(--texte-2); cursor: pointer; }
+.mn-lib.exclu { text-decoration: line-through; color: var(--texte-3); }
+.points10.exclu { opacity: .25; pointer-events: none; }
+/* fiche enrichie : séances, bande originale, anecdotes, similaires, partage */
+.sc-cine + .sc-cine { margin-top: 14px; }
+.sc-cine h3 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+.sc-jour { display: flex; gap: 12px; align-items: baseline; padding: 6px 0; border-top: 1px solid rgba(255,255,255,.06); }
+.sc-date { flex: none; width: 92px; color: var(--texte-2); font-size: 13.5px; }
+.sc-h { display: flex; flex-wrap: wrap; gap: 6px; }
+.sc-h b { font-weight: 600; font-size: 14px; padding: 3px 8px; border: 1px solid rgba(255,255,255,.14); border-radius: 2px; }
+.sc-h small { font-weight: 400; color: var(--texte-2); font-size: 11.5px; }
+.bo-compo { margin: 0 0 10px; color: var(--texte-2); }
+.bo-compo a { color: var(--texte); }
+.bo-liens { display: flex; gap: 8px; flex-wrap: wrap; }
+.anec { margin: 0; padding: 0 0 0 18px; display: grid; gap: 10px; line-height: 1.5; font-size: 14.5px; }
+.anec li::marker { color: var(--texte-3); }
+.sim-crit { margin-bottom: 10px; }
+.partage-apercu canvas { width: 100%; height: auto; display: block; border: 1px solid rgba(255,255,255,.1); border-radius: 2px; margin-bottom: 12px; }
+/* recherche avancée */
+.rech-avancee { display: inline-block; margin-top: 8px; font-size: 13px; }
+.rech-grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.rech-grille .champ { height: 38px; font-size: 13.5px; }
+/* duels */
+.duel-prog { height: 4px; background: rgba(255,255,255,.08); border-radius: 2px; overflow: hidden; margin: 14px 0 6px; }
+.duel-prog i { display: block; height: 100%; width: 0; background: #fff; transition: width .3s; }
+.duel { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: center; margin: 16px 0; }
+.duel-film { background: none; border: 1px solid rgba(255,255,255,.08); border-radius: 2px; padding: 8px; color: inherit; font: inherit; cursor: pointer; display: grid; gap: 6px; text-align: center; }
+.duel-film:hover, .duel-film:focus-visible { border-color: #fff; }
+.duel-film .affiche { width: 100%; height: auto; aspect-ratio: 2/3; }
+.duel-film b { font-weight: 600; font-size: 15px; }
+.duel-film span { color: var(--texte-2); font-size: 13px; }
+.duel-ou { color: var(--texte-3); font-size: 13px; }
+.duel-actions { flex-wrap: wrap; gap: 8px; }
+.duel-classement { padding-left: 22px; line-height: 1.8; }
+.serie-bilan { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+.serie-bilan div { border: 1px solid rgba(255,255,255,.08); border-radius: 2px; padding: 10px; display: grid; gap: 2px; }
+.serie-bilan b { font-size: 20px; font-weight: 700; }
+.serie-bilan span { font-size: 12px; color: var(--texte-2); }
+@media (max-width: 520px) { .serie-bilan { grid-template-columns: repeat(2, 1fr); } }
+.duel { max-width: 620px; margin-left: auto; margin-right: auto; }
+.duel-film .affiche { max-height: 46vh; width: auto; margin: 0 auto; }

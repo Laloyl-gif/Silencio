@@ -131,21 +131,13 @@ def notifications(depuis):
 
 
 def lien_partage(texte):
-    """Un lien IMDb, Letterboxd ou TMDB partagé vers Silencio : la page à ouvrir (« #/titre/m:123 »), ou « »."""
+    """Un lien IMDb, Letterboxd ou TMDB partagé (ou ouvert) vers Silencio : la page à ouvrir, ou « »."""
     import re
     texte = texte or ""
-    m = re.search(r"themoviedb\.org/(movie|tv)/(\d+)", texte)
+    m = re.search(r"https?://\S+", texte)
+    if m and re.search(r"imdb\.com|letterboxd\.com|boxd\.it|themoviedb\.org", m.group(0)):
+        return "#/ouvrir?url=" + urllib.parse.quote(m.group(0), safe="")
+    m = re.search(r"(tt\d{6,10})", texte)
     if m:
-        return f"#/titre/{'m' if m.group(1) == 'movie' else 't'}:{m.group(2)}"
-    m = re.search(r"(tt\d{6,9})", texte)
-    if m and _APP is not None:
-        try:
-            c = _APP.tmdb.trouver_imdb(m.group(1))
-            if c:
-                return "#/titre/" + c
-        except Exception:  # noqa: BLE001
-            pass
-    m = re.search(r"letterboxd\.com/film/([\w-]+)", texte)
-    if m:
-        return "#/recherche?q=" + urllib.parse.quote(m.group(1).replace("-", " "))
+        return "#/ouvrir?url=" + m.group(1)
     return ""

@@ -113,5 +113,6 @@ $("[data-effacer]").onclick = async () => { await envoyer({ type: "effacer-journ
 $("[data-rec]").onclick = async () => { await envoyer({ type: "enregistrer", minutes: 3 }); peindre(); };
 $("[data-rec-stop]").onclick = async () => { await envoyer({ type: "arreter" }); peindre(); };
 $("[data-rec-copier]").onclick = async () => { await navigator.clipboard.writeText($("[data-rapport]").textContent || "(vide)").catch(() => {}); $("[data-rec-copier]").textContent = "Copié"; };
+$("[data-ouvrir-film]").onclick = async () => { const r = await envoyer({ type: "ouvrir-film" }); if (!r.ok) alert(r.erreur || "Ouvre d'abord la page d'un film sur IMDb, Letterboxd ou TMDB."); else window.close(); };
 peindre(); tester();
 setInterval(peindre, 3000);

@@ -21,12 +21,13 @@ import config
 
 FORMAT = 1
 SECTIONS = ("titres", "journal", "watchlist", "listes", "classements", "favoris", "series", "graphiques", "annees",
-            "miroirs")
+            "miroirs", "abonnements", "duels")
+PRIVEES = ("miroirs", "abonnements", "duels")          # sections jamais montrées aux amis (pas même leurs clés)
 # miroirs : ce que Silencio sait avoir déjà envoyé sur Letterboxd, IMDb et Refract (« lb|note|m:603 » → valeur).
 # Toujours dans la partie privée : rien de tout ça n'est montré aux amis.
 CHAMPS_TITRE = {"note", "coeur", "vu", "etiquettes", "citations", "detail", "collection", "prive"}
 CHAMPS_JOURNAL = {"cle", "date", "note", "revision", "critique", "critique_privee", "ou", "prix", "avec", "version",
-                  "prive", "coeur", "approx"}
+                  "prive", "coeur", "approx", "imax"}
 CHAMPS_PROFIL = {"nom", "bio", "banniere", "reglages", "accueil", "couleur"}
 
 
@@ -115,7 +116,7 @@ def _completer_titre(gagnant, autre):
 
 # ---------------------------------------------------------------- partie privée
 def _est_cache(doc, s, k, v):
-    if s == "miroirs":
+    if s in PRIVEES:
         return True
     if v.get("x"):
         return False
@@ -135,7 +136,7 @@ def separer(doc):
     priv = {"format": FORMAT, "id": doc.get("id")}
     for s in SECTIONS:
         pub[s], priv[s] = {}, {}
-        if s == "miroirs":                      # rien dans la partie publique, pas même les clés
+        if s in PRIVEES:                        # rien dans la partie publique, pas même les clés
             priv[s] = copy.deepcopy(doc.get(s) or {})
             continue
         for k, v in (doc.get(s) or {}).items():
@@ -319,8 +320,9 @@ class Stock:
             libelle = getattr(self, "_a_" + type_)(trace, tmdb, d)
             if not trace:
                 return {"modifs": [], "tmdb": []}
-            self.historique.append((libelle or type_, trace, time.time()))
-            del self.historique[:-60]
+            if type_ not in ("duels",):                  # la progression des duels ne s'« annule » pas
+                self.historique.append((libelle or type_, trace, time.time()))
+                del self.historique[:-60]
             self.sauver()
             self.version += 1
             return {"modifs": [[s, k, self.doc[s].get(k) if s != "profil" else self.doc["profil"]]
@@ -602,6 +604,27 @@ class Stock:
         p["maj"] = max(maintenant(), ancien.get("maj", 0) + 0.001)
         self.doc["profil"] = p
         return "Profil"
+
+    def _a_abonnement(self, trace, tmdb, d):
+        """Abonnement cinéma (Pathé, UGC…) : prix par mois, premier et dernier mois payés, mois non payés."""
+        aid = d.get("id") or ("a" + uuid.uuid4().hex[:8])
+        if d.get("suppr"):
+            self._supprimer(trace, "abonnements", aid)
+            return "Abonnement retiré"
+        a = d.get("abonnement") or {}
+        self._poser(trace, "abonnements", aid, {"nom": str(a.get("nom") or "Abonnement")[:60], "prix": float(a.get("prix") or 0),
+                                                "debut": str(a.get("debut") or "")[:7], "fin": str(a.get("fin") or "")[:7],
+                                                "sauf": [m for m in a.get("sauf") or [] if isinstance(m, str)][:240]})
+        return "Abonnement enregistré"
+
+    def _a_duels(self, trace, tmdb, d):
+        """Progression du classement par duels d'une liste (comparaisons faites), reprise à tout moment."""
+        lid = d["liste"]
+        if d.get("suppr"):
+            self._supprimer(trace, "duels", lid)
+            return "Duels effacés"
+        self._poser(trace, "duels", lid, {"c": [list(x)[:3] for x in (d.get("comparaisons") or [])][-3000:]})
+        return "Duels"
 
     def _a_graphique(self, trace, tmdb, d):
         g = dict(d.get("graphique") or {})

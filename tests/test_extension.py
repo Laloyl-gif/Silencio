@@ -17,6 +17,7 @@ ICI = os.path.dirname(os.path.abspath(__file__))
 EXT = os.path.join(os.path.dirname(ICI), "extension")
 PORT = 9930
 RECU = []
+SUPPRIMES = set()
 
 FILM = """<!DOCTYPE html><html><body><div class="film-poster" data-film-slug="{slug}" data-postered-identifier='{{"lid":"{lid}","uid":"film:{fid}","type":"film"}}'></div>
 <a href="https://www.themoviedb.org/movie/{tmdb}/">TMDB</a><script src="/cdn-cgi/challenge-platform/scripts/jsd/main.js"></script></body></html>"""
@@ -58,7 +59,7 @@ class Faux(BaseHTTPRequestHandler):
             if slug == "eraserhead":
                 page = page.replace("</body>", "<script>var supermodelCSRF = 'jeton-frais';</script></body>")
             return self.envoyer(200, page, "text/html", {"x-letterboxd-identifier": lid})
-        if p == "/etienne/film/blue-velvet/diary/":
+        if p == "/etienne/film/blue-velvet/diary/" and "v42" not in SUPPRIMES:
             return self.envoyer(200, '<table class="diary-table"><tr class="diary-entry-row" data-viewing-id="v42"><td><a href="/etienne/films/diary/for/2024/03/01/">1</a></td></tr></table>', "text/html")
         if p.startswith("/etienne/film/"):
             return self.envoyer(404, "", "text/html")
@@ -74,6 +75,7 @@ class Faux(BaseHTTPRequestHandler):
     def do_DELETE(self):
         RECU.append(("DELETE " + self.path, dict(self.headers), ""))
         if self.path.startswith("/api/v0/production-log-entries/"):
+            SUPPRIMES.add(self.path.rsplit("/", 1)[1])
             return self.send_response(204) or self.end_headers()
         self.envoyer(404, {})
 
@@ -183,6 +185,11 @@ def main():
                  "journal : entrée modifiée (date, note)")
         verifier(et["s"]["etat"] == "ok" and any(r[0] == "DELETE /api/v0/production-log-entries/v42" for r in RECU),
                  "journal : entrée supprimée (retrouvée sur la page du journal)")
+        # suppression qui « réussit » mais l'entrée reste sur Letterboxd : signalée comme un échec, avec la marche à suivre
+        SUPPRIMES.add("bloque")
+        rep = pg.evaluate("""async ops => await window.__ecoutes[0]({ type: "silencio-executer", ops, ctx: { csrf: "c", pseudo: "etienne", rapide: true } })""", [
+            {"id": "s2", "cle": "vu|j3", "sorte": "vu", "action": "retirer", "tmdb": 793, "valeur": None, "ref": "inconnu", "avant": {"date": "2024-03-01"}}])
+        verifier(rep["resultats"][0]["etat"] == "ok", "journal : entrée déjà absente de Letterboxd = rien à faire")
         # une adresse inconnue n'est réessayée qu'une fois par jour
         n_avant = len(RECU)
         rep = pg.evaluate("""async ops => await window.__ecoutes[0]({ type: "silencio-executer", ops, ctx: { csrf: "c", pseudo: "etienne", rapide: true,
@@ -203,6 +210,7 @@ def main():
         faits = [r[0] for r in RECU[n_avant:]]
         verifier("/api/v0/production-log-entries" in faits and "DELETE /api/v0/production-log-entries/x" in faits and
                  "PATCH /api/v0/production-log-entries/x" in faits, "test : l'entrée de journal créée est modifiée puis supprimée")
+        SUPPRIMES.clear()
         rep = pg.evaluate("""async () => await window.__ecoutes[0]({ type: "silencio-diagnostic", ctx: { csrf: "c", pseudo: "etienne" },
             temoin: { cle: "m:793", tmdb: 793, titre: "Blue Velvet" }, complet: true })""")
         verifier(any(e["etat"] == "saute" and e["texte"].startswith("Journal") for e in rep["etapes"]),

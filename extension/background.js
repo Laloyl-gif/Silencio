@@ -12,7 +12,7 @@ const DEFAUT = {
   // discrétion : pauses après un refus, quota par jour, onglets ouverts rarement, adresses qui marchent
   pauses: {}, quota: {}, dernierOnglet: {}, adresses: {}, essais: {}, prochain: 0,
   sites: { lb: true, imdb: true }, attente: { lb: [], imdb: [] }, modes: { lb: "auto", imdb: "clic" }, vuModif: 0,
-  silencioAbsent: true, apresLancement: 0, cloudflare: {}
+  silencioAbsent: true, apresLancement: 0, cloudflare: {}, avisQuota: {}, fondKo: {}
 };
 const ORIGINES = ["https://letterboxd.com/*", "https://www.imdb.com/*", "https://m.imdb.com/*", "https://api.graphql.imdb.com/*"];
 const QUOTA_JOUR = 80;                       // actions par site et par jour, au plus
@@ -196,8 +196,15 @@ async function plateforme(p, aBlanc, motif, modes) {
     if (!ouvert) return { pause: c.pauses[p] };
   }
   const q = c.quota[p] && c.quota[p].jour === aujourdhui() ? c.quota[p].n : 0;
-  const reste = QUOTA_JOUR - q;
-  if (reste <= 0 && !aBlanc) return { quota: true };
+  // quota par jour (discrétion) ; ton clic sur « Synchroniser » en accorde un peu plus
+  const reste = QUOTA_JOUR + (motif === "bouton" ? 40 : 0) - q;
+  if (reste <= 0 && !aBlanc) {
+    if ((c.avisQuota || {})[p] !== aujourdhui() || motif === "bouton") {
+      await poser({ avisQuota: { ...(c.avisQuota || {}), [p]: aujourdhui() } });
+      await noter(`${NOM[p]} : ${q} actions aujourd'hui, le maximum par jour est atteint. Reprise automatique demain${motif === "bouton" ? "" : " (ou clique « Synchroniser » pour en envoyer encore quelques-unes)"}.`, "attente");
+    }
+    return { quota: true };
+  }
   // quelques actions à la fois seulement, jamais le même nombre
   // après un ajout dans Silencio, tout ce qui attend part (jusqu'à 12 à la fois), toujours espacé comme à la main
   const n = aBlanc ? 40 : Math.max(1, Math.min(reste, p === "lb" ? Math.round(hasard(3, 6)) : motif === "ajout" || motif === "bouton" ? 12 : Math.round(hasard(3, 6))));
@@ -277,14 +284,19 @@ async function executerOps(p, ops, ctx, aBlanc, motif, c) {
   }
   const onglet = await ongletPour(p, motif);
   if (!onglet) return { rep: rep && rep.resultats.length ? rep : null, onglet: null };
-  const rep2 = await parler(onglet, { type: "silencio-executer", p, ops: reste, ctx, aBlanc });
+  const rep2 = await delai(parler(onglet, { type: "silencio-executer", p, ops: reste, ctx, aBlanc }), 8 * 60e3, `${NOM[p]} (onglet)`)
+    .catch(e => ({ resultats: [], bloque: e.message }));
   if (!rep) return { rep: rep2, onglet };
   return { rep: { ...rep2, resultats: [...rep.resultats, ...(rep2.resultats || [])], cache: { ...(rep.cache || {}), ...(rep2.cache || {}) } }, onglet };
 }
 
-let enCours = false;
+// Une seule synchro à la fois. Si une précédente est restée bloquée (onglet qui ne répond plus, Firefox mis en
+// veille…), le verrou est libéré au bout de 10 minutes : la synchro automatique et le bouton remarchent.
+let enCoursFlag = false, enCoursDepuis = 0;
+const verrou = { get on() { if (enCoursFlag && Date.now() - enCoursDepuis > 10 * 60e3) enCoursFlag = false; return enCoursFlag; },
+  set on(v) { enCoursFlag = v; if (v) enCoursDepuis = Date.now(); } };
 async function synchroniser(motif, aBlanc = false) {
-  if (enCours) return { occupe: true };
+  if (verrou.on) { if (motif === "bouton") await noter("Une synchro est déjà en cours : le résultat arrive dans le journal ci-dessous."); return { occupe: true }; }
   const c = await cfg();
   if (!c.actif && motif !== "bouton") return { inactif: true };
   if (!c.jeton) { await noter("Colle d'abord le code d'appairage affiché dans Silencio.", "attente"); return { jeton: false }; }
@@ -293,7 +305,7 @@ async function synchroniser(motif, aBlanc = false) {
     await noter("Firefox ne laisse pas l'extension accéder à Letterboxd ou IMDb : ouvre la fenêtre de Silencio Sync et clique « Autoriser l'accès aux sites ».", "erreur");
     return { autorisations: manque };
   }
-  enCours = true;
+  verrou.on = true;
   const bilan = {};
   try {
     const b = await silencio("/api/ext/bonjour");
@@ -305,11 +317,17 @@ async function synchroniser(motif, aBlanc = false) {
         await noter(`${NOM[p]} : ${e.message}`, "erreur");
       }
     }
+    if (motif === "bouton") {
+      const mots = ["lb", "imdb"].map(p => { const b = bilan[p] || {};
+        return b.rien ? `${NOM[p]} : rien à envoyer` : b.coupe ? `${NOM[p]} : coupé` : b.pause ? `${NOM[p]} : en pause jusqu'à ${new Date(b.pause).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}` :
+          b.a_reporter != null ? `${NOM[p]} : ${b.a_reporter} action(s) attendent ton clic ci-dessous` : b.attend ? `${NOM[p]} : onglet du site indisponible, nouvel essai bientôt` : ""; }).filter(Boolean);
+      if (mots.length) await noter(mots.join(" ; ") + ".");
+    }
   } catch (e) {
     bilan.silencio = e.message;
     await noter(e.message, "attente");
   } finally {
-    enCours = false;
+    verrou.on = false;
     await poser({ dernier: { quand: Date.now(), motif, bilan, aBlanc } });
   }
   // tout est parti : la modification est « vue » ; sinon la veille repassera dans une minute
@@ -334,6 +352,8 @@ async function planifier(minutes) {
   await poser({ prochain: Date.now() + delai * 60000 });
 }
 B.runtime.onInstalled.addListener(async d => {
+  // mise à jour de l'extension : compteurs du jour et pauses remis à zéro (ils ont pu être gonflés par une erreur)
+  if (d.reason === "update") await poser({ quota: {}, pauses: {}, fondKo: {}, cloudflare: {}, avisQuota: {} });
   await planifier(hasard(1, 3));
   if (d.reason === "install") B.runtime.openOptionsPage().catch(() => {});
 });
@@ -349,7 +369,7 @@ B.alarms.onAlarm.addListener(async a => {
 (B.alarms.get ? B.alarms.get("veille") : Promise.resolve(null)).then(a => { if (!a) B.alarms.create("veille", { periodInMinutes: 1 }); }).catch(() => {});
 async function veille() {
   const c = await cfg();
-  if (!c.jeton || enCours) return;
+  if (!c.jeton || verrou.on) return;
   let b;
   try { b = await silencio("/api/ext/bonjour"); } catch { if (!c.silencioAbsent) await poser({ silencioAbsent: true }); return; }
   // « Tester la synchro » a été lancé dans Silencio : l'extension fait sa part du test
@@ -382,7 +402,7 @@ function badge(a, modes) {
 async function diagnostiquer(b, c) {
   const d = b.diagnostic;
   await poser({ diagFait: d.id });
-  enCours = true;
+  verrou.on = true;
   const sections = [];
   const sec = nom => { const s = { nom, lignes: [] }; sections.push(s); return s; };
   const L = (s, etat, texte, detail = "") => s.lignes.push({ etat, texte, detail: String(detail || "").slice(0, 400) });
@@ -426,7 +446,7 @@ async function diagnostiquer(b, c) {
   } catch (x) {
     L(sec("Test de l'extension interrompu"), "erreur", "Le test a planté", x.message || String(x));
   } finally {
-    enCours = false;
+    verrou.on = false;
   }
   try {
     await silencio("/api/ext/diagnostic", { method: "POST", body: JSON.stringify({ id: d.id, env: moi, sections }) });
@@ -496,6 +516,35 @@ async function diagImdb(s, L, d) {
   } catch (x) { L(s, "erreur", "Écritures IMDb interrompues", x.message); }
 }
 
+// ---------------------------------------------------------------- « Ouvrir dans Silencio » (clic droit sur un lien ou une page de film)
+const SITES_FILMS = ["https://www.imdb.com/title/*", "https://m.imdb.com/title/*", "https://letterboxd.com/*film/*", "https://boxd.it/*", "https://www.themoviedb.org/movie/*", "https://www.themoviedb.org/tv/*"];
+async function ouvrirDansSilencio(url, tabId) {
+  const c = await cfg();
+  let tmdb = "";
+  // sur une page Letterboxd, le lien TMDB est dans la page : pas besoin de la redemander
+  if (tabId != null && /letterboxd\.com\/(?:[\w.-]+\/)?film\//.test(url)) {
+    try {
+      const [r] = await B.scripting.executeScript({ target: { tabId }, func: () => (document.documentElement.innerHTML.match(/themoviedb\.org\/movie\/(\d+)/) || [])[1] || "" });
+      tmdb = (r && r.result) || "";
+    } catch { /* page non lisible : Silencio cherchera lui-même */ }
+  }
+  await B.tabs.create({ url: `${c.adresse.replace(/\/+$/, "")}/#/ouvrir?url=${encodeURIComponent(url)}${tmdb ? `&tmdb=${tmdb}` : ""}` });
+}
+if (B.menus && B.menus.create) {
+  const creerMenus = () => {
+    B.menus.removeAll().catch(() => {}).finally(() => {
+      B.menus.create({ id: "silencio-lien", title: "Ouvrir dans Silencio", contexts: ["link"], targetUrlPatterns: SITES_FILMS });
+      B.menus.create({ id: "silencio-page", title: "Ouvrir ce film dans Silencio", contexts: ["page"], documentUrlPatterns: SITES_FILMS });
+    });
+  };
+  B.runtime.onInstalled.addListener(creerMenus);
+  B.runtime.onStartup.addListener(creerMenus);
+  B.menus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === "silencio-lien") ouvrirDansSilencio(info.linkUrl, null);
+    if (info.menuItemId === "silencio-page") ouvrirDansSilencio(info.pageUrl || tab.url, tab && tab.id);
+  });
+}
+
 // ---------------------------------------------------------------- enregistreur : pour calibrer une action inconnue
 function masquer(v) {
   const s = String(v ?? "");
@@ -509,7 +558,7 @@ function nettoyerJson(o, profondeur = 0) {
   return typeof o === "string" ? masquer(o) : o;
 }
 B.webRequest.onBeforeRequest.addListener(details => {
-  if (details.method === "GET" || enCours) return;
+  if (details.method === "GET" || verrou.on) return;
   cfg().then(c => {
     if (Date.now() > c.enregistreurJusqua) return;
     const e = { t: Date.now(), methode: details.method, url: details.url.replace(/^https:\/\//, "") };
@@ -526,11 +575,11 @@ B.webRequest.onBeforeRequest.addListener(details => {
 
 // une seule action, demandée d'un clic dans la fenêtre de l'extension
 async function executerUn(p, id) {
-  if (enCours) return { ok: false, erreur: "une synchro est en cours, réessaie dans un instant" };
+  if (verrou.on) return { ok: false, erreur: "une synchro est en cours, réessaie dans un instant" };
   const c = await cfg();
   const op = (c.attente[p] || []).find(o => o.id === id);
   if (!op) return { ok: false, erreur: "déjà fait" };
-  enCours = true;
+  verrou.on = true;
   try {
     const r = await silencio(`/api/ext/ops?p=${p}&n=1`);
     const ctx = await contexte(p, r, c);
@@ -554,13 +603,13 @@ async function executerUn(p, id) {
   } catch (e) {
     return { ok: false, erreur: e.message };
   } finally {
-    enCours = false;
+    verrou.on = false;
   }
 }
 
 // ---------------------------------------------------------------- la fenêtre de l'extension
 B.runtime.onMessage.addListener(async m => {
-  if (m?.type === "etat") return { ...(await cfg()), enCours };
+  if (m?.type === "etat") return { ...(await cfg()), enCours: verrou.on };
   if (m?.type === "reglages") { await poser(m.valeurs); await planifier(); return { ok: true }; }
   if (m?.type === "synchroniser") return synchroniser("bouton", !!m.aBlanc);
   if (m?.type === "tester") {
@@ -580,6 +629,11 @@ B.runtime.onMessage.addListener(async m => {
   if (m?.type === "effacer-journal") { await poser({ journal: [] }); return { ok: true }; }
   if (m?.type === "executer-un") return executerUn(m.p, m.id);
   if (m?.type === "veille") { await veille(); return { ok: true }; }
+  if (m?.type === "ouvrir-film") {
+    const [t] = await B.tabs.query({ active: true, currentWindow: true });
+    if (!t || !/imdb\.com\/title\/|letterboxd\.com\/(?:[\w.-]+\/)?film\/|boxd\.it\/|themoviedb\.org\/(movie|tv)\//.test(t.url || "")) return { ok: false };
+    await ouvrirDansSilencio(t.url, t.id); return { ok: true };
+  }
   if (m?.type === "diagnostic") {
     try { const c = await cfg(); const b = await silencio("/api/ext/bonjour"); if (b.diagnostic) { await diagnostiquer(b, c); return { ok: true }; } return { ok: false, erreur: "aucun test demandé dans Silencio" }; }
     catch (e) { return { ok: false, erreur: e.message }; }

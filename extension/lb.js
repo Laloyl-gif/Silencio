@@ -235,7 +235,8 @@
     }
     const corps = corpsJournal(op);
     const variantes = ADRESSES_JOURNAL.flatMap(([c]) => [["PATCH", `${c}/${ref}`], ["PUT", `${c}/${ref}`]]);
-    const r = await essayerJson("journal-modifier", variantes, corps, f.slug);
+    let r = await essayerJson("journal-modifier", variantes, corps, f.slug);
+    if (r.etat !== "ok") r = await formulaireJournal("modifier", op, f, ref) || r;
     return r.etat === "ok" ? { etat: "ok", ref } : r;
   }
 
@@ -253,7 +254,31 @@
         if (e.id && e.id !== op.ref) r = await essayerJson("journal-supprimer", ADRESSES_JOURNAL.map(([c]) => ["DELETE", `${c}/${e.id}`]), null, f.slug, true);
       }
     }
+    if (r.etat === "echec") r = await formulaireJournal("supprimer", op, f, ref) || r;
+    // on vérifie sur ton journal Letterboxd que l'entrée est vraiment partie (une réponse « introuvable » peut mentir)
+    if (["ok", "deja"].includes(r.etat) && op.avant && op.avant.date) {
+      const l = await entreesLb(f).catch(() => null);
+      if (l && l.some(x => x.date === op.avant.date && (!x.id || !ref || x.id === ref || l.filter(y => y.date === op.avant.date).length === 1)))
+        return { etat: "echec", erreur: `journal : l'entrée du ${op.avant.date} est toujours sur Letterboxd (${CALIBRER})` };
+    }
     return r;
+  }
+
+  // Ancienne voie du site (formulaires /s/…), essayée quand l'API refuse ; la bonne adresse est retenue.
+  const CALIBRER = "adresse à calibrer : fenêtre de l'extension → Enregistreur → Démarrer, puis modifie et supprime une entrée de ton journal sur letterboxd.com, et envoie le rapport à Claude";
+  async function formulaireJournal(quoi, op, f, ref) {
+    if (!ref) return null;
+    const v = op.valeur || {}, x = op.extra || {};
+    const note = v.note != null ? v.note : x.note;
+    const champs = quoi === "supprimer" ? { viewingId: ref, logEntryId: ref } : {
+      viewingId: ref, logEntryId: ref, filmId: f.filmId, specifiedDate: "true", viewingDateStr: v.date || "",
+      review: (v.critique != null ? v.critique : x.critique) || "", tags: "", rating: note ? String(Math.round(note * 2)) : "0",
+      liked: String(!!(v.like != null ? v.like : x.like)), rewatch: String(!!v.rewatch), containsSpoilers: "false" };
+    const r = await essayer(quoi === "supprimer" ? "journal-supprimer-form" : "journal-modifier-form", quoi === "supprimer"
+      ? [["/s/delete-diary-entry", champs], [`/s/viewing:${ref}/delete/`, champs], [`/s/log-entry:${ref}/delete/`, champs]]
+      : [["/s/save-diary-entry", champs], [`/s/viewing:${ref}/save/`, champs]], f.slug);
+    if (r.etat === "ok") return r;
+    return { etat: "echec", erreur: `${quoi === "supprimer" ? "suppression" : "modification"} du journal refusée par Letterboxd (${CALIBRER})` };
   }
 
   // comme essayer(), pour les adresses JSON : celle qui marche est retenue

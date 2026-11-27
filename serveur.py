@@ -1,5 +1,6 @@
 """Le serveur de Silencio : l'interface web (web/), l'API JSON, et l'entretien en arrière-plan
 (file TMDB, fiches des films, affiches hors ligne, notes IMDb, notifications, synchro GitHub)."""
+import datetime
 import json
 import mimetypes
 import os
@@ -21,6 +22,7 @@ from stockage import SECTIONS, Stock, ecrire_json, lire_json, slug
 import compte
 import diagnostic
 import miroir
+import seances
 from refract import Refract
 from synchro import Synchro
 from tmdb import TMDB, cle_titre, decouper
@@ -53,11 +55,82 @@ class App:
         self.refract = Refract(self.stock, self._meta)
         self.reveil_rf = threading.Event()             # réveille la boucle Refract juste après un ajout
         self.diag = diagnostic.Diagnostic(self)
+        self.seances = seances.Seances(self.stock, self.tmdb)
+        self._verif_cine = 0
 
     # ---- arrière-plan
     def demarrer(self):
         self.synchro.demarrer()
         threading.Thread(target=self._entretien, daemon=True).start()
+
+    # ---- v21 : tes plateformes, les séances de tes cinémas, les sorties de la semaine
+    PLATEFORMES_V21 = [8, 11, 119, 381, 337, 234]   # Netflix, MUBI, Prime Video, Canal+, Disney+, Arte (ids TMDB/JustWatch)
+
+    def preferences_v21(self):
+        app = self.stock.appareil
+        doc = self.stock.doc
+        if not doc or app.get("prefs_21"):
+            return
+        regl = (doc.get("profil") or {}).get("reglages") or {}
+        miennes = list(dict.fromkeys(list(regl.get("plateformes") or []) + self.PLATEFORMES_V21))
+        if miennes != list(regl.get("plateformes") or []):
+            self.stock.action("profil", {"champs": {"reglages": {"plateformes": miennes}}})
+        app["prefs_21"] = time.time()
+        self.stock.sauver_appareil()
+
+    def alerter_cinemas(self):
+        """Films de ta watchlist dans leur dernière semaine au cinéma : une notification par film et par cinéma."""
+        doc = self.stock.doc
+        if not doc:
+            return
+        metas = {}
+        for c in _vivants(doc.get("watchlist")):
+            if c.startswith("m:"):
+                m = self._meta(c) or {}
+                if m.get("a") and m["a"] >= int(time.strftime("%Y")) - 2:     # films récents seulement (à l'affiche)
+                    metas[c] = m
+        if not metas:
+            return
+        try:
+            r = self.seances.derniere_semaine(metas)
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+            return
+        for cle, lieux in r.items():
+            m = metas[cle]
+            for l in lieux:
+                jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+                d = datetime.date.fromisoformat(l["jusqua"])
+                quand = "aujourd'hui" if d == datetime.date.today() else f"{jours[d.weekday()]} {d.day}"
+                self.notifs.ajouter(f"derniere:{cle}:{l['cinema']}:{l['jusqua']}", "cinema", m.get("t") or "Un film de ta watchlist",
+                                    f"Dernière semaine au {l['cinema']} : jusqu'à {quand}", "#/titre/" + cle, m.get("af"))
+
+    def sorties_semaine(self):
+        """Les sorties en salle de la semaine (mercredi → mardi), celles de ta watchlist d'abord, et où les voir."""
+        mer, mar = seances.semaine()
+        d = self.tmdb.get("/discover/movie", ttl=6 * 3600, region="FR", with_release_type="2|3", sort_by="popularity.desc",
+                          **{"release_date.gte": mer.isoformat(), "release_date.lte": mar.isoformat()})
+        wl = set(_vivants((self.stock.doc or {}).get("watchlist")))
+        films = []
+        for f in (d.get("results") or [])[:30]:
+            c = f"m:{f['id']}"
+            films.append({"cle": c, "t": f.get("title") or "", "o": f.get("original_title") or "", "af": f.get("poster_path"),
+                          "ds": f.get("release_date") or "", "a": int((f.get("release_date") or "0")[:4] or 0) or None,
+                          "wl": c in wl, "vu": bool(((self.stock.doc or {}).get("titres") or {}).get(c, {}).get("vu"))})
+        # à l'affiche dans tes cinémas cette semaine (si le programme est lisible)
+        try:
+            for c in self.seances.cinemas():
+                code = self.seances._code(c)
+                if not code:
+                    continue
+                prog = self.seances.jour(code, max(datetime.date.today(), mer).isoformat())
+                for f in films:
+                    if any(self.seances.correspond(p, f) and p["seances"] for p in prog):
+                        f.setdefault("ici", []).append(c["nom"])
+        except Exception:  # noqa: BLE001
+            pass
+        films.sort(key=lambda f: (not f["wl"], not f.get("ici")))
+        return {"du": mer.isoformat(), "au": mar.isoformat(), "films": films}
 
     def reparer_coeurs(self, forcer=False):
         """v19 : rétablit les coups de cœur perdus quand deux copies du profil se sont rencontrées (la plus récente
@@ -123,6 +196,10 @@ class App:
                 if tour % 60 == 0 and not imdb.a_jour():
                     imdb.mettre_a_jour()
                 self.notifs.verifier()
+                self.preferences_v21()
+                if time.time() - self._verif_cine > 6 * 3600:
+                    self._verif_cine = time.time()
+                    threading.Thread(target=self.alerter_cinemas, daemon=True).start()
                 if (vite or tour % 2 == 0) and self.refract.cle:
                     if self.refract.passage():
                         self.synchro.demander(5)
@@ -833,6 +910,158 @@ class App:
         return {"d": d, "meta": meta, "imdb": n, "collection": col, "amis": amis, "letterboxd": self.note_letterboxd(cle),
                 "fournisseurs": ((d.get("watch/providers") or {}).get("results") or {}).get(config.REGION) or {}}
 
+    # ---- un lien IMDb, Letterboxd ou TMDB ouvert dans Silencio
+    def ouvrir(self, url, tmdb_id=""):
+        url = (url or "").strip()
+        if tmdb_id and str(tmdb_id).isdigit():
+            return {"cle": f"m:{int(tmdb_id)}"}
+        m = re.search(r"themoviedb\.org/(movie|tv)/(\d+)", url)
+        if m:
+            return {"cle": f"{'m' if m.group(1) == 'movie' else 't'}:{m.group(2)}"}
+        m = re.search(r"\b(tt\d{6,10})\b", url)
+        if m:
+            try:
+                c = self.tmdb.trouver_imdb(m.group(1))
+                if c:
+                    return {"cle": c}
+            except Exception:  # noqa: BLE001
+                pass
+            return {"recherche": m.group(1)}
+        m = re.search(r"(letterboxd\.com/(?:[\w.-]+/)?film/[\w-]+|boxd\.it/\w+)", url)
+        if m:
+            page = "https://" + m.group(1).rstrip("/") + "/"
+            try:
+                html = requete(page, entetes={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0",
+                                              "Accept": "text/html"}, brut=True, delai=12).decode("utf-8", "replace")
+                t = re.search(r"themoviedb\.org/(movie|tv)/(\d+)", html)
+                if t:
+                    return {"cle": f"{'m' if t.group(1) == 'movie' else 't'}:{t.group(2)}"}
+            except Exception:  # noqa: BLE001
+                pass
+            slug = re.search(r"film/([\w-]+)", m.group(1))
+            if slug:
+                mots = slug.group(1)
+                an = re.search(r"-(\d{4})$", mots)
+                titre = re.sub(r"-(\d{4})$", "", mots).replace("-", " ")
+                try:
+                    res = self.tmdb.recherche_film(titre, int(an.group(1)) if an else None)
+                    if res:
+                        return {"cle": f"m:{res[0]['id']}"}
+                except Exception:  # noqa: BLE001
+                    pass
+                return {"recherche": titre}
+        return {"recherche": url[:120]}
+
+    # ---- fiche enrichie : anecdotes (IMDb) et films similaires par critère précis
+    GQL_IMDB = os.environ.get("SILENCIO_IMDB_GQL") or "https://api.graphql.imdb.com/"
+
+    def anecdotes(self, cle):
+        """Les anecdotes IMDb d'un titre (sans divulgâchage), gardées 30 jours."""
+        im = (self._meta(cle) or {}).get("im")
+        if not im:
+            try:
+                im = (self.tmdb.details(cle) or {}).get("external_ids", {}).get("imdb_id")
+            except Exception:  # noqa: BLE001
+                im = None
+        if not im:
+            return {"r": [], "imdb": None}
+        f = os.path.join(config.CACHE, "anecdotes", im + ".json")
+        cache = lire_json(f)
+        if cache and time.time() - cache.get("t", 0) < 30 * 86400:
+            return {"r": cache["r"], "imdb": im}
+        requetes = [
+            ("query T($id: ID!) { title(id: $id) { trivia(first: 25, filter: {spoilers: EXCLUDE_SPOILERS}) "
+             "{ edges { node { text { plainText } interestScore { usersInterested usersVoted } } } } } }"),
+            "query T($id: ID!) { title(id: $id) { trivia(first: 25) { edges { node { text { plainText } } } } } }",
+        ]
+        r = None
+        for q in requetes:
+            try:
+                d = requete(self.GQL_IMDB, "POST", corps={"query": q, "variables": {"id": im}},
+                            entetes={"Accept": "application/json", "x-imdb-client-name": "imdb-web-next-localized",
+                                     "x-imdb-user-language": "fr-FR", "x-imdb-user-country": "FR"}, delai=15)
+            except (HorsLigne, ErreurHTTP, ValueError):
+                if cache:
+                    return {"r": cache["r"], "imdb": im}
+                return {"r": [], "imdb": im, "erreur": "IMDb injoignable"}
+            aretes = ((((d or {}).get("data") or {}).get("title") or {}).get("trivia") or {}).get("edges")
+            if aretes is not None:
+                r = []
+                for a in aretes:
+                    n = a.get("node") or {}
+                    texte = ((n.get("text") or {}).get("plainText") or "").strip()
+                    score = n.get("interestScore") or {}
+                    if texte:
+                        r.append({"texte": texte[:900], "interet": score.get("usersInterested") or 0, "votes": score.get("usersVoted") or 0})
+                r.sort(key=lambda x: -x["interet"])
+                break
+        if r is None:
+            return {"r": [], "imdb": im, "erreur": "anecdotes illisibles"}
+        os.makedirs(os.path.dirname(f), exist_ok=True)
+        ecrire_json(f, {"t": time.time(), "r": r[:15]})
+        return {"r": r[:15], "imdb": im}
+
+    SIMILAIRES = {"real": ("Director",), "image": ("Director of Photography",), "musique": ("Original Music Composer", "Music"),
+                  "scen": ("Screenplay", "Writer", "Novel"), "montage": ("Editor",), "decors": ("Production Design",),
+                  "acteurs": ()}
+
+    def similaires(self, cle, par):
+        """Autres films de la même personne pour un critère précis (même chef op, même compositeur…), ou mêmes thèmes."""
+        d = self.tmdb.details(cle) or {}
+        tv = cle.startswith("t:")
+        exclus = {cle} | {c for c, t in _vivants((self.stock.doc or {}).get("titres")).items() if t.get("vu")}
+        sortie = []
+        if par == "themes":
+            mc = [k["id"] for k in ((d.get("keywords") or {}).get("keywords") or (d.get("keywords") or {}).get("results") or [])][:6]
+            if not mc:
+                return {"r": [], "qui": []}
+            res = self.tmdb.get(f"/discover/{'tv' if tv else 'movie'}", ttl=7 * 86400, with_keywords="|".join(map(str, mc)),
+                                sort_by="vote_count.desc").get("results") or []
+            for f in res:
+                c = cle_titre("t" if tv else "m", f["id"])
+                if c in exclus:
+                    continue
+                sortie.append(dict(self._resume(f, tv), raison="mêmes thèmes"))
+            return {"r": sortie[:20], "qui": []}
+        jobs = self.SIMILAIRES.get(par)
+        if jobs is None:
+            raise ValueError("Critère inconnu.")
+        cr = d.get("aggregate_credits" if tv else "credits") or {}
+        if par == "acteurs":
+            gens = [(p["id"], p["name"], "acteur") for p in (cr.get("cast") or [])[:4]]
+        else:
+            equipe = cr.get("crew") or []
+            if tv:
+                equipe = [dict(c, job=j.get("job")) for c in equipe for j in (c.get("jobs") or [])]
+            if par == "real" and tv:
+                gens = [(p["id"], p["name"], "création") for p in d.get("created_by") or []]
+            else:
+                gens = list({p["id"]: (p["id"], p["name"], p.get("job")) for p in equipe if p.get("job") in jobs}.values())[:3]
+        vus = set()
+        for pid, nom, job in gens:
+            try:
+                credits = (self.tmdb.personne(pid) or {}).get("combined_credits") or {}
+            except Exception:  # noqa: BLE001
+                continue
+            roles = credits.get("cast") if par == "acteurs" else [x for x in credits.get("crew") or [] if x.get("job") in jobs]
+            for f in roles or []:
+                if f.get("media_type") not in ("movie", "tv"):
+                    continue
+                c = cle_titre("t" if f["media_type"] == "tv" else "m", f["id"])
+                if c in exclus or c in vus:
+                    continue
+                vus.add(c)
+                sortie.append(dict(self._resume(f, f["media_type"] == "tv"), raison=nom, score=(f.get("vote_count") or 0)))
+        sortie.sort(key=lambda x: -x.pop("score", 0))
+        return {"r": sortie[:24], "qui": [n for _, n, _ in gens]}
+
+    @staticmethod
+    def _resume(f, tv):
+        date = f.get("first_air_date" if tv else "release_date") or ""
+        return {"cle": cle_titre("t" if tv else "m", f["id"]), "t": f.get("name" if tv else "title") or "",
+                "o": f.get("original_name" if tv else "original_title") or "", "ds": date, "af": f.get("poster_path"),
+                "vt": f.get("vote_average") or 0}
+
     def personne(self, pid):
         d = self.tmdb.personne(pid)
         if d is None:
@@ -1152,6 +1381,11 @@ def fabriquer_handler(app):
                     params["watch_region"] = config.REGION
                     params["with_watch_monetization_types"] = "flatrate"
                 return self._envoyer(200, app.tmdb.decouvrir(q.get("type", "movie"), **params))
+            if r == "pourtoi/criteres":
+                if time.time() - (getattr(app, "_sugg_t", 0)) > 6 * 3600 or not getattr(app, "_sugg", None):
+                    app._sugg = decouverte.suggestions_criteres(app.stock, app.tmdb, app._meta)
+                    app._sugg_t = time.time()
+                return self._envoyer(200, {"r": app._sugg})
             if r == "recos":
                 return self._envoyer(200, {"r": decouverte.recommandations(app.stock, app.tmdb)})
             if r == "sorties":
@@ -1171,6 +1405,18 @@ def fabriquer_handler(app):
                 return self._envoyer(200, app.envois())
             if r == "diagnostic":
                 return self._envoyer(200, app.diag.lire())
+            if r == "seances":
+                return self._envoyer(200, {"cinemas": app.seances.du_film(app._meta(q.get("cle", "")) or {})})
+            if r == "cinemas/chercher":
+                return self._envoyer(200, {"r": app.seances.chercher(q.get("q", ""))})
+            if r == "semaine":
+                return self._envoyer(200, app.sorties_semaine())
+            if r == "ouvrir":
+                return self._envoyer(200, app.ouvrir(q.get("url", ""), q.get("tmdb", "")))
+            if r == "anecdotes":
+                return self._envoyer(200, app.anecdotes(q.get("cle", "")))
+            if r == "similaires":
+                return self._envoyer(200, app.similaires(q.get("cle", ""), q.get("par", "real")))
             if r == "plateformes/attente":
                 return self._envoyer(200, app.en_attente(q.get("p", "")))
             if r == "tableau":

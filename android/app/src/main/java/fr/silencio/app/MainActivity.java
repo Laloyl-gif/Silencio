@@ -177,8 +177,8 @@ public class MainActivity extends Activity {
             aller(lien);
             return;
         }
-        if (Intent.ACTION_SEND.equals(i.getAction())) {
-            final String texte = i.getStringExtra(Intent.EXTRA_TEXT);
+        if (Intent.ACTION_SEND.equals(i.getAction()) || (Intent.ACTION_VIEW.equals(i.getAction()) && i.getData() != null)) {
+            final String texte = Intent.ACTION_VIEW.equals(i.getAction()) ? i.getDataString() : i.getStringExtra(Intent.EXTRA_TEXT);
             new Thread(() -> {
                 try {
                     while (module == null || !pret) Thread.sleep(200);

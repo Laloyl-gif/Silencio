@@ -51,6 +51,65 @@ def recommandations(stock, tmdb, n=60):
             for c in meilleurs]
 
 
+LIB_CRITERES = {"scenario": "le scénario", "realisation": "la mise en scène", "jeu": "le jeu", "image": "la photographie",
+                "montage": "le montage", "decors": "les décors", "costumes": "les costumes", "musique": "la musique",
+                "son": "le son", "originalite": "l'originalité"}
+ROLE_CRITERE = {"image": ("image", ("Director of Photography",)), "musique": ("musique", ("Original Music Composer", "Music")),
+                "montage": ("montage", ("Editor",)), "decors": ("decors", ("Production Design",)),
+                "costumes": ("costumes", ("Costume Design",)), "scenario": ("scen", ("Screenplay", "Writer")),
+                "realisation": ("real", ("Director",)), "originalite": ("real", ("Director",))}
+
+
+def suggestions_criteres(stock, tmdb, meta, n=40):
+    """Suggestions tirées de tes notes détaillées : les personnes derrière ce que tu notes le plus haut (le chef op
+    des films dont tu adores la photographie, le compositeur des musiques que tu notes 9…) et leurs autres films."""
+    doc = stock.doc or {}
+    titres = _vivants(doc.get("titres"))
+    vus = {k for k, v in titres.items() if v.get("vu")}
+    wl = set(_vivants(doc.get("watchlist")))
+    gens = defaultdict(lambda: {"s": 0.0, "n": 0, "films": []})
+    for c, t in titres.items():
+        for crit, v in (t.get("detail") or {}).items():
+            if not v or crit not in ROLE_CRITERE:
+                continue
+            role, _ = ROLE_CRITERE[crit]
+            m = meta(c) or {}
+            ids = (m.get("re") or []) if role == "real" else ((m.get("eq") or {}).get(role) or [])
+            for pid in ids[:2]:
+                g = gens[(crit, pid)]
+                g["s"] += v
+                g["n"] += 1
+                g["films"].append(c)
+    choisis = sorted(((k, g) for k, g in gens.items() if g["n"] >= 1 and g["s"] / g["n"] >= 8),
+                     key=lambda x: -(x[1]["s"] / x[1]["n"]) * (1 + 0.3 * min(x[1]["n"], 5)))[:10]
+    if not choisis:
+        return []
+    def credits(pid):
+        try:
+            return pid, tmdb.credits_personne(pid)
+        except Exception:  # noqa: BLE001
+            return pid, {"cast": [], "crew": []}
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        cr = dict(ex.map(credits, list({pid for (_, pid), _ in choisis})))
+    scores, raisons, infos = defaultdict(float), {}, {}
+    for (crit, pid), g in choisis:
+        moy = g["s"] / g["n"]
+        _, jobs = ROLE_CRITERE[crit]
+        for r in (cr.get(pid) or {}).get("crew") or []:
+            if r.get("job") not in jobs or r.get("media_type") != "movie" or (r.get("vote_count") or 0) < 50:
+                continue
+            c = cle_titre("m", r["id"])
+            if c in vus:
+                continue
+            scores[c] += (moy - 7) * (1 + min(r.get("vote_average", 0), 9) / 10)
+            if c not in raisons:
+                raisons[c] = {"critere": LIB_CRITERES.get(crit, crit), "personne": pid, "film": g["films"][0], "moy": round(moy, 1)}
+            infos[c] = {"cle": c, "t": r.get("title") or "", "a": (r.get("release_date") or "")[:4], "af": r.get("poster_path"),
+                        "vt": r.get("vote_average", 0)}
+    meilleurs = sorted(scores, key=scores.get, reverse=True)[:n]
+    return [dict(infos[c], raison=raisons[c], watchlist=c in wl) for c in meilleurs]
+
+
 def sorties_favoris(stock, tmdb, jours_avant=30, jours_apres=400):
     """Les films et séries des personnes favorites qui sortent bientôt (ou viennent de sortir)."""
     doc = stock.doc or {}
@@ -157,7 +216,7 @@ class Notifications:
 
     def _sorties(self):
         auj = time.strftime("%Y-%m-%d")
-        for e in sorties_favoris(self.stock, self.tmdb, jours_avant=14, jours_apres=120):
+        for e in sorties_favoris(self.stock, self.tmdb, jours_avant=14, jours_apres=365):
             if e["vu"]:
                 continue
             noms = ", ".join(p["nom"] for p in e["personnes"][:2])

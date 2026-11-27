@@ -118,9 +118,9 @@ S.synchroniser = async () => {
 async function tableauDeBord(z) {
   let d;
   try { d = await S.api("/api/tableau"); } catch { return; }
-  d.r = d.r.slice(0, 8);
+  d.r = d.r.slice(0, 3);                                   // 1 à 3 films : de quoi vérifier que la synchro passe
   if (!d.r.length) return;
-  z.innerHTML = `<div class="section-titre"><h2>Tes derniers films</h2><a class="lien" href="#/envois" style="margin-right:16px">Historique</a><button class="lien" data-sync-tout>Synchroniser</button></div>
+  z.innerHTML = `<div class="section-titre"><h2>Synchro de tes derniers films</h2><a class="lien" href="#/envois" style="margin-right:16px">Historique</a><button class="lien" data-sync-tout>Synchroniser</button></div>
     <div class="tdb">${d.r.map(x => { const m = S.info(x.cle) || {}; return `<a class="tdb-ligne" href="#/titre/${x.cle}">
       ${S.affiche(m, { taille: "w92" })}
       <div class="tdb-corps"><b>${esc(S.nomTitre(m))}</b>
@@ -129,6 +129,17 @@ async function tableauDeBord(z) {
       </div></a>`; }).join("")}</div>
     <p class="tdb-legende"><span class="pl pl-ok">envoyé</span><span class="pl pl-attente">en attente</span><span class="pl pl-erreur">erreur</span><span class="pl pl-na">rien à envoyer ou non relié</span></p>`;
   $("[data-sync-tout]", z).onclick = async ev => { ev.preventDefault(); await S.synchroniser(); setTimeout(() => tableauDeBord(z), 6000); setTimeout(() => tableauDeBord(z), 75000); };
+}
+
+// sorties de la semaine (mercredi → mardi) : ta watchlist d'abord, et ce qui passe dans tes cinémas
+async function sortiesSemaine(z) {
+  let d;
+  try { d = S.memo.semaine && Date.now() - S.memo.semaine.t < 3600e3 ? S.memo.semaine.d : await S.api("/api/semaine"); } catch { return; }
+  S.memo.semaine = { t: Date.now(), d };
+  if (!d.films.length) return;
+  const cles = d.films.map(f => S.retenir({ id: +f.cle.slice(2), title: f.t, original_title: f.o, release_date: f.ds, poster_path: f.af }, "movie"));
+  z.innerHTML = `<div class="section-titre"><h2>Sorties de la semaine</h2><span class="mini discret">du ${esc(S.fmtDateP(d.du))} au ${esc(S.fmtDateP(d.au))}</span></div>
+    <div class="rangee">${d.films.map((f, i) => S.vignette(cles[i], { info: f.wl ? "Dans ta watchlist" : f.ici ? `Au ${f.ici[0]}` : (S.fmtDateP(f.ds) || "") })).join("")}</div>`;
 }
 
 // ------------------------------------------------------------------ accueil
@@ -160,10 +171,11 @@ P.accueil = async (vue) => {
   vue.innerHTML = `
     <div class="entete bonjour"><h1>${bonjour()}, <i>${esc(moi.profil.nom.split(" ")[0])}</i></h1>
       <nav class="liens-tete tel"><a href="#/notifs">Notifications${e.notifs ? ` <b>${e.notifs}</b>` : ""}</a><a href="#/reglages">Réglages</a></nav></div>
-    <div class="recherche-accueil"><input type="search" placeholder="Un film, une personne, ou « vus au cinéma en 2025 notés 8+ »" autocomplete="off" enterkeyhint="search" data-recherche></div>
+    <div class="recherche-accueil"><input type="search" placeholder="Un film, une personne, ou « vus au cinéma en 2025 notés 8+ »" autocomplete="off" enterkeyhint="search" data-recherche><a class="lien rech-avancee" href="#/avancee">Recherche avancée</a></div>
     <div data-resultats class="cache"></div>
     <div data-blocs>
     ${journal.length ? `<div class="section" data-tableau></div>` : ""}
+    <div class="section" data-semaine></div>
     ${journal.length ? `<div class="section"><div class="section-titre"><h2>Derniers vus</h2><a class="lien" href="#/journal">Tout le journal</a></div><div class="rangee">${journal.slice(0, 14).map(j => S.vignette(j.cle, { note: j.note })).join("")}</div></div>`
       : `<div class="vide"><b>Ton journal est vide</b>Le bouton + ajoute ton premier film.</div>`}
     ${enCours.length ? `<div class="section"><div class="section-titre"><h2>Reprendre</h2></div><div class="suivre">${enCours.map(({ c, p }) => { const m = S.info(c) || {}; return `<a class="reprise" href="#/titre/${c}">${S.affiche(m, { taille: "w154" })}<div style="min-width:0"><b class="coupe">${esc(S.nomTitre(m))}</b><span class="${p.futur ? "futur" : ""}">Saison ${p.s}, épisode ${p.e}${p.futur && p.date ? `, le ${S.fmtDate(p.date, true)}` : ""}</span></div></a>`; }).join("")}</div></div>` : ""}
@@ -174,6 +186,7 @@ P.accueil = async (vue) => {
     </div>`;
   const t = $("[data-tirage]", vue); if (t) t.onclick = () => tirage();
   const tb = $("[data-tableau]", vue); if (tb) tableauDeBord(tb);
+  sortiesSemaine($("[data-semaine]", vue));
   // recherche en haut : les résultats remplacent les blocs pendant qu'on tape
   const champ = $("[data-recherche]", vue), res = $("[data-resultats]", vue), blocs = $("[data-blocs]", vue);
   const chercher = S.debounce(async () => {
@@ -341,18 +354,23 @@ function rendreTitre(vue, cle, data) {
     </section>
     <div class="ff-boutons"><button data-synopsis>Synopsis</button><button data-infos>Infos</button></div>
     <section class="ff-section" data-envoi></section>
+    ${!tv ? `<section class="ff-section" data-seances hidden></section>` : ""}
     ${tv ? `<section class="ff-section" data-saisons></section>` : ""}
     ${cast.length ? `<section class="ff-section"><h2>Casting</h2><div class="ff-cast">${cast.map(c => `<a href="#/personne/${c.id}"><div class="tete-acteur">${c.profile_path ? `<img loading="lazy" src="${S.img(c.profile_path, "w185")}" alt="">` : `<span>${esc(S.initiales(c.name))}</span>`}</div><b>${esc(c.name)}</b><em>${esc(tv ? (c.roles || []).map(r => r.character).filter(Boolean)[0] || "" : c.character || "")}</em></a>`).join("")}</div></section>` : ""}
     ${Object.keys(equipe).length ? `<section class="ff-section"><h2>Équipe</h2><div class="ff-equipe">${Object.entries(equipe).map(([lib, l]) => `<div><span>${lib}</span>${l.map(p => `<a href="#/personne/${p.id}">${esc(p.nom)}</a>`).join("")}</div>`).join("")}</div></section>` : ""}
     <section class="ff-section"><div class="ff-onglets"><button data-o="toi" class="actif">Toi</button>${amis.length ? `<button data-o="amis">Amis <span>${amis.length}</span></button>` : ""}</div><div data-onglet-toi></div><div data-onglet-amis class="cache"></div></section>
     ${groupes.length ? `<section class="ff-section"><h2>Regarder</h2><div class="ff-dispo">${groupes.map(([k, l]) => `<div><span>${l}</span><p>${fourn[k].map(p => `<a href="${esc(S.lienPlateforme(p.provider_id, titreRecherche, fourn.link || "#"))}" target="_blank" rel="noopener" title="${esc(p.provider_name)}"><img src="${S.img(p.logo_path, "w92")}" alt="${esc(p.provider_name)}"></a>`).join("")}</p></div>`).join("")}</div></section>` : ""}
     ${data.collection?.parts?.length > 1 ? `<section class="ff-section"><h2>${esc(data.collection.name)}</h2><div class="prog-rangee">${data.collection.parts.sort((a, b) => (a.release_date || "9").localeCompare(b.release_date || "9")).map(p => S.vignette(S.retenir(p, "movie"), { vu: S.monTitre("m:" + p.id).vu })).join("")}</div></section>` : ""}
+    <section class="ff-section" data-bo hidden></section>
+    <section class="ff-section" data-anecdotes hidden></section>
+    <section class="ff-section" data-similaires></section>
     ${recos.length ? `<section class="ff-section"><h2>Dans le même esprit</h2><div class="prog-rangee">${recos.map(c => S.vignette(c)).join("")}</div></section>` : ""}
   </article>
   <nav class="barre-film">
     <button class="bouton principal" data-vu>${vuDeja ? "Revu" : "J'ai vu"}</button>
     <button class="texte-action ${wl ? "actif" : ""}" data-wl>${wl ? "Dans ta watchlist" : "Watchlist"}</button>
     <button class="texte-action" data-liste>Liste</button>
+    <button class="texte-action" data-partager>Partager</button>
     ${!tv ? `<button class="texte-action ${t.collection ? "actif" : ""}" data-collection>Collection</button>` : ""}
   </nav>`;
   document.body.classList.add("avec-barre-film");
@@ -384,6 +402,7 @@ function rendreTitre(vue, cle, data) {
   $$("[data-o]", vue).forEach(b => b.onclick = () => { $$("[data-o]", vue).forEach(x => x.classList.toggle("actif", x === b)); toi.classList.toggle("cache", b.dataset.o !== "toi"); am.classList.toggle("cache", b.dataset.o !== "amis"); });
   if (tv) saisons($("[data-saisons]", vue), cle, d);
   envoiTitre($("[data-envoi]", vue), cle);
+  if (S.ficheEnrichie) S.ficheEnrichie(vue, cle, d, m, equipe, { date, sortieFR, tv, t, journal });
   const pz = $("[data-prix]", vue);
   const peindrePrix = r => {
     if (!r || (!r.gagnes.length && !r.nominations.length)) return;
@@ -412,8 +431,9 @@ async function envoiTitre(z, cle) {
 }
 
 function monJournal(z, cle, t, journal) {
-  const cit = t.citations || [], et = t.etiquettes || [], det = Object.entries(t.detail || {}).filter(([, v]) => v);
-  const LIB = { scenario: "Scénario", realisation: "Mise en scène", jeu: "Jeu", image: "Image", musique: "Musique", son: "Son" };
+  const cit = t.citations || [], et = t.etiquettes || [];
+  const det = S.CRITERES.filter(([k]) => (t.detail || {})[k]).map(([k]) => [k, t.detail[k]]);
+  const LIB = S.LIB_CRITERES;
   const ou = j => j.ou?.type === "cinema" ? `au ${esc(j.ou.cinema || "cinéma")}${j.ou.salle ? `, salle ${esc(j.ou.salle)}` : ""}` : j.ou?.nom ? `sur ${esc(j.ou.nom)}` : "";
   z.innerHTML = `${journal.length ? journal.map(j => `<button class="toi-vis" data-j="${j.id}"><span class="toi-date">${esc(S.fmtDateP(j.date))}</span><span class="toi-det">${[j.revision ? "revu" : "", ou(j), j.version, (j.avec || []).length ? "avec " + esc(j.avec.map(a => S.amis[a]?.profil?.nom || a).join(", ")) : ""].filter(Boolean).join(", ")}${!j.ou || j.approx ? `<em class="toi-completer">${j.approx ? "date approximative, " : ""}ajouter le lieu, la version…</em>` : ""}</span>${j.note != null ? `<span class="toi-note">${S.fmtNote(j.note)}</span>` : ""}<span class="toi-modifier">Modifier</span>${j.critique ? `<span class="toi-critique">${esc(j.critique)}</span>` : ""}</button>`).join("")
       : t.vu ? `<button class="toi-vis" data-sans-date><span class="toi-date">Vu</span><span class="toi-det">sans date dans ton journal<em class="toi-completer">ajouter la date, le cinéma, la version…</em></span><span class="toi-modifier">Compléter</span></button>` : `<p class="toi-vide">Pas encore dans ton journal.</p>`}
@@ -466,7 +486,11 @@ function saisons(z, cle, d) {
   const total = liste.filter(x => x.season_number).reduce((n, x) => n + x.episode_count, 0);
   const nbVus = [...vus].filter(e => !e.startsWith("0x")).length;
   const p = S.prochainEpisode(cle);
-  z.innerHTML = `<div class="section-titre"><h2>Saisons<span class="compte">${liste.filter(x => x.season_number).length}</span></h2><span class="mini discret">${nbVus}/${total} épisodes vus${p ? `, prochain : S${p.s} É${p.e}${p.futur && p.date ? " le " + S.fmtDate(p.date, true) : ""}` : ""}</span></div>
+  // temps passé devant la série, et temps qu'il reste pour la finir
+  const parEp = d.episode_run_time?.[0] || S.info(cle)?.dep || 0;
+  const h = min => min >= 60 ? `${Math.floor(min / 60)} h${min % 60 ? String(min % 60).padStart(2, "0") : ""}` : `${min} min`;
+  const bilan = total ? `<div class="serie-bilan"><div><b>${nbVus}</b><span>épisode${nbVus > 1 ? "s" : ""} vu${nbVus > 1 ? "s" : ""}</span></div><div><b>${Math.max(0, total - nbVus)}</b><span>restant${total - nbVus > 1 ? "s" : ""}</span></div>${parEp ? `<div><b>${h(nbVus * parEp)}</b><span>passées devant</span></div><div><b>${h(Math.max(0, total - nbVus) * parEp)}</b><span>pour finir</span></div>` : ""}</div>` : "";
+  z.innerHTML = `${bilan}<div class="section-titre"><h2>Saisons<span class="compte">${liste.filter(x => x.season_number).length}</span></h2><span class="mini discret">${nbVus}/${total} épisodes vus${p ? `, prochain : S${p.s} É${p.e}${p.futur && p.date ? " le " + S.fmtDate(p.date, true) : ""}` : ""}</span></div>
     ${liste.map(x => { const n = x.season_number; const v = Array.from({ length: x.episode_count }, (_, i) => `${n}x${i + 1}`).filter(e => vus.has(e)).length; const note = (s.saisons || {})[n]; return `<div class="saison" data-s="${n}"><div class="tete">${S.affiche({ af: x.poster_path, t: x.name }, { taille: "w92" }).replace('class="affiche"', 'class="affiche" style="width:42px"')}<div class="espace"><b style="font-weight:550">${esc(x.name || "Saison " + n)}</b><div class="mini discret">${v}/${x.episode_count} épisodes${x.air_date ? ", " + x.air_date.slice(0, 4) : ""}${note ? `, ta note ${S.fmtNote(note)}` : ""}</div><div class="barre"><i style="width:${100 * v / x.episode_count}%"></i></div></div><button class="coche ${v === x.episode_count ? "ok" : ""}" data-tout="${n}" data-nb="${x.episode_count}" title="Toute la saison"></button></div><div class="episodes cache"></div></div>`; }).join("")}
     <div data-courbe style="margin-top:12px"></div>`;
   $$(".saison", z).forEach(b => {

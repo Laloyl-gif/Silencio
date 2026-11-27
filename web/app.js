@@ -50,6 +50,10 @@ async function api(chemin, opts = {}) {
   return d;
 }
 S.api = api;
+// notes détaillées : critères (la clé « image » est la Photographie). 0 = « pas noté sur ce film » (choisi exprès)
+S.CRITERES = [["scenario", "Scénario"], ["realisation", "Mise en scène"], ["jeu", "Jeu"], ["image", "Photographie"], ["montage", "Montage"],
+  ["decors", "Décors"], ["costumes", "Costumes et maquillage"], ["musique", "Musique"], ["son", "Son"], ["originalite", "Originalité"]];
+S.LIB_CRITERES = Object.fromEntries(S.CRITERES);
 S.post = (chemin, corps, brut) => api(chemin, { method: "POST", body: brut ? corps : JSON.stringify(corps || {}), headers: brut ? {} : { "Content-Type": "application/json" } });
 
 // ------------------------------------------------------------------ données

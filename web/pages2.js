@@ -244,7 +244,7 @@ P.liste = (vue, args, params) => {
   const moi = estMoi(pid);
   const items = (l.items || []);
   const f = S.filtresMemo["liste_" + id] = S.filtresMemo["liste_" + id] || { vue: l.classee ? "liste" : "grille" };
-  vue.innerHTML = `<div class="entete"><div style="min-width:0"><h1>${esc(l.nom)}</h1><div class="mini discret">${pid ? `par ${esc(S.nomDe(pid))}, ` : ""}${S.pluriel(items.length, "titre")}${l.classee ? ", classée" : ""}</div></div><span class="espace"></span>${moi ? `<nav class="liens-tete"><button data-selection>Sélectionner</button><button data-ajouter>Ajouter</button><button data-editer>Modifier</button></nav>` : ""}</div>
+  vue.innerHTML = `<div class="entete"><div style="min-width:0"><h1>${esc(l.nom)}</h1><div class="mini discret">${pid ? `par ${esc(S.nomDe(pid))}, ` : ""}${S.pluriel(items.length, "titre")}${l.classee ? ", classée" : ""}</div></div><span class="espace"></span>${moi ? `<nav class="liens-tete"><button data-selection>Sélectionner</button>${items.length >= 2 ? `<a href="#/duels/${id}">Classer par duels</a>` : ""}<button data-ajouter>Ajouter</button><button data-editer>Modifier</button></nav>` : ""}</div>
     ${l.description ? `<p class="synopsis">${esc(l.description)}</p>` : ""}
     <div class="filtres"><div class="segments" data-vue><button data-v="grille">Grille</button><button data-v="liste">Liste</button></div><span class="mini discret">${S.pluriel(items.filter(c => S.monTitre(c).vu).length, "titre vu", "titres vus")} par toi</span></div>
     <div data-items></div>`;
@@ -327,6 +327,7 @@ function decouvrirAccueil(vue) {
   const mesPlat = S.reglage("plateformes", []) || [];
   vue.innerHTML = `<div class="entete"><h1>Découvrir</h1></div>
     <div class="section" data-pourtoi>${S.chargement()}</div>
+    <div class="section" data-criteres></div>
     <div class="section" data-plateformes></div>
     <div class="section" data-sorties></div>
     <div class="section"><div class="section-titre"><h2>Chercher autrement</h2></div><div class="raccourcis-decouvrir">
@@ -339,6 +340,14 @@ function decouvrirAccueil(vue) {
   const rangee = (titre, cles, lien) => `<div class="section-titre"><h2>${titre}</h2>${lien ? `<a class="lien" href="${lien}">Tout voir</a>` : ""}</div><div class="rangee">${cles.map(c => S.vignette(c)).join("")}</div>`;
   const recos = r => { r.forEach(x => S.infos[x.cle] = S.infos[x.cle] || { k: x.cle, ty: x.cle[0], t: x.t, af: x.af, a: x.a ? +x.a : null, vt: x.vt }); $("[data-pourtoi]", vue).innerHTML = r.length ? rangee("Pour toi", r.slice(0, 16).map(x => x.cle), "#/decouvrir/pourtoi") : ""; };
   if (S.memo.recos) recos(S.memo.recos); else S.api("/api/recos").then(d => { S.memo.recos = d.r; recos(d.r); }).catch(() => $("[data-pourtoi]", vue).innerHTML = "");
+  // d'après tes notes détaillées : les personnes derrière ce que tu notes le plus haut
+  const parCriteres = r => {
+    if (!r.length) return;
+    r.forEach(x => S.infos[x.cle] = S.infos[x.cle] || { k: x.cle, ty: "m", t: x.t, af: x.af, a: x.a ? +x.a : null, vt: x.vt });
+    const raison = x => { const p = S.base?.pers?.[x.raison.personne]?.n; return p ? `${x.raison.critere} : ${p}` : ""; };
+    $("[data-criteres]", vue).innerHTML = `<div class="section-titre"><h2>D'après tes notes détaillées</h2></div><p class="mini discret" style="margin:-4px 0 10px">Les autres films des personnes derrière ce que tu notes le plus haut.</p><div class="rangee">${r.slice(0, 18).map(x => S.vignette(x.cle, { info: raison(x) })).join("")}</div>`;
+  };
+  if (S.memo.sugg) parCriteres(S.memo.sugg); else S.api("/api/pourtoi/criteres").then(d => { S.memo.sugg = d.r; parCriteres(d.r); }).catch(() => {});
   if (mesPlat.length) S.api(`/api/decouvrir?type=movie&sort_by=vote_average.desc&vote_count.gte=800&with_watch_providers=${mesPlat.join("|")}`).then(d => {
     const cles = (d.results || []).map(x => S.retenir(x, "movie")).filter(c => c && !S.monTitre(c).vu).slice(0, 16);
     if (cles.length) $("[data-plateformes]", vue).innerHTML = rangee("Sur tes plateformes", cles);
@@ -687,6 +696,7 @@ P.reglages = async (vue, args, params) => {
       <div class="ligne-champ"><span class="libelle-champ" style="width:auto;flex:1">Sons</span><label class="interrupteur"><input type="checkbox" data-sons ${S.reglage("sons", true) !== false ? "checked" : ""}><span></span></label></div>
       <label class="etiquette">Tes abonnements (filtre « sur mes plateformes »)</label><div class="puces" data-plats>${S.chargement()}</div>
     </section>
+    <section class="carte" data-rub="affichage" data-cinemas></section>
     <section class="carte" data-rub="completer" data-completer></section>
     <section class="carte" data-rub="tmdb"><h3>TMDB</h3><p class="muet petit">Tes notes, ta watchlist, tes coups de cœur et tes listes de films sont recopiés sur ton compte TMDB (dès qu'il y a du réseau).</p>
       ${a.tmdb.connecte ? `<div class="flex"><span class="espace">Connecté : <b>${esc(a.tmdb.nom)}</b>${e.file_tmdb.attente ? `, ${e.file_tmdb.attente} modification(s) en attente` : ""}${e.file_tmdb.erreur ? `, <span style="color:var(--rouge)">${esc(e.file_tmdb.erreur)}</span>` : ""}</span><button class="bouton petit" data-tmdb-off>Déconnecter</button></div>` : `<button class="bouton principal" data-tmdb-on>Connecter mon compte TMDB</button>`}
@@ -730,6 +740,7 @@ P.reglages = async (vue, args, params) => {
   else $(".entete h1", vue).insertAdjacentHTML("beforebegin", `<a class="fil" href="#/reglages">Réglages</a>`), $(".entete h1", vue).textContent = RUBS.find(r => r[0] === rub)?.[1] || "Réglages";
   if (rub === "plateformes") plateformes($("[data-plateformes]", vue), e);
   if (rub === "test") rubriqueTest($("[data-test]", vue));
+  if (rub === "affichage") rubriqueCinemas($("[data-cinemas]", vue));
   if (rub === "compte") rubriqueCompte($("[data-compte]", vue), e);
   if (rub === "completer") rubriqueCompleter($("[data-completer]", vue));
   $("[data-sons]", vue).onchange = ev => S.agir("profil", { champs: { reglages: { sons: ev.target.checked } } }, { toast: ev.target.checked ? "Sons activés" : "Sons coupés", sansAnnuler: true });
@@ -863,4 +874,32 @@ function rubriqueTest(z) {
     suivre();
   });
   suivre();
+}
+
+// ------------------------------------------------------------------ tes cinémas (séances sur les fiches, rappels de dernière semaine)
+function rubriqueCinemas(z) {
+  const S = window.Silencio, $ = (q, r = document) => r.querySelector(q);
+  const esc = x => String(x ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const DEFAUT = [{ nom: "Pathé Valenciennes", code: "P0617" }, { nom: "L'Arsenal", code: "", recherche: "Arsenal Valenciennes" }];
+  const liste = () => (S.reglage("cinemas", null) || DEFAUT).map(c => ({ ...c }));
+  const enregistrer = l => S.agir("profil", { champs: { reglages: { cinemas: l } } }, { toast: false, sansAnnuler: true });
+  const peindre = () => {
+    const l = liste();
+    z.innerHTML = `<h3>Tes cinémas</h3><p class="petit muet">Leurs séances s'affichent sur la fiche des films à l'affiche, et Silencio te prévient quand un film de ta watchlist vit sa dernière semaine dans l'un d'eux.</p>
+      <div class="lignes">${l.map((c, i) => `<div class="ligne"><div class="corps"><b>${esc(c.nom)}</b><span>${c.code ? `Allociné ${esc(c.code)}` : "retrouvé automatiquement sur Allociné"}</span></div><button class="lien" data-retirer="${i}">Retirer</button></div>`).join("")}</div>
+      <label class="etiquette">Ajouter un cinéma : son nom, ou l'adresse de sa page Allociné</label>
+      <div class="flex"><input class="champ" data-q placeholder="ex. Kinepolis Lomme, ou https://www.allocine.fr/seance/salle_gen_csalle=…"><button class="bouton" data-chercher>Ajouter</button></div><div data-res></div>`;
+    z.querySelectorAll("[data-retirer]").forEach(b => b.onclick = async () => { const l2 = liste(); l2.splice(+b.dataset.retirer, 1); await enregistrer(l2); peindre(); });
+    $("[data-chercher]", z).onclick = async () => {
+      const q = $("[data-q]", z).value.trim(); if (!q) return;
+      const code = (q.match(/(?:csalle=|theater-)([A-Z]\d{4})/) || q.match(/^([A-Z]\d{4})$/) || [])[1];
+      if (code) { await enregistrer([...liste(), { nom: q.length > 6 ? "Cinéma " + code : q, code }]); return peindre(); }
+      const res = $("[data-res]", z); res.innerHTML = S.chargement();
+      let r; try { r = await S.api(`/api/cinemas/chercher?q=${encodeURIComponent(q)}`); } catch { r = { r: [] }; }
+      res.innerHTML = r.r.length ? `<div class="lignes">${r.r.map((c, i) => `<button class="ligne" data-pris="${i}"><div class="corps"><b>${esc(c.nom)}</b><span>${esc(c.ville || c.code)}</span></div></button>`).join("")}</div>`
+        : `<p class="mini discret">Rien trouvé. Sur allocine.fr, ouvre la page du cinéma et colle son adresse ici.</p>`;
+      res.querySelectorAll("[data-pris]").forEach(b => b.onclick = async () => { const c = r.r[+b.dataset.pris]; await enregistrer([...liste(), { nom: c.nom, code: c.code }]); peindre(); });
+    };
+  };
+  peindre();
 }

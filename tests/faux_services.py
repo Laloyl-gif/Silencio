@@ -327,6 +327,10 @@ class H(BaseHTTPRequestHandler):
         p = u.path
         if p.startswith("/refract/v1"):
             return self.refract("GET", p[11:], q)
+        if p.startswith("/allocine/_/autocomplete/"):
+            return self.envoyer(200, {"results": [{"entity_type": "theater", "entity_id": "P9999", "label": "L'Arsenal", "data": {"city": "Valenciennes"}}]})
+        if p.startswith("/allocine/_/showtimes/"):
+            return self.envoyer(200, {"results": [], "pagination": {"page": 1, "totalPages": 1}})
         time.sleep(0.01)
         if p.startswith("/img/"):
             return self.envoyer(200, image("/" + p.split("/", 3)[3], p.split("/")[2]), "image/jpeg")
@@ -432,6 +436,11 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         u = urllib.parse.urlsplit(self.path)
+        if u.path == "/imdbgql":
+            self.corps()
+            return self.envoyer(200, {"data": {"title": {"trivia": {"edges": [
+                {"node": {"text": {"plainText": "Lynch a écrit le film à partir d'un pilote de série refusé."}, "interestScore": {"usersInterested": 9, "usersVoted": 10}}},
+                {"node": {"text": {"plainText": "Anecdote moins populaire."}, "interestScore": {"usersInterested": 1, "usersVoted": 4}}}]}}}})
         if u.path.startswith("/refract/v1"):
             return self.refract("POST", u.path[11:], {})
         if u.path.startswith("/github"):

@@ -173,7 +173,8 @@ function formulaire(modale, corps, cle, ex, o = {}) {
         <input class="aj-champ" data-cine-recherche placeholder="${mesCinemas.length ? "Un autre cinéma" : "Nom du cinéma"}" value="${cinema && !mesCinemas.some(c => c.cinema === cinema.nom) ? esc(cinema.nom) : ""}" autocomplete="off">
         <div class="res-recherche" data-cine-res></div>
         <label class="aj-ligne"><span>Salle</span><input class="aj-valeur" data-salle value="${esc(cinema?.salle || "")}" inputmode="numeric" placeholder="–"></label>
-        <label class="aj-ligne"><span>Prix du billet</span><span class="aj-euros"><input class="aj-valeur" data-prix type="number" step="0.1" min="0" inputmode="decimal" value="${e.prix ?? ""}" placeholder="–"> €</span></label>
+        <div class="aj-ligne"><span>IMAX</span><label class="interrupteur"><input type="checkbox" data-imax ${e.imax ? "checked" : ""}><span></span></label></div>
+        <label class="aj-ligne"><span>Prix payé <small class="discret">(supplément si abonné)</small></span><span class="aj-euros"><input class="aj-valeur" data-prix type="number" step="0.1" min="0" inputmode="decimal" value="${e.prix ?? ""}" placeholder="–"> €</span></label>
       </div>
       ${Object.keys(S.amis).length ? `<div class="aj-ligne aj-avec"><span>Avec</span><div class="aj-tags">${Object.entries(S.amis).map(([id, a]) => `<button class="${(e.avec || []).includes(id) ? "actif" : ""}" data-ami="${esc(id)}">${esc((a.profil?.nom || id).split(" ")[0])}</button>`).join("")}</div></div>` : ""}
     </div>
@@ -186,7 +187,8 @@ function formulaire(modale, corps, cle, ex, o = {}) {
           <div class="aj-ligne"><span>Cacher ce visionnage à tes amis</span><label class="interrupteur"><input type="checkbox" data-prive ${e.prive ? "checked" : ""}><span></span></label></div>
         </div>
         <input class="aj-champ" data-avec-libre placeholder="Avec d'autres personnes, séparées par des virgules" value="${esc((e.avec || []).filter(x => !S.amis[x]).join(", "))}">
-        <div class="mini-notes">${[["scenario", "Scénario"], ["realisation", "Mise en scène"], ["jeu", "Jeu"], ["image", "Image"], ["musique", "Musique"], ["son", "Son"]].map(([k, lib]) => `<span>${lib}</span><div class="points10" data-detail="${k}">${Array.from({ length: 10 }, (_, i) => `<button class="${(detail[k] || 0) >= i + 1 ? "ok" : ""}" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>`).join("")}</div>
+        <p class="mini discret mini-notes-aide">Touche le nom d'un critère pour dire que tu ne le notes pas sur ce film.</p>
+        <div class="mini-notes">${S.CRITERES.map(([k, lib]) => `<button type="button" class="mn-lib ${detail[k] === 0 ? "exclu" : ""}" data-exclu="${k}" title="Noter / ne pas noter ce critère">${lib}</button><div class="points10 ${detail[k] === 0 ? "exclu" : ""}" data-detail="${k}">${Array.from({ length: 10 }, (_, i) => `<button type="button" class="${(detail[k] || 0) >= i + 1 ? "ok" : ""}" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>`).join("")}</div>
       </div>
     </div>`;
   const pied = el(o.suite
@@ -244,7 +246,13 @@ function formulaire(modale, corps, cle, ex, o = {}) {
   const plus = $("[data-plus]", corps);
   $("button", plus).onclick = () => { plus.classList.toggle("ouvert"); $("[data-details]", plus).classList.toggle("cache"); };
   if (ex && (ex.critique || ex.prive)) $("button", plus).click();
-  $$("[data-detail]", corps).forEach(g => $$("button", g).forEach(b => b.onclick = () => { const k = g.dataset.detail; const v = +b.dataset.v; detail[k] = detail[k] === v ? null : v; $$("button", g).forEach(x => x.classList.toggle("ok", detail[k] != null && +x.dataset.v <= detail[k])); }));
+  const peindreCritere = k => {
+    const g = $(`[data-detail="${k}"]`, corps);
+    $$("button", g).forEach(x => x.classList.toggle("ok", !!detail[k] && +x.dataset.v <= detail[k]));
+    g.classList.toggle("exclu", detail[k] === 0); $(`[data-exclu="${k}"]`, corps).classList.toggle("exclu", detail[k] === 0);
+  };
+  $$("[data-detail]", corps).forEach(g => $$("button", g).forEach(b => b.onclick = () => { const k = g.dataset.detail; const v = +b.dataset.v; detail[k] = detail[k] === v ? null : v; peindreCritere(k); }));
+  $$("[data-exclu]", corps).forEach(b => b.onclick = () => { const k = b.dataset.exclu; detail[k] = detail[k] === 0 ? null : 0; peindreCritere(k); });
   const valider = async () => {
     const ou = cinema && cinema.nom !== undefined && $("[data-cine]", corps).checked ? { type: "cinema", cinema: cinema.nom, salle: $("[data-salle]", corps).value.trim() } : (ex?.ou && ex.ou.type !== "cinema" ? ex.ou : null);
     const avec = [...$$("[data-ami].actif", corps).map(b => b.dataset.ami), ...$("[data-avec-libre]", corps).value.split(",").map(s => s.trim()).filter(Boolean)];
@@ -255,7 +263,7 @@ function formulaire(modale, corps, cle, ex, o = {}) {
       const oui = await S.demander("Critique publique", "Cette critique sera visible par tes amis et publiée sur Letterboxd et IMDb. Tu confirmes ?", "Publier", "La garder privée");
       if (!oui) { $("[data-critique-privee]", corps).checked = true; return; }
     }
-    const entree = { id: ex?.id, cle, date: (mo === "autre" ? date : mo === "hier" ? S.hier() : S.aujourdhui()), note: e.note, coeur: e.coeur, coeur_choisi: coeurChoisi, revision: rev, critique: $("[data-critique]", corps).value.trim(), critique_privee: $("[data-critique-privee]", corps).checked, prive: $("[data-prive]", corps).checked, ou, prix, avec, version };
+    const entree = { id: ex?.id, cle, date: (mo === "autre" ? date : mo === "hier" ? S.hier() : S.aujourdhui()), note: e.note, coeur: e.coeur, coeur_choisi: coeurChoisi, revision: rev, critique: $("[data-critique]", corps).value.trim(), critique_privee: $("[data-critique-privee]", corps).checked, prive: $("[data-prive]", corps).checked, ou, prix, avec, version, imax: ou?.type === "cinema" && $("[data-imax]", corps).checked };
     if (o.suite) entree.approx = false;
     $("[data-ok]", pied).disabled = true;
     try {

@@ -510,5 +510,25 @@ mz.action("coeur", {"cle": "m:603", "val": False})
 o = miroir.operations(mz.doc, "lb", lambda c: {"t": "x"})
 verifier(any(x["sorte"] == "like" and x["action"] == "retirer" for x in o["ops"]), "un cœur décoché exprès est bien retiré sur Letterboxd")
 
+# ---- v21 : séances (dernière semaine d'un film de ta watchlist), correspondance des titres
+import datetime  # noqa: E402
+import seances  # noqa: E402
+mer, mar = seances.semaine(datetime.date(2026, 11, 28))
+verifier((mer.isoformat(), mar.isoformat()) == ("2026-11-25", "2026-12-01"), "semaine de cinéma : du mercredi au mardi")
+verifier(seances.code_depuis("https://www.allocine.fr/seance/salle_gen_csalle=P0617.html") == "P0617", "code Allociné lu dans une adresse")
+sc = seances.Seances(ms, None)
+sc.cinemas = lambda: [{"nom": "Pathé", "code": "P0617"}]
+auj = datetime.date.today()
+_, fin = seances.semaine(auj)
+def faux_jour(code, date):
+    d = datetime.date.fromisoformat(date)
+    films = [{"titre": "Autre film", "original": "", "annee": 2026, "seances": [{"h": "20:00", "v": "VF", "imax": False}]}]
+    if d <= fin:
+        films.append({"titre": "Le Comte de Monte-Cristo", "original": "", "annee": 2026, "seances": [{"h": "14:00", "v": "VF", "imax": True}]})
+    return films
+sc.jour = faux_jour
+r = sc.derniere_semaine({"m:1": {"t": "Le comte de Monte Cristo", "o": "", "a": 2026}, "m:2": {"t": "Autre film", "a": 2026}})
+verifier(list(r) == ["m:1"] and r["m:1"][0]["jusqua"] == fin.isoformat(), ("dernière semaine repérée (titre sans accents ni tirets)", r))
+
 print(f"{OK} vérifications réussies")
 shutil.rmtree(DOSSIER, ignore_errors=True)

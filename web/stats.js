@@ -20,7 +20,7 @@ St.donnees = (pid) => {
   for (const [id, e] of Object.entries(S.vivants(doc.journal))) {
     if (!e.cle) continue;
     const m = metas[e.cle]; const t = doc.titres?.[e.cle];
-    const v = { id, p: pid, cle: e.cle, m, date: e.date, note: e.note ?? (t && !t.x ? t.note : null), coeur: !!(t && t.coeur), ou: e.ou, prix: e.prix, avec: e.avec || [], revision: !!e.revision, critique: e.critique, approx: !!e.approx };
+    const v = { id, p: pid, cle: e.cle, m, date: e.date, note: e.note ?? (t && !t.x ? t.note : null), coeur: !!(t && t.coeur), ou: e.ou, prix: e.prix, avec: e.avec || [], revision: !!e.revision, critique: e.critique, approx: !!e.approx, imax: !!e.imax, version: e.version };
     V.push(v);
     (parTitre[e.cle] = parTitre[e.cle] || []).push(v);
   }
@@ -256,7 +256,7 @@ S.pages.stats = async (vue, args, params) => {
   if (params.pays) f.pays = params.pays; else delete f.pays;
   const annees = [...new Set(St.donnees().V.map(v => v.date?.slice(0, 4)).filter(Boolean))].sort().reverse();
   const onglet = S.filtresMemo.stats_o = params.o || S.filtresMemo.stats_o || "chiffres";
-  const ONGLETS = [["chiffres", "Chiffres"], ["personnes", "Personnes"], ["gouts", "Goûts"], ["temps", "Temps"], ["amis", "Amis"]];
+  const ONGLETS = [["chiffres", "Chiffres"], ["personnes", "Personnes"], ["gouts", "Goûts"], ["criteres", "Critères"], ["cinemas", "Cinémas"], ["temps", "Temps"], ["amis", "Amis"]];
   vue.innerHTML = `
     <div class="entete"><h1>Stats</h1><nav class="liens-tete"><a href="#/labo">Labo</a></nav></div>
     <div class="onglets onglets-stats">${ONGLETS.map(([k, l]) => `<a href="#/stats?o=${k}"><button class="${k === onglet ? "actif" : ""}">${l}</button></a>`).join("")}</div>
@@ -294,6 +294,8 @@ S.pages.stats = async (vue, args, params) => {
     gouts: carte("genres", "Genres") + carte("radar", "Radar de tes goûts") + carte("decennies", "Décennies") + carte("durees", "Durées") + carte("pays", "Pays", "", true) + carte("budget", "Budget et recettes", "", true),
     temps: `<section class="large"><div class="raccourcis-decouvrir"><a href="#/wrapped/${(annees[0] || S.aujourdhui().slice(0, 4))}"><b>Ton année</b><span>Le récap de ${annees[0] || S.aujourdhui().slice(0, 4)}</span></a><a href="#/wrapped/${S.moisPrecedent()}"><b>Ton mois</b><span>Le récap du mois dernier</span></a></div></section>` + carte("cinema", "Au cinéma") + carte("avec", "Avec qui"),
     amis: carte("compat", "Compatibilité", "", true),
+    criteres: carte("crit_moy", "Tes moyennes par critère") + carte("crit_poids", "Ce qui fait ta note") + carte("crit_top", "Tes meilleurs films par critère", "", true) + carte("crit_pers", "Par équipe, critère par critère", "", true),
+    cinemas: (params.c ? carte("cine_un", esc(params.c), "", true) : carte("cines", "Tes cinémas", "", true)) + carte("depenses", "Dépenses cinéma", "", true),
   };
   grille.innerHTML = PAR_ONGLET[onglet] || PAR_ONGLET.chiffres;
   // graphiques épinglés
@@ -306,6 +308,119 @@ S.pages.stats = async (vue, args, params) => {
 };
 
 const BLOC = {};
+// ------------------------------------------------------------------ notes détaillées
+const critVals = (T, k) => T.map(r => ({ r, v: (r.detail || {})[k] })).filter(x => x.v > 0);
+BLOC.crit_moy = (b, d) => {
+  const lignes = S.CRITERES.map(([k, lib]) => { const l = critVals(d.T, k); return { lib, v: moyenne(l.map(x => x.v)) || 0, n: l.length }; }).filter(x => x.n);
+  if (!lignes.length) { zoneDe(b).innerHTML = `<div class="vide petit">Remplis les notes détaillées d'un film (dans « Critique et notes détaillées ») pour voir tes moyennes ici.</div>`; return; }
+  zoneDe(b).innerHTML = `<div data-r></div><div data-l style="margin-top:10px"></div>`;
+  if (lignes.length >= 3) G.radar($("[data-r]", b), { axes: lignes.map(l => l.lib), series: [{ nom: "Moyenne", couleur: S.COULEURS[0], valeurs: lignes.map(l => l.v), bruts: lignes.map(l => `${S.fmtNote(l.v)} (${S.pluriel(l.n, "film")})`) }], max: 10, hauteur: 300 });
+  G.barresH($("[data-l]", b), lignes.sort((a, c) => c.v - a.v).map(l => ({ lib: l.lib, v: l.v, txt: S.fmtNote(l.v), sous: S.pluriel(l.n, "film") })));
+};
+BLOC.crit_poids = (b, d) => {
+  // corrélation entre chaque critère et ta note finale : ce qui « tire » ta note
+  const lignes = S.CRITERES.map(([k, lib]) => {
+    const pts = critVals(d.T, k).filter(x => x.r.note != null).map(x => [x.v, x.r.note]);
+    if (pts.length < 4) return null;
+    const mx = moyenne(pts.map(p => p[0])), my = moyenne(pts.map(p => p[1]));
+    let a = 0, bx = 0, by = 0; for (const [x, y] of pts) { a += (x - mx) * (y - my); bx += (x - mx) ** 2; by += (y - my) ** 2; }
+    return { lib, v: bx && by ? a / Math.sqrt(bx * by) : 0, n: pts.length };
+  }).filter(Boolean).sort((x, y) => y.v - x.v);
+  if (!lignes.length) { zoneDe(b).innerHTML = `<div class="vide petit">Il faut au moins 4 films notés sur un critère.</div>`; return; }
+  zoneDe(b).innerHTML = `<p class="mini discret" style="margin:0 0 10px">Plus la barre est longue, plus ce critère va de pair avec ta note finale.</p><div data-l></div>`;
+  G.barresH($("[data-l]", b), lignes.map(l => ({ lib: l.lib, v: Math.max(0, l.v), txt: `${Math.round(l.v * 100)} %`, sous: S.pluriel(l.n, "film") })));
+};
+BLOC.crit_top = (b, d) => {
+  let k = memo("crit_top_k", "image");
+  const dessiner = () => {
+    const l = critVals(d.T, k).sort((a, c) => c.v - a.v || (c.r.note ?? 0) - (a.r.note ?? 0)).slice(0, 12);
+    zoneDe(b).innerHTML = l.length ? `<div class="lignes">${l.map(x => S.ligneTitre(x.r.cle, { glisse: false, droite: `<span class="note-txt">${x.v}</span><span class="mini">/10</span>` })).join("")}</div>` : `<div class="vide petit">Aucun film noté sur ce critère.</div>`;
+  };
+  const s = el(`<select class="champ" style="width:auto;height:32px;font-size:12.5px">${S.CRITERES.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>`);
+  s.value = k; s.onchange = () => { k = S.filtresMemo.crit_top_k = s.value; dessiner(); }; outilsDe(b).append(s);
+  dessiner();
+};
+BLOC.crit_pers = (b, d) => {
+  // la personne responsable du critère : chef op pour la photographie, compositeur pour la musique…
+  const ROLE = { image: "image", musique: "musique", montage: "montage", decors: "decors", costumes: "costumes", scenario: "scen", realisation: "real", jeu: "acteur", son: "son", originalite: "real" };
+  let k = memo("crit_pers_k", "image");
+  const dessiner = () => {
+    const role = ROLE[k], g = new Map();
+    for (const { r, v } of critVals(d.T, k)) {
+      const ids = role === "acteur" ? (r.m?.ca || []).slice(0, 3) : role === "real" ? (r.m?.re || []) : (r.m?.eq?.[role] || []);
+      for (const id of ids) { const e = g.get(id) || { n: 0, s: 0 }; e.n++; e.s += v; g.set(id, e); }
+    }
+    const l = [...g.entries()].filter(([, e]) => e.n >= 2).map(([id, e]) => ({ id, moy: e.s / e.n, n: e.n })).sort((a, c) => c.moy - a.moy || c.n - a.n).slice(0, 12);
+    if (!l.length) { zoneDe(b).innerHTML = `<div class="vide petit">Il faut au moins deux films de la même personne notés sur ce critère.</div>`; return; }
+    G.barresH(zoneDe(b), l.map(x => ({ lib: S.base.pers[x.id]?.n || "?", v: x.moy, txt: S.fmtNote(x.moy), sous: S.pluriel(x.n, "film"), lien: `#/personne/${x.id}` })));
+  };
+  const s = el(`<select class="champ" style="width:auto;height:32px;font-size:12.5px">${S.CRITERES.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>`);
+  s.value = k; s.onchange = () => { k = S.filtresMemo.crit_pers_k = s.value; dessiner(); }; outilsDe(b).append(s);
+  dessiner();
+};
+
+// ------------------------------------------------------------------ cinémas et salles
+const seances = d => d.V.filter(v => v.ou?.type === "cinema");
+BLOC.cines = (b, d) => {
+  const c = seances(d);
+  if (!c.length) { zoneDe(b).innerHTML = `<div class="vide petit">Indique « Cinéma » dans les détails d'un visionnage pour voir tes cinémas ici.</div>`; return; }
+  const g = St.grouper(c, "cinema", 0);
+  zoneDe(b).innerHTML = `<div class="chiffres"><div class="chiffre"><b>${c.length}</b><span>séances</span></div><div class="chiffre"><b>${g.length}</b><span>cinémas</span></div><div class="chiffre"><b>${c.filter(v => v.imax).length}</b><span>en IMAX</span></div><div class="chiffre"><b>${S.fmtNote(moyenne(c.map(v => v.note).filter(n => n != null)))}</b><span>note moyenne en salle</span></div></div>
+    <div class="lignes cines-l">${g.map(([nom, l]) => `<a class="ligne" href="#/stats?o=cinemas&c=${encodeURIComponent(nom)}"><div class="corps"><b>${esc(nom)}</b><span>${l.length} séance${l.length > 1 ? "s" : ""}, ${new Set(l.map(v => v.ou.salle).filter(Boolean)).size || "?"} salle(s), dernière le ${esc(S.fmtDateP(l[l.length - 1].date) || "?")}</span></div><span class="note-txt">${S.fmtNote(moyenne(l.map(v => v.note).filter(n => n != null)))}</span></a>`).join("")}</div>`;
+};
+BLOC.cine_un = (b, d, pid, f, params) => {
+  const nom = new URLSearchParams(location.hash.split("?")[1] || "").get("c");
+  const c = seances(d).filter(v => (v.ou.cinema || "?") === nom);
+  outilsDe(b).innerHTML = `<a class="lien" href="#/stats?o=cinemas">Tous tes cinémas</a>`;
+  if (!c.length) { zoneDe(b).innerHTML = `<div class="vide petit">Aucune séance ici.</div>`; return; }
+  const salles = new Map(); for (const v of c) { const k = v.ou.salle || "Salle non indiquée"; (salles.get(k) || salles.set(k, []).get(k)).push(v); }
+  const prix = c.filter(v => v.prix);
+  zoneDe(b).innerHTML = `<div class="chiffres"><div class="chiffre"><b>${c.length}</b><span>séances</span></div><div class="chiffre"><b>${S.fmtNote(moyenne(c.map(v => v.note).filter(n => n != null)))}</b><span>note moyenne</span></div><div class="chiffre"><b>${c.filter(v => v.imax).length}</b><span>en IMAX</span></div><div class="chiffre"><b>${prix.length ? S.fmtNote(prix.reduce((s, v) => s + v.prix, 0)) + " €" : "—"}</b><span>payés sur place</span></div></div>
+    <h4 style="margin:16px 0 6px">Par salle</h4><div data-salles></div>
+    <h4 style="margin:16px 0 6px">Films vus ici</h4><div class="lignes">${[...c].reverse().slice(0, 40).map(v => S.ligneTitre(v.cle, { glisse: false, droite: `<span class="mini">${esc(S.fmtDateP(v.date) || "")}${v.ou.salle ? `, salle ${esc(v.ou.salle)}` : ""}${v.imax ? ", IMAX" : ""}</span>${v.note != null ? `<span class="note-txt">${S.fmtNote(v.note)}</span>` : ""}` })).join("")}</div>`;
+  G.barresH($("[data-salles]", b), [...salles.entries()].sort((x, y) => y[1].length - x[1].length).map(([s, l]) => ({ lib: /^\d+$/.test(s) ? `Salle ${s}` : s, v: l.length, txt: `${l.length}`, sous: `moy. ${S.fmtNote(moyenne(l.map(v => v.note).filter(n => n != null)))}` })));
+};
+BLOC.depenses = (b, d) => {
+  // dépenses = places payées + suppléments + mois d'abonnement (ex. Pathé : abonnement mensuel, séances comprises)
+  const abos = Object.entries(S.vivants(S.moi.abonnements || {}));
+  const c = seances(d);
+  const moisDe = a => { const r = []; const fin = a.fin || S.aujourdhui().slice(0, 7); let m = a.debut; while (m && m <= fin && r.length < 240) { r.push(m); const [y, mo] = m.split("-").map(Number); m = mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, "0")}`; } return r; };
+  const parMois = new Map();
+  const ajouter = (m, k, v) => { const e = parMois.get(m) || { places: 0, abo: 0, n: 0 }; e[k] += v; parMois.set(m, e); };
+  for (const v of c) { if (v.date) { ajouter(v.date.slice(0, 7), "n", 1); if (v.prix) ajouter(v.date.slice(0, 7), "places", v.prix); } }
+  for (const [, a] of abos) for (const m of moisDe(a)) if (!(a.sauf || []).includes(m)) ajouter(m, "abo", +a.prix || 0);
+  const mois = [...parMois.keys()].sort().slice(-12);
+  const total = [...parMois.values()].reduce((s, e) => s + e.places + e.abo, 0);
+  const nSeances = c.length;
+  zoneDe(b).innerHTML = `<div class="chiffres"><div class="chiffre"><b>${S.fmtNote(total)} €</b><span>au total</span></div><div class="chiffre"><b>${nSeances ? S.fmtNote(total / nSeances) + " €" : "—"}</b><span>par séance</span></div><div class="chiffre"><b>${S.fmtNote([...parMois.values()].reduce((s, e) => s + e.abo, 0))} €</b><span>d'abonnement</span></div><div class="chiffre"><b>${S.fmtNote(c.reduce((s, v) => s + (v.prix || 0), 0))} €</b><span>places et suppléments</span></div></div>
+    <div data-g style="margin-top:10px"></div>
+    <h4 style="margin:16px 0 6px">Abonnements</h4>
+    <div class="lignes">${abos.map(([id, a]) => `<div class="ligne"><div class="corps"><b>${esc(a.nom)}</b><span>${S.fmtNote(+a.prix)} € par mois, depuis ${esc(a.debut)}${a.fin ? ` jusqu'à ${esc(a.fin)}` : ", en cours"}${(a.sauf || []).length ? `, ${a.sauf.length} mois non payé(s)` : ""}</span></div><button class="lien" data-abo-mod="${id}">Modifier</button></div>`).join("") || `<p class="mini discret">Aucun abonnement noté. Avec un abonnement (Pathé, UGC…), tes séances ne coûtent que le supplément : note le prix du supplément sur la séance (0 si rien), et l'abonnement ici.</p>`}</div>
+    <button class="bouton petit" data-abo-ajout style="margin-top:8px">Ajouter un abonnement</button>`;
+  if (mois.length) {
+    const series = [{ nom: "Abonnement", couleur: S.COULEURS[1], valeurs: mois.map(m => parMois.get(m).abo) }, { nom: "Places et suppléments", couleur: S.COULEURS[0], valeurs: mois.map(m => parMois.get(m).places) }];
+    $("[data-g]", b).innerHTML = G.legende(series) + `<div data-gg></div>`;
+    G.barres($("[data-gg]", b), { categories: mois, series, libelle: m => S.fmtDate(m), libelleLong: m => S.fmtDate(m), y: { titre: "€" } });
+  }
+  const editer = id => {
+    const a = id ? S.moi.abonnements[id] : { nom: "Pathé", prix: "", debut: S.aujourdhui().slice(0, 7), fin: "", sauf: [] };
+    const m = S.ouvrirModale({ titre: id ? "Modifier l'abonnement" : "Ajouter un abonnement", corps: `
+      <label class="etiquette">Nom</label><input class="champ" data-a="nom" value="${esc(a.nom)}">
+      <label class="etiquette">Prix par mois (€)</label><input class="champ" data-a="prix" inputmode="decimal" value="${esc(a.prix)}">
+      <div class="grille-2"><div><label class="etiquette">Premier mois payé</label><input class="champ" type="month" data-a="debut" value="${esc(a.debut)}"></div><div><label class="etiquette">Dernier mois (vide si en cours)</label><input class="champ" type="month" data-a="fin" value="${esc(a.fin || "")}"></div></div>
+      <label class="etiquette">Mois non payés (pause, offert…), séparés par des virgules : AAAA-MM</label><input class="champ" data-a="sauf" value="${esc((a.sauf || []).join(", "))}">
+      <div class="flex" style="margin-top:14px"><button class="bouton principal" data-ok>Enregistrer</button>${id ? `<button class="bouton" data-suppr>Supprimer</button>` : ""}</div>` });
+    const val = k => m.querySelector(`[data-a="${k}"]`).value.trim();
+    m.querySelector("[data-ok]").onclick = async () => {
+      const abo = { nom: val("nom") || "Abonnement", prix: parseFloat(val("prix").replace(",", ".")) || 0, debut: val("debut"), fin: val("fin"), sauf: val("sauf").split(/[,\s]+/).filter(x => /^\d{4}-\d{2}$/.test(x)) };
+      if (!abo.debut) return S.toast("Indique le premier mois payé");
+      await S.agir("abonnement", { id, abonnement: abo }); S.fermerModale();
+    };
+    const sup = m.querySelector("[data-suppr]"); if (sup) sup.onclick = async () => { await S.agir("abonnement", { id, suppr: true }); S.fermerModale(); };
+  };
+  $("[data-abo-ajout]", b).onclick = () => editer(null);
+  $$("[data-abo-mod]", b).forEach(x => x.onclick = () => editer(x.dataset.aboMod));
+};
 const zoneDe = b => $("[data-zone]", b), outilsDe = b => $("[data-outils]", b);
 function segments(b, options, valeur, fn) {
   const o = outilsDe(b);
