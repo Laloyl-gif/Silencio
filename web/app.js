@@ -316,7 +316,7 @@ function majChrome() {
     const lignes = [];
     if (e.en_ligne === false) lignes.push(`<span class="alerte">Hors ligne</span>`);
     if (!s.active) lignes.push("Synchro GitHub non réglée");
-    else if (s.erreur) lignes.push(`<span class="alerte" title="${esc(s.erreur)}">Synchro en échec</span>`);
+    else if (s.erreur) lignes.push(`<a class="alerte" href="#/reglages/amis" title="${esc(s.erreur)}">Synchro GitHub : ${esc(s.erreur.length > 60 ? s.erreur.slice(0, 58) + "…" : s.erreur)}</a>`);
     else lignes.push(heure ? `Synchronisé à ${heure}` : "Synchro en attente");
     if (e.appareil?.tmdb?.connecte && f.attente) lignes.push(`${S.pluriel(f.attente, "envoi")} TMDB en attente`);
     const nom = S.moi?.profil?.nom || "";

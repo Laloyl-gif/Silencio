@@ -16,7 +16,8 @@
   let parPage = false;                     // l'appel par l'extension a échoué mais celui de la page marche : on garde la page
 
   async function gql(query, variables, operationName) {
-    const h = { "content-type": "application/json", "accept": "application/graphql+json, application/json" };
+    const h = { "content-type": "application/json", "accept": "application/graphql+json, application/json",
+      "x-imdb-client-name": "imdb-web-next-localized", "x-imdb-user-country": "FR", "x-imdb-user-language": "fr-FR" };
     if (session) h["x-amzn-sessionid"] = session;
     const corps = JSON.stringify({ query, operationName, variables });
     let r = null, raison = "";
@@ -39,7 +40,10 @@
         throw new Error(`IMDb injoignable${raison ? ` (${raison})` : ""} : vérifie dans la fenêtre de Silencio Sync que l'accès aux sites est autorisé.`);
       }
     }
-    if (r.status === 401 || r.status === 403) throw new Bloque("session IMDb refusée : reconnecte-toi sur imdb.com dans Firefox.");
+    if (r.status === 401 || r.status === 403) {
+      const t = await (r.text ? r.text() : r.json().then(JSON.stringify)).catch(() => "");
+      throw new Bloque(`IMDb refuse la requête (${r.status}${t ? " : " + String(t).replace(/\s+/g, " ").slice(0, 120) : ""}).`);
+    }
     if (r.status === 429) throw new Bloque("IMDb demande de ralentir : nouvel essai au prochain passage.");
     const j = await r.json().catch(() => null);
     if (!j) throw new Error(`IMDb a répondu ${r.status}`);

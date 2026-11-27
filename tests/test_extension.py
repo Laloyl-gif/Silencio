@@ -81,6 +81,8 @@ class Faux(BaseHTTPRequestHandler):
         RECU.append((self.path, dict(self.headers), corps))
         if self.path == "/api/v0/production-log-entries":
             return self.envoyer(201, {"id": "x"})
+        if "/like/" in self.path and "48102" in self.path or self.path == "/film/blue-velvet/like/":
+            return self.envoyer(403, {"result": False, "messages": ["Forbidden"]})
         if self.path.startswith("/s/film:") or "watchlist" in self.path:
             return self.envoyer(200, {"result": True, "csrf": "csrf-2"})
         self.envoyer(404, {})
@@ -153,6 +155,12 @@ def main():
         posts = [json.loads(r[2]) for r in RECU if r[0] == "/api/v0/production-log-entries"][avant:]
         verifier(all(x["etat"] == "ok" for x in rep["resultats"]) and sorted(p["productionId"] for p in posts) == sorted(["1Xa2", "2bc4", "1fKz"]),
                  "plusieurs films d'un coup : trois entrées de journal, chacune pour le bon film")
+        # un refus (403) sur une action ne bloque pas les suivantes
+        rep = pg.evaluate("""async ops => await window.__ecoutes[0]({ type: "silencio-executer", ops, ctx: { csrf: "c", pseudo: "etienne", rapide: true } })""", [
+            {"id": "l1", "cle": "like|m:793", "sorte": "like", "action": "poser", "valeur": 1, "tmdb": 793},
+            {"id": "n1", "cle": "note|m:793", "sorte": "note", "action": "poser", "valeur": 4, "tmdb": 793}])
+        et = {r["id"]: r["etat"] for r in rep["resultats"]}
+        verifier(et == {"l1": "echec", "n1": "ok"} and not rep["bloque"], "Letterboxd : un 403 sur une action n'arrête pas les autres")
         # modifier puis supprimer une entrée du journal
         rep = pg.evaluate("""async ops => await window.__ecoutes[0]({ type: "silencio-executer", ops, ctx: { csrf: "c", pseudo: "etienne", rapide: true } })""", [
             {"id": "m", "cle": "vu|j1", "sorte": "vu", "action": "poser", "ref": "x", "tmdb": 1018,
@@ -165,10 +173,11 @@ def main():
         verifier(et["s"]["etat"] == "ok" and any(r[0] == "DELETE /api/v0/production-log-entries/v42" for r in RECU),
                  "journal : entrée supprimée (retrouvée sur la page du journal)")
         # une adresse inconnue n'est réessayée qu'une fois par jour
+        n_avant = len(RECU)
         rep = pg.evaluate("""async ops => await window.__ecoutes[0]({ type: "silencio-executer", ops, ctx: { csrf: "c", pseudo: "etienne", rapide: true,
             adresses: {}, essais: { like: Date.now() } } })""", [{"id": "g", "cle": "like|m:1018", "sorte": "like", "action": "poser", "valeur": 1, "tmdb": 1018}])
         verifier(rep["resultats"][0]["etat"] == "echec" and "demain" in rep["resultats"][0]["erreur"] and
-                 not any("/like/" in r[0] for r in RECU), "exploration d'adresses limitée à une fois par jour")
+                 not any("/like/" in r[0] for r in RECU[n_avant:]), "exploration d'adresses limitée à une fois par jour")
 
         # ---- IMDb
         gql = []

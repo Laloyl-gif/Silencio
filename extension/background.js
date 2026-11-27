@@ -72,6 +72,16 @@ async function parler(onglet, message) {
 }
 
 // ---------------------------------------------------------------- requêtes sans onglet
+async function cookiesDu(url) {
+  // avec l'isolation des sites de Firefox (protection renforcée), il faut demander tous les cloisonnements
+  for (const opts of [{ url, firstPartyDomain: null }, { url }]) {
+    try {
+      const ks = await B.cookies.getAll(opts);
+      if (ks && ks.length) return ks;
+    } catch (e) { /* option inconnue de ce Firefox */ }
+  }
+  return [];
+}
 // Quand l'extension parle elle-même à Letterboxd ou IMDb, ses requêtes partent comme celles du site : avec ta session
 // (les cookies du site, lus par l'API cookies) et l'origine du site. Seules les requêtes de l'extension sont touchées.
 if (B.webRequest && B.webRequest.onBeforeSendHeaders) {
@@ -79,11 +89,10 @@ if (B.webRequest && B.webRequest.onBeforeSendHeaders) {
     B.webRequest.onBeforeSendHeaders.addListener(async d => {
       if (!String(d.originUrl || d.documentUrl || "").startsWith(location.origin)) return {};
       const site = d.url.startsWith("https://letterboxd.com") ? "https://letterboxd.com" : "https://www.imdb.com";
-      const h = d.requestHeaders.filter(x => !/^(origin|referer)$/i.test(x.name));
-      if (!h.some(x => /^cookie$/i.test(x.name))) {
-        const ks = await B.cookies.getAll({ url: d.url }).catch(() => []);
-        if (ks.length) h.push({ name: "Cookie", value: ks.map(k => `${k.name}=${k.value}`).join("; ") });
-      }
+      // la session du site (cookies du site, y compris ceux de connexion) remplace ce que Firefox aurait joint
+      const ks = await cookiesDu(d.url);
+      const h = d.requestHeaders.filter(x => !/^(origin|referer)$/i.test(x.name) && !(ks.length && /^cookie$/i.test(x.name)));
+      if (ks.length) h.push({ name: "Cookie", value: ks.map(k => `${k.name}=${k.value}`).join("; ") });
       h.push({ name: "Referer", value: site + "/" });
       if (d.method !== "GET" && d.method !== "HEAD") h.push({ name: "Origin", value: site });
       return { requestHeaders: h };
@@ -123,13 +132,13 @@ async function ongletPour(p, motif) {
 async function contexte(p, r, c) {
   if (p === "lb") {
     const csrf = await B.cookies.get({ url: "https://letterboxd.com/", name: "com.xk72.webparts.csrf" }).catch(() => null);
-    const tous = await B.cookies.getAll({ domain: "letterboxd.com" }).catch(() => []);
+    const tous = await cookiesDu("https://letterboxd.com/");
     // les noms des cookies de session ne sont pas publics : on vérifie seulement que le site a déjà été ouvert ;
     // une session expirée est repérée à la première réponse refusée
     const connecte = tous.length > 0;
     return { csrf: csrf?.value || "", pseudo: r.pseudo || "", cache: c.cacheLb || {}, connecte };
   }
-  const tous = await B.cookies.getAll({ domain: "imdb.com" }).catch(() => []);
+  const tous = await cookiesDu("https://www.imdb.com/");
   const session = tous.find(k => k.name === "session-id")?.value || "";
   const connecte = tous.length > 0;
   return { session, connecte, favoris: r.favoris || "" };

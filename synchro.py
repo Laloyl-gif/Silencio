@@ -140,7 +140,8 @@ class Synchro:
             except HorsLigne:
                 self.etat["erreur"] = "hors ligne : synchro au retour du réseau"
             except ErreurHTTP as e:
-                self.etat["erreur"] = {401: "jeton GitHub refusé", 403: "pas le droit d'écrire dans ce dépôt",
+                self.etat["erreur"] = {401: "jeton GitHub refusé (expiré ou régénéré) : colle le nouveau dans Réglages, Amis et synchro",
+                                       403: "le jeton GitHub n'a pas le droit d'écrire dans ce dépôt (Contents : Read and write)",
                                        404: "dépôt introuvable (ou jeton sans accès)"}.get(e.code, f"GitHub : {e}")
             except Exception as e:  # noqa: BLE001
                 self.etat["erreur"] = f"synchro : {e}"[:200]

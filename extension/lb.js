@@ -27,9 +27,11 @@
     return s ? s[1] : "";
   }
 
-  function verifier(r) {
+  // lecture d'une page : 403 = Letterboxd refuse vraiment (on s'arrête) ; pour une action, un 403 ne concerne que
+  // cette action (mauvaise adresse ou jeton) : on note l'échec et on continue
+  function verifier(r, action) {
     if (r.status === 401) throw new Bloque("session Letterboxd expirée : reconnecte-toi sur letterboxd.com dans Firefox.");
-    if (r.status === 403) throw new Bloque("Letterboxd refuse pour l'instant (403) : nouvel essai au prochain passage.");
+    if (r.status === 403 && !action) throw new Bloque("Letterboxd refuse pour l'instant (403) : nouvel essai au prochain passage.");
     if (r.status === 429) throw new Bloque("Letterboxd demande de ralentir : nouvel essai au prochain passage.");
   }
 
@@ -78,7 +80,7 @@
       method: "POST", credentials: "include", body: corps, referrer: `https://letterboxd.com/film/${slug}/`,
       headers: { "X-Requested-With": "XMLHttpRequest", "Accept": "application/json, text/javascript, */*; q=0.01" }
     });
-    verifier(r);
+    verifier(r, true);
     let j = null;
     try { j = await r.json(); } catch { /* pas du JSON */ }
     if (j && j.csrf) csrf = j.csrf;
@@ -94,7 +96,7 @@
     if (connue != null && variantes[connue]) {
       const r = await action(variantes[connue][0], variantes[connue][1], slug);
       if (r.ok) return { etat: "ok" };
-      if (r.statut && r.statut !== 404 && r.statut !== 405) return { etat: "echec", erreur: r.message };
+      if (r.statut && ![403, 404, 405].includes(r.statut)) return { etat: "echec", erreur: r.message };
     }
     if (Date.now() - (essais[sorte] || 0) < JOUR) return { etat: "echec", erreur: "adresse à retrouver : nouvel essai demain (ou calibre l'action avec l'enregistreur)" };
     essais[sorte] = Date.now();
@@ -178,7 +180,7 @@
       if (champ === "lid" && f.lid) b.productionId = f.lid; else b.filmId = f.filmId;
       const r = await envoyerJson("POST", chemin, b, f.slug);
       if (r.status === 404) continue;
-      verifier(r);
+      verifier(r, true);
       if (r.ok) {
         let j = null;
         try { j = await r.json(); } catch { /* réponse vide */ }
@@ -226,11 +228,11 @@
     for (const i of explorer ? ordre : ordre.slice(0, 1)) {
       const [m, chemin] = variantes[i];
       const r = await envoyerJson(m, chemin, corps, slug);
-      verifier(r);
+      verifier(r, true);
       if (r.ok) { adresses[sorte] = i; return { etat: "ok" }; }
       if (r.status === 404 && absentOk && adresses[sorte] === i) return { etat: "deja" };
       dernier = `${r.status} ${(await r.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 120)}`;
-      if (r.status !== 404 && r.status !== 405) break;
+      if (![403, 404, 405].includes(r.status)) break;
       await pause(hasard(1500, 3000));
     }
     if (explorer) essais[sorte] = Date.now();
