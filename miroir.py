@@ -25,6 +25,7 @@ Ce qui est caché à tes amis (films cachés, visionnages cachés, listes privé
 """
 import hashlib
 import json
+import re
 import time
 
 PLATEFORMES = {"lb": "Letterboxd", "imdb": "IMDb", "rf": "Refract"}
@@ -34,6 +35,8 @@ FAVORIS = "_favoris"                               # la watchlist IMDb, qui reç
 # 1 000) ; sur Letterboxd, une entrée de journal que Silencio a créée suit ses modifications et sa suppression.
 RETIRABLE = {"lb": {"vu"}, "imdb": set(), "rf": {"wl", "ep"}}
 PAUSE_ECHEC = 6 * 3600                             # une opération ratée n'est retentée qu'après ce délai
+PAUSE_COURTE = 20 * 60                             # … sauf un refus passager (jeton, pare-feu, réseau)
+PASSAGER = re.compile(r"csrf|expired|403|cloudflare|injoignable|networkerror|429|ralentir", re.I)
 
 
 def _vivants(section):
@@ -249,7 +252,8 @@ def operations(doc, plateforme, meta, echecs=None, limite=60, forcer=False):
     for op in ops:
         op["id"] = ident(plateforme, op["cle"], op["action"], op["valeur"])
         ech = echecs.get(op["cle"])
-        if ech and not forcer and maintenant - ech.get("quand", 0) < PAUSE_ECHEC and ech.get("id") == op["id"]:
+        if ech and not forcer and ech.get("id") == op["id"] and \
+                maintenant - ech.get("quand", 0) < (PAUSE_COURTE if PASSAGER.search(ech.get("erreur") or "") else PAUSE_ECHEC):
             continue
         if plateforme in ("lb", "imdb") and op["sorte"] not in ("liste", "critique") and \
                 not op.get("tmdb") and not op.get("imdb"):

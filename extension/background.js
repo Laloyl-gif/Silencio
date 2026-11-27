@@ -11,7 +11,8 @@ const DEFAUT = {
   cacheLb: {}, journal: [], manuels: [], enregistrements: [], enregistreurJusqua: 0, dernier: null,
   // discrétion : pauses après un refus, quota par jour, onglets ouverts rarement, adresses qui marchent
   pauses: {}, quota: {}, dernierOnglet: {}, adresses: {}, essais: {}, prochain: 0,
-  sites: { lb: true, imdb: true }, attente: { lb: [], imdb: [] }, modes: { lb: "auto", imdb: "clic" }, vuModif: 0
+  sites: { lb: true, imdb: true }, attente: { lb: [], imdb: [] }, modes: { lb: "auto", imdb: "clic" }, vuModif: 0,
+  silencioAbsent: true, apresLancement: 0
 };
 const ORIGINES = ["https://letterboxd.com/*", "https://www.imdb.com/*", "https://m.imdb.com/*", "https://api.graphql.imdb.com/*"];
 const QUOTA_JOUR = 80;                       // actions par site et par jour, au plus
@@ -296,7 +297,7 @@ B.runtime.onInstalled.addListener(async d => {
   await planifier(hasard(1, 3));
   if (d.reason === "install") B.runtime.openOptionsPage().catch(() => {});
 });
-B.runtime.onStartup.addListener(() => planifier(hasard(1, 4)));
+B.runtime.onStartup.addListener(() => { poser({ silencioAbsent: true }); planifier(hasard(2, 4)); });
 B.alarms.onAlarm.addListener(async a => {
   if (a.name === "veille") return veille();
   if (a.name !== "silencio") return;
@@ -310,7 +311,10 @@ async function veille() {
   const c = await cfg();
   if (!c.actif || !c.jeton || enCours) return;
   let b;
-  try { b = await silencio("/api/ext/bonjour"); } catch { return; }
+  try { b = await silencio("/api/ext/bonjour"); } catch { if (!c.silencioAbsent) await poser({ silencioAbsent: true }); return; }
+  // Silencio vient d'être lancé : une synchro 2 minutes après
+  if (c.silencioAbsent) { await poser({ silencioAbsent: false, apresLancement: Date.now() + 2 * 60e3 }); return; }
+  if (c.apresLancement && Date.now() >= c.apresLancement) { await poser({ apresLancement: 0 }); await synchroniser("ajout"); return; }
   const a = b.a_faire || {};
   const auto = p => (b.modes?.[p] || "auto") === "auto" && c.sites?.[p] !== false && a[p] > 0;
   badge(a, b.modes);

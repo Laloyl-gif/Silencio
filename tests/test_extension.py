@@ -54,8 +54,10 @@ class Faux(BaseHTTPRequestHandler):
         m = re.fullmatch(r"/film/([^/]+)/", p)
         if m:
             tmdb, (slug, lid, fid) = next((k, v) for k, v in FILMS.items() if v[0] == m.group(1))
-            return self.envoyer(200, FILM.format(slug=slug, lid=lid, fid=fid, tmdb=tmdb), "text/html",
-                                {"x-letterboxd-identifier": lid})
+            page = FILM.format(slug=slug, lid=lid, fid=fid, tmdb=tmdb)
+            if slug == "eraserhead":
+                page = page.replace("</body>", "<script>var supermodelCSRF = 'jeton-frais';</script></body>")
+            return self.envoyer(200, page, "text/html", {"x-letterboxd-identifier": lid})
         if p == "/etienne/film/blue-velvet/diary/":
             return self.envoyer(200, '<table class="diary-table"><tr class="diary-entry-row" data-viewing-id="v42"><td><a href="/etienne/films/diary/for/2024/03/01/">1</a></td></tr></table>', "text/html")
         if p.startswith("/etienne/film/"):
@@ -80,6 +82,8 @@ class Faux(BaseHTTPRequestHandler):
         corps = self.rfile.read(n).decode()
         RECU.append((self.path, dict(self.headers), corps))
         if self.path == "/api/v0/production-log-entries":
+            if self.headers.get("X-CSRF-TOKEN") == "perime":
+                return self.envoyer(403, "Invalid CSRF token", "text/plain")
             return self.envoyer(201, {"id": "x"})
         if "/like/" in self.path and "48102" in self.path or self.path == "/film/blue-velvet/like/":
             return self.envoyer(403, {"result": False, "messages": ["Forbidden"]})
@@ -155,6 +159,13 @@ def main():
         posts = [json.loads(r[2]) for r in RECU if r[0] == "/api/v0/production-log-entries"][avant:]
         verifier(all(x["etat"] == "ok" for x in rep["resultats"]) and sorted(p["productionId"] for p in posts) == sorted(["1Xa2", "2bc4", "1fKz"]),
                  "plusieurs films d'un coup : trois entrées de journal, chacune pour le bon film")
+        # jeton CSRF périmé : Letterboxd refuse, l'extension relit le jeton sur la page du film et recommence
+        rep = pg.evaluate("""async ops => await window.__ecoutes[0]({ type: "silencio-executer", ops, ctx: { csrf: "perime", pseudo: "etienne", rapide: true,
+            cache: { "985": { slug: "eraserhead", filmId: "49001", lid: "2bc4" } } } })""", [
+            {"id": "c1", "cle": "vu|jc1", "sorte": "vu", "action": "poser", "tmdb": 985, "nb": 1,
+             "valeur": {"cle": "m:985", "date": "2026-11-27", "rewatch": False, "note": 4, "like": False, "critique": ""}}])
+        derniers = [r for r in RECU if r[0] == "/api/v0/production-log-entries"][-1]
+        verifier(rep["resultats"][0]["etat"] == "ok" and derniers[1].get("X-CSRF-TOKEN") == "jeton-frais", "Letterboxd : jeton CSRF périmé renouvelé tout seul")
         # un refus (403) sur une action ne bloque pas les suivantes
         rep = pg.evaluate("""async ops => await window.__ecoutes[0]({ type: "silencio-executer", ops, ctx: { csrf: "c", pseudo: "etienne", rapide: true } })""", [
             {"id": "l1", "cle": "like|m:793", "sorte": "like", "action": "poser", "valeur": 1, "tmdb": 793},

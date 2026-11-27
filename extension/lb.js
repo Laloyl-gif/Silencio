@@ -18,17 +18,30 @@
   let csrf = "", pseudo = "", cache = {}, adresses = {}, essais = {};
   const JOUR = 24 * 3600e3;
 
+  // Le jeton anti-falsification (CSRF) de Letterboxd : celui que la page elle-même utilise est le bon.
+  const JETON = [/supermodelCSRF\s*=\s*['"]([^'"]+)/, /name="__csrf"\s+value="([^"]+)"/, /value="([^"]+)"\s+name="__csrf"/, /data-csrf="([^"]+)"/];
+  function jetonDans(html) {
+    for (const re of JETON) { const m = String(html || "").match(re); if (m) return m[1]; }
+    return "";
+  }
   function csrfDeLaPage() {
-    const m = document.cookie.match(/com\.xk72\.webparts\.csrf=([^;]+)/);
-    if (m) return decodeURIComponent(m[1]);
+    if (FOND) return "";
     const i = document.querySelector('input[name="__csrf"]');
-    if (i) return i.value;
-    const s = [...document.scripts].map(x => x.textContent).join("\n").match(/supermodelCSRF\s*=\s*['"]([^'"]+)/);
-    return s ? s[1] : "";
+    if (i && i.value) return i.value;
+    const s = jetonDans([...document.scripts].map(x => x.textContent).filter(t => !/silencio/i.test(t)).join("\n"));
+    if (s) return s;
+    const m = document.cookie.match(/com\.xk72\.webparts\.csrf=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : "";
+  }
+  // jeton refusé (« Invalid CSRF token », « The form on this page had expired ») : on relit une page et on le reprend
+  const jetonPerime = t => /csrf|form on this page had expired|expired and could not be accepted/i.test(t || "");
+  async function rafraichirCsrf(slug) {
+    const r = await F(slug ? `/film/${slug}/` : "/", { credentials: "include" });
+    const t = jetonDans(await r.text().catch(() => ""));
+    if (t) csrf = t;
+    return !!t;
   }
 
-  // lecture d'une page : 403 = Letterboxd refuse vraiment (on s'arrête) ; pour une action, un 403 ne concerne que
-  // cette action (mauvaise adresse ou jeton) : on note l'échec et on continue
   function verifier(r, action) {
     if (r.status === 401) throw new Bloque("session Letterboxd expirée : reconnecte-toi sur letterboxd.com dans Firefox.");
     if (r.status === 403 && !action) throw new Bloque("Letterboxd refuse pour l'instant (403) : nouvel essai au prochain passage.");
@@ -45,6 +58,7 @@
     const m = new URL(r.url).pathname.match(/^\/film\/([^/]+)\//);
     const html = await r.text();
     if (/cf-chl|challenge-platform|Just a moment/i.test(html)) throw new Bloque("Letterboxd vérifie le navigateur (Cloudflare).");
+    const jeton = jetonDans(html); if (jeton) csrf = jeton;
     if (!m) return null;
     const doc = new DOMParser().parseFromString(html, "text/html");
     let lid = r.headers.get("x-letterboxd-identifier") || "", filmId = "";
@@ -75,6 +89,11 @@
 
   // ---- une action du site (formulaire) : réussie quand la réponse JSON contient "result": true
   async function action(chemin, champs, slug) {
+    let r = await actionUneFois(chemin, champs, slug);
+    if (!r.ok && jetonPerime(r.message) && await rafraichirCsrf(slug)) r = await actionUneFois(chemin, champs, slug);
+    return r;
+  }
+  async function actionUneFois(chemin, champs, slug) {
     const corps = new URLSearchParams({ ...champs, __csrf: csrf });
     const r = await F(chemin, {
       method: "POST", credentials: "include", body: corps, referrer: `https://letterboxd.com/film/${slug}/`,
@@ -155,10 +174,13 @@
   }
 
   async function envoyerJson(methode, chemin, corps, slug) {
-    return F(chemin, {
+    const une = () => F(chemin, {
       method: methode, credentials: "include", body: corps ? JSON.stringify(corps) : undefined,
       referrer: `https://letterboxd.com/film/${slug}/`, headers: ENTETES_JSON()
     });
+    let r = await une();
+    if ((r.status === 403 || r.status === 400) && jetonPerime(await r.clone().text().catch(() => "")) && await rafraichirCsrf(slug)) r = await une();
+    return r;
   }
 
   const idDe = j => j && (j.id || j.lid || (j.data && (j.data.id || j.data.lid)) || (j.logEntry && (j.logEntry.id || j.logEntry.lid)) ||
@@ -241,7 +263,7 @@
 
   async function executer(ops, ctx, aBlanc) {
     vitesse = ctx.rapide ? 0.005 : 1;
-    csrf = ctx.csrf || csrfDeLaPage();
+    csrf = csrfDeLaPage() || ctx.csrf;
     pseudo = ctx.pseudo || "";
     cache = ctx.cache || {};
     adresses = { ...(ctx.adresses || {}) };

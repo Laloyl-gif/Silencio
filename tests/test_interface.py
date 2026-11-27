@@ -350,6 +350,9 @@ with sync_playwright() as p:
     api("/api/action", {"type": "journal", "entree": {"cle": "m:391729", "date": "2026-11-25", "note": 7}})
     assert api("/api/ext/bonjour", entetes={"X-Silencio-Jeton": jeton})["a_faire"]["lb"] >= 2
     time.sleep(21)
+    pe.evaluate("async () => await window.__msg({ type: 'veille' })")     # la 1re fois : Silencio vient d'apparaître
+    etat_v = pe.evaluate("async () => await window.__msg({ type: 'etat' })")
+    assert etat_v["apresLancement"] > 0 and not etat_v["silencioAbsent"], "synchro prévue 2 minutes après le lancement de Silencio"
     pe.evaluate("async () => await window.__msg({ type: 'veille' })")
     assert api("/api/ext/bonjour", entetes={"X-Silencio-Jeton": jeton})["a_faire"]["lb"] == 0, "envoi juste après l'ajout"
     etat_ext = pe.evaluate("async () => await window.__msg({ type: 'etat' })")
