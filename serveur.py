@@ -59,6 +59,30 @@ class App:
         self.synchro.demarrer()
         threading.Thread(target=self._entretien, daemon=True).start()
 
+    def reparer_coeurs(self, forcer=False):
+        """v19 : rétablit les coups de cœur perdus quand deux copies du profil se sont rencontrées (la plus récente
+        écrasait le film entier). Repère : Letterboxd a ce like (envoyé ou présent avant la liaison), ou la synchro l'y
+        a retiré, alors que Silencio ne l'a plus. Une fois par appareil."""
+        app = self.stock.appareil
+        doc = self.stock.doc
+        if not doc or (app.get("repare_coeurs_19") and not forcer):
+            return 0
+        titres = doc.get("titres") or {}
+        cles = {k.split("|", 1)[1] for k in miroir.miroir(doc, "lb") if k.startswith("like|")}
+        cles |= {h["cle"].split("|", 1)[1] for h in app.get("historique_envois") or []
+                 if h.get("p") == "lb" and h.get("cle", "").startswith("like|") and h.get("action") == "retirer"
+                 and h.get("etat") in ("ok", "deja")}
+        a_remettre = [c for c in cles if (titres.get(c) or {}) and not titres[c].get("x") and not titres[c].get("coeur")]
+        if a_remettre:
+            self.stock.action("import", {"sections": {"titres": {c: {"coeur": True} for c in a_remettre}},
+                                         "libelle": f"{len(a_remettre)} coups de cœur rétablis"})
+            self.tmdb.mettre_en_file([("favori", c, True) for c in a_remettre])
+            self.synchro.demander(5)
+        app["repare_coeurs_19"] = time.time()
+        self.stock.sauver_appareil()
+        print(f"Coups de cœur rétablis : {len(a_remettre)}")
+        return len(a_remettre)
+
     def _migrer(self):
         """v7 : Refract ne reçoit plus que les ajouts faits après sa liaison (et les échecs 429 sont oubliés)."""
         app = self.stock.appareil
@@ -89,6 +113,7 @@ class App:
             self.reveil_rf.clear()
             try:
                 self._migrer()
+                self.reparer_coeurs()
                 if tour % 2 == 0:
                     self.listes_auto()
                 self.tmdb.vider_file()

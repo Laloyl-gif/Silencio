@@ -243,7 +243,16 @@
     const ref = op.ref || await trouverEntree(f, op.avant && op.avant.date);
     if (!ref) return { etat: "deja" };                 // déjà absente du journal Letterboxd
     const variantes = ADRESSES_JOURNAL.map(([c]) => ["DELETE", `${c}/${ref}`]);
-    const r = await essayerJson("journal-supprimer", variantes, null, f.slug, true);
+    let r = await essayerJson("journal-supprimer", variantes, null, f.slug, true);
+    // refusé (403) : l'identifiant gardé n'est peut-être plus le bon ; on relit ton journal Letterboxd pour ce film
+    if (r.etat === "echec" && /\b403\b/.test(r.erreur || "") && op.ref) {
+      const l = await entreesLb(f).catch(() => null);
+      if (l) {
+        const e = l.find(x => x.date === (op.avant && op.avant.date));
+        if (!e) return { etat: "deja" };               // plus dans ton journal Letterboxd : rien à supprimer
+        if (e.id && e.id !== op.ref) r = await essayerJson("journal-supprimer", ADRESSES_JOURNAL.map(([c]) => ["DELETE", `${c}/${e.id}`]), null, f.slug, true);
+      }
+    }
     return r;
   }
 

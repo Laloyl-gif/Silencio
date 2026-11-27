@@ -78,7 +78,10 @@ async function parler(onglet, message) {
     try {
       await B.scripting.executeScript({ target: { tabId: onglet.id }, files: [SCRIPT[message.p]] });
     } catch (e) {
-      if (/host permission/i.test(e.message)) throw new Error("accès au site refusé par Firefox : ouvre la fenêtre de Silencio Sync et clique « Autoriser l'accès aux sites ».");
+      if (/host permission/i.test(e.message)) {
+        if (!(await autorisationsManquantes()).length) { derniere = new Error("la page du site n'était pas chargée (onglet en arrière-plan) : nouvel essai"); if (B.tabs.reload) await B.tabs.reload(onglet.id).catch(() => {}); continue; }
+        throw new Error("accès au site refusé par Firefox : ouvre la fenêtre de Silencio Sync et clique « Autoriser l'accès aux sites ».");
+      }
       derniere = e; continue;
     }
     try { return await B.tabs.sendMessage(onglet.id, message); } catch (e) { derniere = e; }
@@ -142,6 +145,15 @@ async function ongletPour(p, motif) {
   const t = await B.tabs.create({ url: SITE[p], active: false });
   if (B.tabs.hide) await B.tabs.hide(t.id).catch(() => {});      // caché de la barre d'onglets (Firefox ordinateur)
   await attendreChargement(t.id);
+  // Firefox Android ne charge pas un onglet ouvert en arrière-plan : on l'affiche une seconde, puis on revient
+  const charge = await B.tabs.get(t.id).catch(() => null);
+  if (charge && !/^https:\/\//.test(charge.url || "")) {
+    const [avant] = await B.tabs.query({ active: true, currentWindow: true }).catch(() => []);
+    if (B.tabs.update) await B.tabs.update(t.id, { active: true }).catch(() => {});
+    await attendreChargement(t.id);
+    await new Promise(r => setTimeout(r, 1500));
+    if (avant && avant.id !== t.id && B.tabs.update) await B.tabs.update(avant.id, { active: true }).catch(() => {});
+  }
   await poser({ dernierOnglet: { ...c.dernierOnglet, [p]: Date.now() } });
   return { id: t.id, cree: true };
 }

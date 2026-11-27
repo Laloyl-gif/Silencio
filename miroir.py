@@ -242,6 +242,8 @@ def operations(doc, plateforme, meta, echecs=None, limite=60, forcer=False):
         if k in voulu or sorte not in RETIRABLE.get(plateforme, ()):
             continue
         parts = k.split("|")
+        if not _retrait_voulu(doc, sorte, parts):
+            continue
         op = {"cle": k, "sorte": sorte, "action": "retirer", "valeur": None, "avant": v}
         if sorte in ("item", "fav"):
             lid = FAVORIS if sorte == "fav" else parts[1]
@@ -283,10 +285,32 @@ def operations(doc, plateforme, meta, echecs=None, limite=60, forcer=False):
             "total": len(sortie)}
 
 
+def _retrait_voulu(doc, sorte, parts):
+    """Un retrait ne part que si tu as vraiment enlevé la chose dans Silencio : visionnage supprimé, note effacée,
+    cœur décoché, film sorti de la watchlist. Une information simplement absente (profil fusionné, date devenue
+    approximative, visionnage caché…) ne retire jamais rien sur tes comptes."""
+    if sorte == "vu":
+        e = (doc.get("journal") or {}).get(parts[1])
+        return not e or bool(e.get("x"))
+    if sorte in ("like", "note", "marque"):
+        t = (doc.get("titres") or {}).get(parts[-1])
+        if not t:
+            return False
+        if t.get("x"):
+            return True
+        champ = {"like": "coeur", "note": "note", "marque": "vu"}[sorte]
+        return champ in t and t[champ] in (None, False)
+    if sorte in ("wl", "fav"):
+        w = (doc.get("watchlist") or {}).get(parts[-1])
+        return bool(w and w.get("x"))
+    return True
+
+
 def compter(doc, plateforme):
     voulu, fait = souhaite(doc, plateforme), miroir(doc, plateforme)
     a_faire = sum(1 for k, v in voulu.items() if not _pareil(plateforme, k, fait.get(k), v))
-    a_retirer = sum(1 for k in fait if k not in voulu and k.split("|")[0] in RETIRABLE.get(plateforme, ()))
+    a_retirer = sum(1 for k in fait if k not in voulu and k.split("|")[0] in RETIRABLE.get(plateforme, ())
+                    and _retrait_voulu(doc, k.split("|")[0], k.split("|")))
     a_faire += a_retirer
     return {"a_envoyer": a_faire, "a_retirer": a_retirer, "envoye": sum(1 for k in fait if k in voulu)}
 

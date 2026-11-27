@@ -94,10 +94,23 @@ def fusionner(a, b):
     for s in SECTIONS:
         sa, sb = r.setdefault(s, {}), b.get(s) or {}
         for k, v in sb.items():
-            g = _plus_recente(sa.get(k), v)
+            avant = sa.get(k)
+            g = _plus_recente(avant, v)
             if g is v:
                 sa[k] = copy.deepcopy(v)
+            if s == "titres":
+                sa[k] = _completer_titre(sa[k], v if g is avant else avant)
     return r
+
+
+def _completer_titre(gagnant, autre):
+    """Un film : la version la plus récente gagne, mais une information qu'elle ne connaît pas du tout (clé absente,
+    par exemple un coup de cœur venu d'un import que l'autre appareil n'a pas fait) est reprise de l'autre version.
+    Une valeur posée exprès (coup de cœur retiré = False) reste telle quelle."""
+    if not gagnant or not autre or gagnant.get("x") or autre.get("x") or gagnant.get("masque") or autre.get("masque"):
+        return gagnant
+    manque = {c: v for c, v in autre.items() if c not in gagnant and c not in ("maj", "x")}
+    return dict(gagnant, **copy.deepcopy(manque)) if manque else gagnant
 
 
 # ---------------------------------------------------------------- partie privée
@@ -420,9 +433,15 @@ class Stock:
         if e["note"] is not None and self._derniere_date(cle, jid) <= e["date"]:
             champs["note"] = e["note"]
             tmdb.append(("note", cle, e["note"]))
-        if e.get("coeur") is not None:
-            champs["coeur"] = bool(e["coeur"])
-            tmdb.append(("favori", cle, bool(e["coeur"])))
+        # coup de cœur : posé par le visionnage ; retiré seulement si tu l'as décoché toi-même dans le formulaire
+        # (un visionnage modifié ne retire plus le cœur d'un film aimé ailleurs)
+        choisi = (d.get("entree") or {}).get("coeur_choisi")
+        if e.get("coeur") and not self.titre(cle).get("coeur"):
+            champs["coeur"] = True
+            tmdb.append(("favori", cle, True))
+        elif e.get("coeur") is False and self.titre(cle).get("coeur") and (choisi or (ancien or {}).get("coeur")):
+            champs["coeur"] = False
+            tmdb.append(("favori", cle, False))
         self._maj_titre(trace, cle, **champs)
         if self._dans_watchlist(cle):
             self._supprimer(trace, "watchlist", cle)
@@ -459,7 +478,8 @@ class Stock:
                 tmdb.append(("favori", cle, False))
             garder = {k: v for k, v in t.items() if k in ("collection",) and v}
             if garder:
-                self._poser(trace, "titres", cle, garder)       # sa place dans ta collection reste
+                # sa place dans ta collection reste ; note, cœur et « vu » sont effacés explicitement (pour les retraits)
+                self._poser(trace, "titres", cle, dict(garder, note=None, coeur=False, vu=False))
             else:
                 self._supprimer(trace, "titres", cle)
         if not garder_watchlist and self._dans_watchlist(cle):

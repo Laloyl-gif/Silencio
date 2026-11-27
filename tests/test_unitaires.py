@@ -486,5 +486,29 @@ h = ms.appareil.get("historique_envois") or []
 verifier(any(e["etat"] == "echec" and e["p"] == "lb" and e["erreur"] == "x" for e in h) and any(e["etat"] == "ok" for e in h),
          "Historique des envois : chaque envoi réussi ou raté est noté, avec son erreur")
 
+# ---- v19 : les coups de cœur ne se perdent plus, et rien n'est retiré sur une simple absence d'information
+a = {"titres": {"m:1": {"note": 8, "coeur": True, "maj": 1}}}
+b = {"titres": {"m:1": {"note": 8, "vu": True, "maj": 2}}}
+f = fusionner(a, b)["titres"]["m:1"]
+verifier(f.get("coeur") is True and f.get("vu") is True and f["maj"] == 2, "fusion : le cœur venu de l'autre copie est gardé")
+b2 = {"titres": {"m:1": {"note": 8, "coeur": False, "maj": 2}}}
+verifier(fusionner(a, b2)["titres"]["m:1"]["coeur"] is False, "fusion : un cœur retiré exprès reste retiré")
+mz = Stock(os.path.join(DOSSIER, "_coeurs"))
+mz.choisir_profil("z", "Z")
+mz.action("coeur", {"cle": "m:603", "val": True})
+mz.action("journal", {"entree": {"cle": "m:603", "date": "2024-05-01", "note": 8}})
+mz.poser_miroirs(miroir.souhaite(mz.doc, "lb") and {f"lb|{k}": v for k, v in miroir.souhaite(mz.doc, "lb").items()})
+jid = next(k for k, v in mz.doc["journal"].items() if v.get("cle") == "m:603")
+mz.action("journal", {"entree": {"id": jid, "cle": "m:603", "date": "2024-05-01", "note": 8, "coeur": False}})
+verifier(mz.doc["titres"]["m:603"].get("coeur") is True, "modifier un visionnage sans toucher au cœur ne retire pas le cœur du film")
+mz.doc["titres"]["m:603"].pop("coeur")                            # cœur inconnu (profil fusionné, import partiel)
+mz.doc["journal"][jid]["approx"] = True                           # date devenue approximative
+o = miroir.operations(mz.doc, "lb", lambda c: {"t": "x"})
+verifier(not [x for x in o["ops"] if x["action"] == "retirer"], ("aucun retrait sans suppression réelle", o["ops"]))
+mz.action("journal", {"entree": {"id": jid, "cle": "m:603", "date": "2024-05-01", "note": 8, "coeur": False, "coeur_choisi": True}})
+mz.action("coeur", {"cle": "m:603", "val": False})
+o = miroir.operations(mz.doc, "lb", lambda c: {"t": "x"})
+verifier(any(x["sorte"] == "like" and x["action"] == "retirer" for x in o["ops"]), "un cœur décoché exprès est bien retiré sur Letterboxd")
+
 print(f"{OK} vérifications réussies")
 shutil.rmtree(DOSSIER, ignore_errors=True)

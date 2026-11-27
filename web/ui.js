@@ -149,6 +149,8 @@ function formulaire(modale, corps, cle, ex, o = {}) {
   const dejaVu = !!(t.vu || S.journalDe(cle).length);
   if ((o.suite || o.sansDate) && !ex) ex = { date: S.aujourdhui().slice(0, 4), revision: false };   // vu sans date : à toi de la retrouver
   const e = Object.assign({ cle, date: S.aujourdhui(), note: t.note ?? null, coeur: !!t.coeur, revision: dejaVu, critique: "", critique_privee: true, prive: false, ou: null, prix: null, avec: [], version: "" }, ex || {});
+  e.coeur = !!(t.coeur || (ex && ex.coeur));          // le cœur du film, même si ce visionnage ne le portait pas
+  let coeurChoisi = false;
   const detail = Object.assign({}, t.detail || {});
   $("h2", modale).textContent = o.suite ? `Compléter, ${o.position}` : ex ? "Modifier" : "J'ai vu";
   const mesCinemas = [...new Map(Object.values(S.vivants(S.moi.journal)).filter(j => j.ou?.type === "cinema" && j.ou.cinema).sort((a, b) => (b.date || "").localeCompare(a.date || "")).map(j => [j.ou.cinema, j.ou])).values()].slice(0, 6);
@@ -198,7 +200,7 @@ function formulaire(modale, corps, cle, ex, o = {}) {
   const rangee = S.rangee(e.note, v => { e.note = v; ecrireNote(); }, { grande: true, delai: 0 });
   rangee.addEventListener("click", () => { e.note = rangee.valeur(); ecrireNote(); });
   $("[data-note]", corps).append(rangee); ecrireNote();
-  $("[data-coeur]", corps).onclick = ev => { e.coeur = !e.coeur; ev.currentTarget.classList.toggle("actif", e.coeur); };
+  $("[data-coeur]", corps).onclick = ev => { e.coeur = !e.coeur; coeurChoisi = true; ev.currentTarget.classList.toggle("actif", e.coeur); };
   // date : aujourd'hui / hier / autre (jour exact, mois ou année)
   let mo = moment, precision = precisionInit, date = e.date;
   const saisie = () => {
@@ -253,7 +255,7 @@ function formulaire(modale, corps, cle, ex, o = {}) {
       const oui = await S.demander("Critique publique", "Cette critique sera visible par tes amis et publiée sur Letterboxd et IMDb. Tu confirmes ?", "Publier", "La garder privée");
       if (!oui) { $("[data-critique-privee]", corps).checked = true; return; }
     }
-    const entree = { id: ex?.id, cle, date: (mo === "autre" ? date : mo === "hier" ? S.hier() : S.aujourdhui()), note: e.note, coeur: e.coeur, revision: rev, critique: $("[data-critique]", corps).value.trim(), critique_privee: $("[data-critique-privee]", corps).checked, prive: $("[data-prive]", corps).checked, ou, prix, avec, version };
+    const entree = { id: ex?.id, cle, date: (mo === "autre" ? date : mo === "hier" ? S.hier() : S.aujourdhui()), note: e.note, coeur: e.coeur, coeur_choisi: coeurChoisi, revision: rev, critique: $("[data-critique]", corps).value.trim(), critique_privee: $("[data-critique-privee]", corps).checked, prive: $("[data-prive]", corps).checked, ou, prix, avec, version };
     if (o.suite) entree.approx = false;
     $("[data-ok]", pied).disabled = true;
     try {
