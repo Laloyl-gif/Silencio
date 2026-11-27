@@ -87,6 +87,8 @@ class App:
             self.reveil_rf.clear()
             try:
                 self._migrer()
+                if tour % 2 == 0:
+                    self.listes_auto()
                 self.tmdb.vider_file()
                 self.tmdb.assurer_metas(self.cles_utiles())
                 if tour % 5 == 0:
@@ -97,6 +99,7 @@ class App:
                 if (vite or tour % 2 == 0) and self.refract.cle:
                     if self.refract.passage():
                         self.synchro.demander(5)
+                    self.notifier_echecs()
             except Exception:  # noqa: BLE001
                 traceback.print_exc()
             tour += 1
@@ -266,6 +269,10 @@ class App:
             raise ValueError("Plateforme inconnue.")
         bilan = miroir.appliquer_resultats(self.stock, p, corps.get("resultats") or [])
         self.synchro.demander(5)
+        try:
+            self.notifier_echecs()
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
         return bilan
 
     def depart(self, plateforme, vide=False):
@@ -429,6 +436,190 @@ class App:
         self.stock.sauver_appareil()
         self.synchro.demander(1)
         return self.etat()
+
+    def tableau(self, n=12):
+        """Les derniers visionnages et leur état sur chaque plateforme : envoyé, en attente, en erreur."""
+        doc = self.stock.doc
+        if not doc:
+            return {"r": []}
+        app = self.stock.appareil
+        journal = [(k, e) for k, e in (doc.get("journal") or {}).items() if not e.get("x") and e.get("cle")]
+        journal.sort(key=lambda x: (x[1].get("maj") or 0, x[1].get("date") or ""), reverse=True)
+        voulus = {p: miroir.souhaite(doc, p) for p in miroir.PLATEFORMES}
+        faits = {p: miroir.miroir(doc, p) for p in miroir.PLATEFORMES}
+        echecs = app.get("miroir_echecs") or {}
+        depart = app.get("miroir_depart") or {}
+        modes = app.get("modes_ext") or {"lb": "auto", "imdb": "clic"}
+        file_tmdb = {(o[0], o[1]) for o in app.get("file_tmdb") or []}
+        reliee = {"lb": bool(depart.get("lb")), "imdb": bool(depart.get("imdb")), "rf": bool(self.refract.cle)}
+
+        def etat(p, cles):
+            cles = [k for k in cles if k in voulus[p]]
+            if not cles:
+                return {"e": "na"}
+            if not reliee[p]:
+                return {"e": "off"}
+            err = next(((echecs.get(p) or {}).get(k) for k in cles if k in (echecs.get(p) or {})), None)
+            if err:
+                return {"e": "erreur", "m": (err.get("erreur") or "")[:160]}
+            if all(miroir._pareil(p, k, faits[p].get(k), voulus[p][k]) for k in cles):
+                return {"e": "ok"}
+            return {"e": "clic" if p == "imdb" and modes.get("imdb") in ("clic", "liens") else "attente"}
+        r, vus = [], set()
+        for jid, e in journal:
+            c = e["cle"]
+            if len(r) >= n:
+                break
+            t = (doc.get("titres") or {}).get(c) or {}
+            if c in vus:
+                continue
+            vus.add(c)
+            note = e.get("note") if e.get("note") is not None else t.get("note")
+            tm = {"e": "off"} if not self.tmdb.session else {"e": "na"} if note is None else \
+                {"e": "attente" if ("note", c) in file_tmdb else "ok"}
+            r.append({"jid": jid, "cle": c, "date": e.get("date"), "note": note, "coeur": bool(e.get("coeur") or t.get("coeur")),
+                      "revu": bool(e.get("revision")), "critique": bool((e.get("critique") or "").strip()),
+                      "critique_privee": e.get("critique_privee", True), "cinema": (e.get("ou") or {}).get("type") == "cinema",
+                      "cache": bool(t.get("prive") or e.get("prive")),
+                      "plateformes": {"lb": etat("lb", [f"vu|{jid}", f"note|{c}", f"like|{c}"]),
+                                      "imdb": etat("imdb", [f"note|{c}", f"critique|{jid}"]),
+                                      "rf": etat("rf", [f"vu|{jid}", f"note|{c}", f"like|{c}", f"critique|{jid}"]),
+                                      "tmdb": tm}})
+        return {"r": r}
+
+    def creer_raccourci(self):
+        """Windows : le raccourci « Silencio » sur le bureau et dans le menu Démarrer."""
+        if os.name != "nt":
+            raise ValueError("Le raccourci ne se crée que sur Windows (sur Mac ou Linux : installer.sh).")
+        import subprocess
+        script = os.path.join(config.RACINE, "outils", "raccourci.ps1")
+        r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script],
+                           capture_output=True, text=True, timeout=60)
+        texte = (r.stdout + r.stderr).strip()
+        if r.returncode != 0:
+            raise ValueError("Raccourci impossible : " + texte[-300:])
+        return {"ok": True, "message": texte}
+
+    def listes_auto(self):
+        """Les listes automatiques devenues de vraies listes (pour Letterboxd et IMDb) suivent ton journal."""
+        doc = self.stock.doc
+        if not doc:
+            return
+        listes = {k: l for k, l in (doc.get("listes") or {}).items() if not l.get("x") and l.get("auto")}
+        if not listes:
+            return
+        journal = sorted((e for e in (doc.get("journal") or {}).values() if not e.get("x") and e.get("cle")),
+                         key=lambda e: e.get("date") or "", reverse=True)
+        titres = {k: t for k, t in (doc.get("titres") or {}).items() if not t.get("x")}
+        wl = {k: w for k, w in (doc.get("watchlist") or {}).items() if not w.get("x")}
+        regles = {"cinema": lambda j: (j.get("ou") or {}).get("type") == "cinema",
+                  "vo": lambda j: j.get("version") == "VO", "vf": lambda j: j.get("version") == "VF",
+                  "revus": lambda j: j.get("revision"), "critiques": lambda j: (j.get("critique") or "").strip(),
+                  "plateforme": lambda j: (j.get("ou") or {}).get("type") == "plateforme"}
+        for lid, l in listes.items():
+            a = l["auto"]
+            if a == "watchlist":
+                items = [c for c, _ in sorted(wl.items(), key=lambda x: x[1].get("ajout") or "", reverse=True)]
+            elif a == "coeur":
+                items = [c for c in dict.fromkeys([j["cle"] for j in journal] + list(titres)) if (titres.get(c) or {}).get("coeur")]
+            elif a == "neuf":
+                items = sorted((c for c, t in titres.items() if (t.get("note") or 0) >= 9), key=lambda c: -titres[c]["note"])
+            elif a == "collection":
+                items = [c for c, t in titres.items() if t.get("collection")]
+            elif a in regles:
+                items = list(dict.fromkeys(j["cle"] for j in journal if regles[a](j)))
+            else:
+                continue
+            if items != l.get("items"):
+                self.stock.action("liste", {"liste": dict({k: v for k, v in l.items() if k != "maj"}, id=lid, items=items),
+                                            "libelle": "Liste automatique"})
+
+    def notifier_echecs(self):
+        """Une notification par envoi raté (Letterboxd, IMDb, Refract), sauf les refus passagers déjà retentés seuls."""
+        doc = self.stock.doc
+        if not doc:
+            return
+        journal = doc.get("journal") or {}
+        for p, ech in (self.stock.appareil.get("miroir_echecs") or {}).items():
+            nom = miroir.PLATEFORMES.get(p, p)
+            for k, v in list(ech.items()):
+                if v.get("etat") == "manuel" or (miroir.PASSAGER.search(v.get("erreur") or "") and (v.get("n") or 0) < 3):
+                    continue
+                parts = k.split("|")
+                c = (journal.get(parts[1]) or {}).get("cle") if parts[0] in ("vu", "critique") else parts[-1]
+                m = (self._meta(c) or {}) if c else {}
+                lien = f"#/titre/{c}" if c and ":" in c else "#/reglages/plateformes"
+                self.notifs.ajouter(f"echec:{p}:{k}:{v.get('id')}", "echec", f"{nom} : envoi raté",
+                                    f"{v.get('titre') or m.get('t') or k}, {(v.get('erreur') or '')[:120]}", lien, m.get("af"))
+
+    def envoi_titre(self, cle):
+        """Pour la page d'un film : chaque élément envoyé (ou à envoyer) sur chaque plateforme, avec son état."""
+        doc = self.stock.doc or {}
+        app = self.stock.appareil
+        journal = {k: e for k, e in (doc.get("journal") or {}).items() if not e.get("x") and e.get("cle") == cle}
+        listes = {k: l for k, l in (doc.get("listes") or {}).items() if not l.get("x")}
+        echecs = app.get("miroir_echecs") or {}
+        depart = app.get("miroir_depart") or {}
+        modes = app.get("modes_ext") or {"lb": "auto", "imdb": "clic"}
+        passages = app.get("miroir_passages") or {}
+        reliee = {"lb": bool(depart.get("lb")), "imdb": bool(depart.get("imdb")), "rf": bool(self.refract.cle)}
+
+        def libelle(k, v):
+            sorte, _, reste = k.partition("|")
+            ident = reste.split("|")[0]
+            if sorte == "vu":
+                e = journal.get(ident) or {}
+                return f"Visionnage du {e.get('date', '')}" + (", revu" if e.get("revision") else "")
+            return {"like": "Coup de cœur", "wl": "Dans la watchlist", "fav": "Dans la watchlist", "marque": "Marqué vu",
+                    "critique": "Critique publique"}.get(sorte) or (f"Dans la liste « {listes.get(ident, {}).get('nom', '')} »"
+                                                                     if sorte == "item" else sorte)
+        r = {}
+        for p, nom in miroir.PLATEFORMES.items():
+            voulu, fait = miroir.souhaite(doc, p), miroir.miroir(doc, p)
+            lignes = []
+            for k, v in voulu.items():
+                parts = k.split("|")
+                if not (parts[-1] == cle or (parts[0] in ("vu", "critique") and parts[1] in journal) or
+                        (parts[0] in ("note", "like", "wl", "fav", "marque") and parts[1] == cle)):
+                    continue
+                if not reliee[p]:
+                    e = "off"
+                elif (echecs.get(p) or {}).get(k):
+                    e = "erreur"
+                elif miroir._pareil(p, k, fait.get(k), v):
+                    e = "ok"
+                else:
+                    e = "clic" if p == "imdb" and modes.get("imdb") in ("clic", "liens") else "attente"
+                lab = libelle(k, v)
+                if parts[0] == "note":
+                    lab = f"Note : {str(v).replace('.', ',')}" + (" étoiles" if p == "lb" else " sur 10")
+                lignes.append({"cle": k, "libelle": lab, "e": e, "m": ((echecs.get(p) or {}).get(k) or {}).get("erreur", "")[:200]})
+            r[p] = {"nom": nom, "reliee": reliee[p], "mode": modes.get(p, "auto") if p != "rf" else "auto",
+                    "passage": passages.get(p), "lignes": sorted(lignes, key=lambda x: x["libelle"])}
+        t = (doc.get("titres") or {}).get(cle) or {}
+        tm = []
+        if self.tmdb.session:
+            file_ = {(o[0], o[1]) for o in app.get("file_tmdb") or []}
+            if t.get("note") is not None:
+                tm.append({"cle": "note", "libelle": f"Note : {str(t['note']).replace('.', ',')} sur 10",
+                           "e": "attente" if ("note", cle) in file_ else "ok", "m": ""})
+            if t.get("coeur"):
+                tm.append({"cle": "favori", "libelle": "Favori", "e": "attente" if ("favori", cle) in file_ else "ok", "m": ""})
+        r["tmdb"] = {"nom": "TMDB", "reliee": bool(self.tmdb.session), "mode": "auto", "passage": None, "lignes": tm}
+        return r
+
+    def synchroniser_tout(self):
+        """Le bouton Synchroniser de Silencio : GitHub et Refract tout de suite, et l'extension (Letterboxd, IMDb)
+        dans la minute (elle voit que Silencio a bougé)."""
+        self.stock.appareil["derniere_modif"] = time.time() - 25
+        for ech in (self.stock.appareil.get("miroir_echecs") or {}).values():
+            for v in ech.values():
+                v["quand"] = 0                        # les échecs sont retentés tout de suite
+        self.refract.etat["pause_jusqua"] = 0
+        self.synchro.demander(1)
+        self.reveil_rf.set()
+        threading.Thread(target=self.tmdb.vider_file, daemon=True).start()
+        return {"ok": True}
 
     def a_faire_ext(self):
         doc = self.stock.doc
@@ -836,6 +1027,10 @@ def fabriquer_handler(app):
             if r == "fournisseurs_liste":
                 d = app.tmdb.get("/watch/providers/movie", ttl=30 * 86400, watch_region=config.REGION) or {}
                 return self._envoyer(200, d)
+            if r.startswith("envoi/"):
+                return self._envoyer(200, app.envoi_titre(urllib.parse.unquote(r[6:])))
+            if r == "tableau":
+                return self._envoyer(200, app.tableau())
             if r == "profils":
                 return self._envoyer(200, app.profils_disponibles())
             if r == "notifs":
@@ -885,6 +1080,10 @@ def fabriquer_handler(app):
                 if r == "ext/resultats":
                     return self._envoyer(200, app.ext_resultats(self._json()))
                 return self._envoyer(404, {"erreur": "inconnu"})
+            if r == "raccourci":
+                return self._envoyer(200, app.creer_raccourci())
+            if r == "synchroniser":
+                return self._envoyer(200, app.synchroniser_tout())
             if r == "compte/creer":
                 compte.creer(app, self._json())
                 app._apres_compte()

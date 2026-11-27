@@ -123,6 +123,9 @@ Réglages :
 - **Connecter mon compte TMDB** ;
 - importer ton export **Letterboxd** (.zip), **IMDb** (.csv), ton compte **TMDB** ou un profil **Twin Picks** ;
 - relier **Letterboxd, IMDb, Refract** et installer l'extension Silencio Sync ;
+- l'**accueil** montre tes derniers films avec leur état sur Letterboxd, IMDb, Refract et TMDB (envoyé, en attente, erreur), et un bouton **Synchroniser** ; la page d'un film le détaille ;
+- la recherche comprend les phrases : « vus au cinéma en 2025 notés 8+ », « coups de cœur en VO », « horreur des années 80 » ;
+- les **listes automatiques** (cinéma, VO, VF, revus, coups de cœur…) peuvent devenir de vraies listes, tenues à jour ;
 - **Compléter tes films importés** : reprendre un par un les visionnages importés et les films vus sans date (date, cinéma, version…).
 
 ## Pour les curieux

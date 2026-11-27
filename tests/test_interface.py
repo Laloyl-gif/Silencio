@@ -153,8 +153,19 @@ with sync_playwright() as p:
         time.sleep(0.5)
     pg.reload()
     pg.wait_for_selector(".bonjour")
+    pg.wait_for_selector(".tdb-ligne")
     pg.wait_for_timeout(1200)
     capture(pg, "03_tel_accueil", plein=True)
+    tdb = api("/api/tableau")["r"]
+    assert tdb and set(tdb[0]["plateformes"]) == {"lb", "imdb", "rf", "tmdb"}, tdb[:1]
+    # recherche par phrase
+    pg.fill("[data-recherche]", "vus au cinéma notés 9+")
+    pg.wait_for_selector(".phrase-compris span")
+    compris = pg.locator(".phrase-compris span").all_inner_texts()
+    assert "au cinéma" in compris and any("9" in c for c in compris), compris
+    assert pg.locator(".phrase .vignette[data-cle='m:1018']").count() == 1, "Mulholland Drive vu au cinéma, noté 10"
+    capture(pg, "03b_tel_recherche_phrase")
+    pg.fill("[data-recherche]", "")
 
     # ajout rapide : recherche, choix, note par clavier, détails
     pg.click("#barre-bas .plus")
@@ -373,6 +384,14 @@ with sync_playwright() as p:
     pg.goto(URL + "/#/listes")
     pg.wait_for_selector(".ligne-liste")
     capture(pg, "15_tel_listes")
+    pg.goto(URL + "/#/listes/auto/cinema")
+    pg.wait_for_selector(".grille .vignette")
+    capture(pg, "15b_tel_liste_cinema")
+    pg.click("[data-vraie]")
+    pg.wait_for_timeout(700)
+    vraies = [l for l in api("/api/etat")["profil"]["listes"].values() if l.get("auto") == "cinema"]
+    assert vraies and "m:1018" in vraies[0]["items"], vraies
+    assert api("/api/synchroniser", {})["ok"]
     pg.goto(URL + "/#/decouvrir")
     pg.wait_for_selector(".raccourcis-decouvrir")
     pg.wait_for_timeout(900)
@@ -399,12 +418,18 @@ with sync_playwright() as p:
     pp.on("pageerror", lambda e: erreurs.append(("pc", str(e))))
     pp.goto(URL + "/#/")
     pp.wait_for_selector(".bonjour")
+    pp.wait_for_selector(".tdb-ligne")
     pp.wait_for_timeout(1500)
     capture(pp, "20_pc_accueil")
     pp.goto(URL + "/#/titre/m:1018")
     pp.wait_for_selector(".ff-tete")
+    pp.wait_for_selector("[data-envoi] .ff-pf")
     pp.wait_for_timeout(1200)
     capture(pp, "21_pc_film")
+    pp.locator("[data-envoi]").scroll_into_view_if_needed()
+    pp.evaluate("document.querySelectorAll('.ff-pf').forEach(d => d.open = true)")
+    pp.wait_for_timeout(300)
+    capture(pp, "21b_pc_film_envoi")
     # anneau : toucher, puis la rangée ; annulation au clavier
     pp.click(".ff-note .anneau")
     pp.locator(".ff-note .case-note").nth(8).click()

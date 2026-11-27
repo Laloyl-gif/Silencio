@@ -113,12 +113,21 @@ S.affiche = (m, o = {}) => {
   const marques = [];
   return `<div class="affiche"${o.vt ? ` style="view-transition-name:${o.vt}"` : ""}>${src ? `<img loading="lazy" src="${src}" alt="" onload="this.classList.add('ok')" onerror="this.remove()">` : ""}<div class="sans"${src ? ' style="z-index:-1"' : ""}>${esc(t)}</div>${o.vu ? `<span class="vu-coin">Vu</span>` : ""}${marques.length ? `<div class="marques">${marques.join("")}</div>` : ""}</div>`;
 };
+// petites icônes dessinées (traits fins, sans police d'icônes)
+S.ICONES = {
+  coeur: `<svg class="ic ic-coeur" viewBox="0 0 24 24" aria-label="Coup de cœur"><path d="M12 20.5 4.2 12.9a4.9 4.9 0 0 1 6.9-6.9l.9.9.9-.9a4.9 4.9 0 0 1 6.9 6.9z"/></svg>`,
+  revu: `<svg class="ic ic-revu" viewBox="0 0 24 24" aria-label="Revu"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8.7M20 4v4.7h-4.7M20 12a8 8 0 0 1-13.7 5.6L4 15.3M4 20v-4.7h4.7"/></svg>`,
+  critique: `<svg class="ic ic-critique" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg>`,
+  cinema: `<svg class="ic ic-cinema" viewBox="0 0 24 24" aria-label="Au cinéma"><path d="M3 8a2 2 0 0 0 0 4v4h18v-4a2 2 0 0 1 0-4V4H3zM9 4v12"/></svg>`,
+};
+// une note lisible : le chiffre et une jauge fine (sur 10)
+S.noteJolie = (n, grand) => n == null ? "" : `<span class="nj${grand ? " nj-g" : ""}"><b>${S.fmtNote(n)}</b><i><u style="width:${Math.max(4, n * 10)}%"></u></i></span>`;
 S.vignette = (cle, o = {}) => {
   const m = S.info(cle) || { t: "…" };
   const t = S.monTitre(cle);
   const note = o.note !== undefined ? o.note : (o.sansNote ? null : t.note);
   const coeur = o.coeur ?? t.coeur;
-  const bas = [note != null ? `<em class="${coeur ? "cc" : ""}">${S.fmtNote(note)}</em>` : "", o.info ? esc(o.info) : ""].filter(Boolean).join(" ");
+  const bas = [note != null ? `<em>${S.fmtNote(note)}</em>` : "", coeur && note != null ? S.ICONES.coeur : "", o.info ? esc(o.info) : ""].filter(Boolean).join(" ");
   return `<a class="vignette" href="#/titre/${cle}" data-cle="${cle}">${S.affiche(m, { vu: o.vu })}${o.legende === false ? "" : `<div class="legende"><b>${esc(S.nomTitre(m))}</b>${bas ? `<span>${bas}</span>` : ""}</div>`}</a>`;
 };
 S.portrait = (chemin, nom) => `<div class="portrait">${chemin ? `<img loading="lazy" src="${S.img(chemin, "w185")}" alt="" onload="this.classList.add('ok')" onerror="this.remove()">` : ""}<span class="initiales" style="z-index:-1">${esc(S.initiales(nom))}</span></div>`;
@@ -319,8 +328,10 @@ function majChrome() {
     else if (s.erreur) lignes.push(`<a class="alerte" href="#/reglages/amis" title="${esc(s.erreur)}">Synchro GitHub : ${esc(s.erreur.length > 60 ? s.erreur.slice(0, 58) + "…" : s.erreur)}</a>`);
     else lignes.push(heure ? `Synchronisé à ${heure}` : "Synchro en attente");
     if (e.appareil?.tmdb?.connecte && f.attente) lignes.push(`${S.pluriel(f.attente, "envoi")} TMDB en attente`);
+    if (e.compte && !e.compte.connecte) lignes.push(`<a href="#/reglages/compte">Se connecter à ton compte</a>`);
     const nom = S.moi?.profil?.nom || "";
-    pied.innerHTML = `${S.moi ? `<a href="#/profil" class="lat-profil">${S.avatar(e.appareil?.profil || "moi", nom, 32)}<span><b>${esc(nom)}</b><small>${lignes.join("<br>")}</small></span></a>` : `<small>${lignes.join("<br>")}</small>`}`;
+    pied.innerHTML = `${S.moi ? `<a href="#/profil" class="lat-profil">${S.avatar(e.appareil?.profil || "moi", nom, 32)}<span><b>${esc(nom)}</b></span></a>` : ""}<small class="lat-etat">${lignes.join("<br>")}</small>${S.moi ? `<button class="lat-sync" data-sync-global>Synchroniser maintenant</button>` : ""}`;
+    const bs = $("[data-sync-global]", pied); if (bs) bs.onclick = () => S.synchroniser && S.synchroniser();
   }
   const ep = $("[data-epinglees]");
   if (ep && S.moi) {

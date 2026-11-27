@@ -29,11 +29,12 @@ import re
 import time
 
 PLATEFORMES = {"lb": "Letterboxd", "imdb": "IMDb", "rf": "Refract"}
+CAPS_RF = {}                                       # ce que l'API Refract accepte en plus (rempli par refract.py)
 FAVORIS = "_favoris"                               # la watchlist IMDb, qui reçoit la watchlist Silencio
 # Partout, seuls tes ajouts et changements faits dans Silencio après la liaison partent ; ce qui existait avant est
 # considéré comme déjà en place. Sur IMDb, rien n'est jamais retiré (1 000 films dans ta watchlist IMDb restent
 # 1 000) ; sur Letterboxd, une entrée de journal que Silencio a créée suit ses modifications et sa suppression.
-RETIRABLE = {"lb": {"vu"}, "imdb": set(), "rf": {"wl", "ep"}}
+RETIRABLE = {"lb": {"vu"}, "imdb": set(), "rf": {"wl", "ep", "like"}}
 PAUSE_ECHEC = 6 * 3600                             # une opération ratée n'est retentée qu'après ce délai
 PAUSE_COURTE = 20 * 60                             # … sauf un refus passager (jeton, pare-feu, réseau)
 PASSAGER = re.compile(r"csrf|expired|403|cloudflare|injoignable|networkerror|429|ralentir", re.I)
@@ -117,6 +118,16 @@ def souhaite(doc, plateforme):
         for c, t in titres.items():
             if c not in caches and t.get("note") is not None:
                 r[f"note|{c}"] = note_imdb(t["note"])    # Refract : entier de 1 à 10
+        # coups de cœur et critiques publiques : seulement si l'API de Refract sait les recevoir (voir refract.py)
+        if CAPS_RF.get("favori"):
+            for c, t in titres.items():
+                if c not in caches and t.get("coeur"):
+                    r[f"like|{c}"] = 1
+        if CAPS_RF.get("critique"):
+            for jid, e in journal.items():
+                texte = (e.get("critique") or "").strip()
+                if texte and not e.get("critique_privee", True) and not e.get("prive") and e.get("cle") not in caches:
+                    r[f"critique|{jid}"] = texte
         return r
     # listes (Letterboxd : films seulement)
     for lid, l in listes.items():

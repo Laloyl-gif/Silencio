@@ -6,6 +6,7 @@ Ce que Silencio envoie (API v1, vérifiée dans https://getrefract.app/v1/openap
 Jamais DELETE /v1/library/{id} : il effacerait aussi les visionnages et la note chez Refract.
 """
 import hashlib
+import re
 import json
 import time
 import urllib.parse
@@ -67,6 +68,28 @@ class Refract:
 
     def moi(self):
         return self._req("GET", "me")
+
+    # ---- coups de cœur et critiques : envoyés seulement si la description officielle de l'API les propose
+    def capacites(self, forcer=False):
+        app = self.stock.appareil
+        caps = app.get("refract_caps2") or {}
+        if forcer or time.time() - caps.get("verifie", 0) > 86400:
+            try:
+                doc = requete(config.API_REFRACT.rstrip("/") + "/openapi.json", entetes={"User-Agent": AGENT}, delai=20)
+                caps = dict(lire_capacites(doc), verifie=time.time())
+            except (HorsLigne, ErreurHTTP, ValueError):
+                caps = dict(caps, verifie=time.time() - 86400 + 3600)        # nouvel essai dans une heure
+            avant = set(k for k in ("favori", "critique") if (app.get("refract_caps2") or {}).get(k))
+            app["refract_caps2"] = caps
+            nouveaux = [k for k in ("favori", "critique") if caps.get(k) and k not in avant]
+            miroir.CAPS_RF.update({k: caps.get(k) for k in ("favori", "critique")})
+            if nouveaux and (app.get("miroir_depart") or {}).get("rf") and self.stock.doc:
+                # ce qui existait avant la liaison avec Refract ne part pas : seulement tes ajouts suivants
+                miroir.poser_depart_avant(self.stock, "rf", app["miroir_depart"]["rf"])
+            self.stock.sauver_appareil()
+        else:
+            miroir.CAPS_RF.update({k: caps.get(k) for k in ("favori", "critique")})
+        return caps
 
     # ---- identifiants Refract (mis en cache sur l'appareil)
     def identifiant(self, cle):
@@ -154,6 +177,26 @@ class Refract:
                     if e.code != 404:
                         raise
             return "ok", None
+        if s in ("like", "critique"):
+            c = miroir.CAPS_RF.get("favori" if s == "like" else "critique")
+            if not c:
+                return "attente", None
+            if s == "like":
+                cle = op["cle"].split("|")[1]
+            else:
+                cle = ((self.stock.doc.get("journal") or {}).get(op["cle"].split("|")[1]) or {}).get("cle", "")
+            rid = self.identifiant(cle)
+            if not rid:
+                return "introuvable", None
+            chemin = c["chemin"].replace("{genre}", "shows" if cle.startswith("t:") else "movies").replace("{id}", urllib.parse.quote(rid))
+            corps = None
+            if s == "critique":
+                corps = {c["champ"]: op["valeur"]}
+                if c.get("spoiler"):
+                    corps[c["spoiler"]] = False
+            self._req(c["methode"] if op["action"] == "poser" else "DELETE", chemin, corps if op["action"] == "poser" else None,
+                      idem=hashlib.sha1(("silencio" + op["cle"] + str(op["valeur"])).encode()).hexdigest() if c["methode"] == "POST" else None)
+            return "ok", None
         if s == "note":
             cle = op["cle"].split("|")[1]
             rid = self.identifiant(cle)
@@ -175,6 +218,7 @@ class Refract:
             return None
         self.etat["en_cours"] = True
         try:
+            self.capacites()
             echecs = (self.stock.appareil.get("miroir_echecs") or {}).get("rf") or {}
             ops = miroir.operations(self.stock.doc, "rf", self.meta, echecs, limite=limite)["ops"]
             resultats = []
@@ -232,3 +276,38 @@ class Refract:
         self.stock.sauver_appareil()
         return presence, a_importer
 
+
+
+def lire_capacites(doc):
+    """Cherche dans la description OpenAPI de Refract l'envoi d'un coup de cœur et d'une critique."""
+    comps = ((doc or {}).get("components") or {}).get("schemas") or {}
+
+    def resoudre(sch, n=0):
+        while isinstance(sch, dict) and "$ref" in sch and n < 10:
+            sch = comps.get(sch["$ref"].split("/")[-1]) or {}
+            n += 1
+        return sch or {}
+    r = {}
+    for chemin, ops in ((doc or {}).get("paths") or {}).items():
+        bas = chemin.lower()
+        ch = re.sub(r"^/?v1", "", chemin)
+        ch = re.sub(r"\{[^}]+\}", "{id}", ch)
+        ch = re.sub(r"/(movies|shows)/", "/{genre}/", ch)
+        if "{id}" not in ch or "episode" in bas or "game" in bas:
+            continue
+        if not r.get("favori") and re.search(r"favou?rite|/likes?/|heart", bas) and "put" in (ops or {}):
+            r["favori"] = {"chemin": ch, "methode": "PUT"}
+        if not r.get("critique") and "review" in bas:
+            for m in ("put", "post"):
+                op = (ops or {}).get(m)
+                if not op:
+                    continue
+                sch = resoudre((((op.get("requestBody") or {}).get("content") or {}).get("application/json") or {})
+                               .get("schema") or {})
+                props = sch.get("properties") or {}
+                champ = next((k for k in ("text", "body", "content", "review") if k in props), None)
+                if champ:
+                    r["critique"] = {"chemin": ch, "methode": m.upper(), "champ": champ,
+                                     "spoiler": next((k for k in ("spoiler", "contains_spoilers", "spoilers") if k in props), None)}
+                    break
+    return r

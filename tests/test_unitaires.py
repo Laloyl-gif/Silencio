@@ -308,6 +308,26 @@ md.action("watchlist", {"cle": "m:155", "val": True})
 md.action("watchlist", {"cle": "m:550", "val": False})
 o = miroir.operations(md.doc, "imdb", meta)["ops"]
 verifier([(x["cle"], x["action"]) for x in o] == [("fav|m:155", "poser")], "IMDb : seul l'ajout part, rien n'est retiré de la liste")
+# Refract : coups de cœur et critiques publiques, seulement si son API les accepte, et seulement les nouveaux
+faux_services.REFRACT_CAPS = True
+mc = Stock(tempfile.mkdtemp(prefix="silencio_rfc_"))
+mc.choisir_profil("e", "E")
+mc.appareil["refract"] = {"cle": "rfk_test"}
+mc.action("journal", {"entree": {"cle": "m:671", "date": "2020-01-01", "note": 8, "coeur": True, "critique": "Ancienne", "critique_privee": False}})
+mc.appareil["miroir_depart"] = {"rf": time.time() + 0.01}
+miroir.poser_depart_avant(mc, "rf", mc.appareil["miroir_depart"]["rf"])
+time.sleep(0.05)
+rfc = Refract(mc, meta)
+rfc.capacites(forcer=True)
+mc.action("journal", {"entree": {"cle": "m:603", "date": "2026-11-27", "note": 9, "coeur": True, "critique": "Neo !", "critique_privee": False}})
+faux_services.REFRACT.clear()
+rfc.passage()
+ecr = [(m, p, c) for m, p, c, _ in faux_services.REFRACT if m != "GET"]
+verifier(("PUT", "/favorites/movies/rf-m-603", None) in [(m, p, c or None) for m, p, c in ecr] and
+         any(p == "/reviews/movies/rf-m-603" and c == {"text": "Neo !", "spoiler": False} for m, p, c in ecr) and
+         not any("671" in p for m, p, c in ecr), "Refract : coup de cœur et critique publique envoyés (les anciens non)")
+faux_services.REFRACT_CAPS = False
+miroir.CAPS_RF.clear()
 # Refract : relié aujourd'hui, seuls les ajouts faits ensuite partent
 mr = Stock(tempfile.mkdtemp(prefix="silencio_rf_"))
 mr.choisir_profil("e", "E")
@@ -434,6 +454,14 @@ verifier(a4.synchro.cycle() and a4.stock.pid == "lily2" and a4.stock.titre("m:10
 a5 = appareil_neuf("compte5")
 compte.connexion(a5, {"identifiant": "lily2", "mot_de_passe": "lily-lily-lily"})
 verifier(a5.stock.titre("m:1018")["note"] == 6, "compte : profil converti accessible par connexion")
+
+# un appareil avec un profil sans compte se connecte à un compte existant, en gardant ses films
+a6 = appareil_neuf("compte6")
+a6.stock.choisir_profil("local", "Local")
+a6.stock.action("noter", {"cle": "m:13", "note": 7})
+compte.connexion(a6, {"identifiant": "haika", "mot_de_passe": "nouveau-mdp-42", "garder_local": True})
+verifier(a6.stock.pid == "haika" and a6.stock.titre("m:13").get("note") == 7 and a6.stock.titre("m:9426").get("note") == 7
+         and a6.stock.appareil.get("imdb_pseudo") == "Haika", "compte : connexion depuis un profil sans compte, films gardés, réglages récupérés")
 
 print(f"{OK} vérifications réussies")
 shutil.rmtree(DOSSIER, ignore_errors=True)

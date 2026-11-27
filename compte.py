@@ -170,6 +170,13 @@ def connexion(app, corps):
         raise ValueError("Identifiant ou mot de passe incorrect.")
     distants = priv.pop("compte", None)
     doc = fusionner(pub or {}, priv) if pub else priv
+    if corps.get("garder_local") and stock.doc and stock.pid != pid:
+        # les films de ce profil sans compte rejoignent le compte (le plus récent gagne, rien n'est perdu)
+        local = json.loads(json.dumps(stock.doc))
+        local.pop("miroirs", None)
+        local.pop("profil", None)
+        local["id"] = pid
+        doc = fusionner(doc, local)
     doc["id"] = pid
     stock.choisir_profil(pid, (doc.get("profil") or {}).get("nom") or pid, doc=doc)
     stock.appareil["compte"] = {"id": pid, "cle": cle, "depuis": time.time()}

@@ -475,6 +475,9 @@ class Stock:
              "items": list(dict.fromkeys(l.get("items", ancien.get("items", [])))),
              "cree": ancien.get("cree") or time.strftime("%Y-%m-%d"),
              "epinglee": bool(l.get("epinglee", ancien.get("epinglee", False)))}
+        auto = l.get("auto", ancien.get("auto"))
+        if auto:
+            e["auto"] = auto                      # liste automatique (cinéma, VO…) tenue à jour par Silencio
         self._poser(trace, "listes", lid, e)
         tmdb.append(("liste", lid, None))
         return "Liste « " + e["nom"] + " »"

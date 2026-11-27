@@ -14,10 +14,13 @@ where py >nul 2>nul && set PY=py -3
   winget install --id Python.Python.3.12 -e --source winget || (echo Installez Python : https://www.python.org/downloads/ & pause & exit /b 1)
 )
 if not exist donnees mkdir donnees
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop')+'\Silencio.lnk');" ^
-  "$s.TargetPath='%~dp0lancer.bat';$s.WorkingDirectory='%~dp0';$s.IconLocation='%~dp0web\icone.ico';$s.WindowStyle=7;" ^
-  "$s.Description='Silencio (toujours la derniere version)';$s.Save()"
-echo.
-echo Le raccourci « Silencio » est sur le bureau.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0outils\raccourci.ps1"
+if errorlevel 1 (
+  echo.
+  echo Le raccourci n'a pas pu etre cree. Tu peux lancer Silencio en double-cliquant lancer.bat,
+  echo puis dans Silencio : Reglages, Avance, « Creer le raccourci ».
+) else (
+  echo.
+  echo Le raccourci « Silencio » est sur le bureau et dans le menu Demarrer.
+)
 pause

@@ -174,11 +174,48 @@ function cartesListes(z, doc, pid) {
   const ligne = (href, items, nom, prive) => { const vus = items.filter(c => S.monTitre(c).vu).length; return `<a class="ligne ligne-liste" href="${href}">${S.affiche(S.info(items[0]) || {}, { taille: "w92" })}<div class="corps"><b>${esc(nom)}</b><span>${S.pluriel(items.length, "titre")}</span></div>${items.length ? `<div class="part-vue"><b>${Math.round(100 * vus / items.length)} %</b><span>vu</span></div>` : ""}</a>`; };
   z.innerHTML = `<div class="lignes">${ligne(pid ? `#/profil/${encodeURIComponent(pid)}?o=watchlist` : "#/watchlist", wl, "Watchlist")}${listes.map(([id, l]) => ligne(`#/liste/${id}${q}`, l.items || [], l.nom, l.privee)).join("")}</div>`;
 }
-P.listes = (vue) => {
+// listes toujours à jour, calculées depuis ton journal
+S.LISTES_AUTO = [
+  ["cinema", "Vus au cinéma", j => j.ou?.type === "cinema"],
+  ["watchlist", "Watchlist", null],
+  ["coeur", "Coups de cœur", null],
+  ["vo", "Vus en VO", j => j.version === "VO"],
+  ["vf", "Vus en VF", j => j.version === "VF"],
+  ["revus", "Revus", j => j.revision],
+  ["critiques", "Avec ta critique", j => (j.critique || "").trim()],
+  ["plateforme", "Vus en streaming", j => j.ou?.type === "plateforme"],
+  ["neuf", "Tes 9 et plus", null],
+  ["collection", "Ta collection", null],
+];
+S.listeAuto = id => {
+  const journal = Object.values(S.vivants(S.moi.journal)).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const titres = S.vivants(S.moi.titres);
+  if (id === "watchlist") return Object.entries(S.vivants(S.moi.watchlist)).sort((a, b) => (b[1].ajout || "").localeCompare(a[1].ajout || "")).map(([c]) => c);
+  if (id === "coeur") return [...new Set([...journal.filter(j => titres[j.cle]?.coeur).map(j => j.cle), ...Object.keys(titres).filter(c => titres[c].coeur)])];
+  if (id === "neuf") return Object.keys(titres).filter(c => (titres[c].note ?? 0) >= 9).sort((a, b) => titres[b].note - titres[a].note);
+  if (id === "collection") return Object.keys(titres).filter(c => titres[c].collection);
+  const def = S.LISTES_AUTO.find(x => x[0] === id);
+  return def && def[2] ? [...new Set(journal.filter(def[2]).map(j => j.cle))] : [];
+};
+
+P.listes = (vue, args = []) => {
+  if (args[0] === "auto") {
+    const def = S.LISTES_AUTO.find(x => x[0] === args[1]);
+    const items = def ? S.listeAuto(def[0]) : [];
+    const vraie = Object.entries(S.vivants(S.moi.listes)).find(([, l]) => l.auto === args[1]);
+    vue.innerHTML = `<a class="fil" href="#/listes">Listes</a><div class="entete"><div><h1>${esc(def ? def[1] : "Liste")}</h1><div class="mini discret">${S.pluriel(items.length, "titre")}, liste automatique</div></div><span class="espace"></span>
+      ${vraie ? `<a class="lien" href="#/liste/${vraie[0]}">Voir la vraie liste</a>` : `<button class="lien" data-vraie>En faire une vraie liste</button>`}</div>
+      ${vraie ? "" : `<p class="mini discret" style="margin-top:-6px">Une vraie liste part sur tes plateformes (IMDb, TMDB…) et reste à jour toute seule.</p>`}
+      ${items.length ? `<div class="grille">${items.map(c => S.vignette(c, { vu: S.monTitre(c).vu })).join("")}</div>` : S.vide("Rien pour l'instant", "Elle se remplit toute seule avec ton journal.")}`;
+    const bv = $("[data-vraie]", vue);
+    if (bv) bv.onclick = async () => { await S.agir("liste", { liste: { nom: def[1], auto: def[0], items, privee: false } }, { toast: "Vraie liste créée : elle suivra ton journal" }); S.rafraichir(true); };
+    return;
+  }
   const ans = [...new Set(Object.values(S.vivants(S.moi.journal)).map(e => e.date?.slice(0, 4)).filter(Boolean))].sort().reverse();
   vue.innerHTML = `<div class="entete"><h1>Listes</h1><span class="espace"></span><button class="lien" data-nouvelle>Nouvelle liste</button></div>
     <div data-z></div>
-    <div class="section"><div class="section-titre"><h2>Automatiques</h2></div><div class="lignes">${ans.map(a => { const c = [...new Set(Object.values(S.vivants(S.moi.journal)).filter(e => e.date?.startsWith(a)).map(e => e.cle))]; return `<a class="ligne ligne-liste" href="#/annee/${a}">${S.affiche(S.info(c[c.length - 1]) || {}, { taille: "w92" })}<div class="corps"><b>Vu en ${a}</b><span>${S.pluriel(c.length, "titre")}</span></div></a>`; }).join("")}<a class="ligne ligne-liste" href="#/decouvrir/commune"><div class="corps"><b>Watchlist commune</b><span>avec tes amis</span></div></a></div></div>`;
+    <div class="section"><div class="section-titre"><h2>Tes listes automatiques</h2></div><div class="lignes">${S.LISTES_AUTO.map(([id, nom]) => { const l = S.listeAuto(id); return l.length ? `<a class="ligne ligne-liste" href="#/listes/auto/${id}">${S.affiche(S.info(l[0]) || {}, { taille: "w92" })}<div class="corps"><b>${nom}</b><span>${S.pluriel(l.length, "titre")}</span></div></a>` : ""; }).join("")}</div></div>
+    <div class="section"><div class="section-titre"><h2>Par année</h2></div><div class="lignes">${ans.map(a => { const c = [...new Set(Object.values(S.vivants(S.moi.journal)).filter(e => e.date?.startsWith(a)).map(e => e.cle))]; return `<a class="ligne ligne-liste" href="#/annee/${a}">${S.affiche(S.info(c[c.length - 1]) || {}, { taille: "w92" })}<div class="corps"><b>Vu en ${a}</b><span>${S.pluriel(c.length, "titre")}</span></div></a>`; }).join("")}<a class="ligne ligne-liste" href="#/decouvrir/commune"><div class="corps"><b>Watchlist commune</b><span>avec tes amis</span></div></a></div></div>`;
   cartesListes($("[data-z]", vue), S.moi, "");
   $("[data-nouvelle]", vue).onclick = () => editerListe();
 };
@@ -532,7 +569,23 @@ function rubriqueCompte(z, e) {
       <details class="compte-plus"><summary>Comptes reliés</summary>${S.champsRelies({ letterboxd_pseudo: e.plateformes?.lb?.pseudo, imdb_pseudo: e.plateformes?.imdb?.pseudo, imdb_watchlist: e.plateformes?.imdb?.watchlist })}
         <label class="compte-fichier">Remplir depuis un fichier de compte<input type="file" accept=".json,application/json" data-fichier hidden></label></details>
       <p class="compte-erreur" data-erreur role="alert"></p>
-      <button class="bouton principal" type="submit">Créer mon compte</button></form>`;
+      <button class="bouton principal" type="submit">Créer mon compte</button></form>
+    <form class="compte-mdp" data-cx><h4>Tu as déjà un compte ?</h4>
+      <p class="pf-intro">Connecte-toi : tes films, tes pseudos Letterboxd et IMDb, ta clé Refract et ton jeton GitHub reviennent sur cet appareil.</p>
+      <label class="etiquette">Identifiant</label><input class="champ" name="identifiant" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+      <label class="etiquette">Mot de passe</label><input class="champ" name="mot_de_passe" type="password" autocomplete="current-password" required>
+      <label class="case"><input type="checkbox" name="garder_local" checked> Ajouter au compte les films de ce profil (${esc(nom)})</label>
+      <p class="compte-erreur" data-erreur role="alert"></p>
+      <button class="bouton" type="submit">Se connecter</button></form>`;
+  const fcx = $("[data-cx]", z);
+  fcx.onsubmit = async ev => {
+    ev.preventDefault();
+    const v = Object.fromEntries(new FormData(fcx).entries()), err = $("[data-erreur]", fcx);
+    v.garder_local = !!v.garder_local;
+    const b = fcx.querySelector("[type=submit]"); b.disabled = true; b.textContent = "Connexion…";
+    try { await S.post("/api/compte/connexion", v); await S.chargerEtat(); S.chargerBase(true); S.toast("Connecté"); location.hash = "#/"; S.rafraichir(true); }
+    catch (er) { err.textContent = er.message; b.disabled = false; b.textContent = "Se connecter"; }
+  };
   const f = $("[data-conv]", z);
   $("[data-fichier]", f).onchange = ev => S.lireFichierCompte(ev.target, f);
   f.onsubmit = async ev => {
@@ -635,12 +688,13 @@ P.reglages = async (vue, args, params) => {
     <section class="carte" data-rub="avance"><h3>Données</h3>
       <p class="petit muet">Notes IMDb : ${e.imdb.present ? `fichier du ${new Date(e.imdb.date * 1000).toLocaleDateString("fr-FR")}` : e.imdb.en_cours ? "téléchargement en cours…" : "pas encore téléchargé"}${e.imdb.erreur ? `, <span style="color:var(--rouge)">${esc(e.imdb.erreur)}</span>` : ""}</p>
       <button class="bouton petit" data-imdb>Mettre à jour les notes IMDb</button>
+      ${/Windows/i.test(navigator.userAgent) ? `<label class="etiquette">Raccourci</label><p class="petit muet" style="margin-top:0">Crée le raccourci « Silencio » sur le bureau et dans le menu Démarrer.</p><button class="bouton petit" data-raccourci>Créer le raccourci</button>` : ""}
       <label class="etiquette">Clé API TMDB personnelle (facultatif)</label><div class="flex"><input class="champ" data-cle placeholder="${a.cle_tmdb ? "•••• (enregistrée)" : "par défaut : la clé de Silencio"}"><button class="bouton" data-cle-ok>OK</button></div>
     </section>
     <section class="carte" data-rub="avance"><h3>Raccourcis clavier</h3><dl class="tableau-infos petit"><dt>n</dt><dd>Ajouter un visionnage</dd><dt>/</dt><dd>Recherche</dd><dt>1 … 0, puis « . »</dt><dd>Note (dans l'ajout) : 8 puis . = 7,5</dd><dt>Entrée</dt><dd>Valider l'ajout</dd><dt>h, j, s</dt><dd>Accueil, Journal, Stats</dd><dt>z</dt><dd>Annuler la dernière action</dd><dt>Échap</dt><dd>Fermer</dd></dl></section>
     <p class="mini discret centre" data-rub="avance">Silencio ${esc(e.app)}, données TMDB (ce produit utilise l'API TMDB sans être approuvé ni certifié par TMDB), notes IMDb : datasets.imdbws.com, prix : Wikidata, plateformes : JustWatch</p>
   </div>`;
-  const RUBS = [["compte", e.compte?.connecte ? "Compte" : "Compte (à créer)", "moi"], ["affichage", "Affichage", "reglages"], ["plateformes", "Letterboxd, IMDb, Refract", "sync"], ["tmdb", "Compte TMDB", "sync"], ["amis", "Amis et synchro", "amis"], ["importer", "Importer", "plus"], ["completer", "Compléter tes films importés", "plus"], ["exporter", "Exporter", "lien"], ["historique", "Historique", "annuler"], ["avance", "Avancé", "info"]];
+  const RUBS = [["compte", e.compte?.connecte ? "Compte" : "Compte : se connecter ou en créer un", "moi"], ["affichage", "Affichage", "reglages"], ["plateformes", "Letterboxd, IMDb, Refract", "sync"], ["tmdb", "Compte TMDB", "sync"], ["amis", "Amis et synchro", "amis"], ["importer", "Importer", "plus"], ["completer", "Compléter tes films importés", "plus"], ["exporter", "Exporter", "lien"], ["historique", "Historique", "annuler"], ["avance", "Avancé", "info"]];
   const rub = args[0];
   $$("[data-rub]", vue).forEach(x => x.classList.toggle("cache", x.dataset.rub !== rub));
   if (!rub) $(".col", vue).insertAdjacentHTML("afterbegin", `<div class="lignes menu-reglages">${RUBS.map(([k, l, i]) => `<a class="ligne" href="#/reglages/${k}"><div class="corps"><b>${l}</b></div></a>`).join("")}</div>`);
@@ -666,6 +720,7 @@ P.reglages = async (vue, args, params) => {
     catch (er) { z.innerHTML = `<p class="mini" style="color:var(--rouge)">${esc(er.message)}</p>`; }
   };
   const an = $("[data-annuler]", vue); if (an) an.onclick = () => S.agir("annuler", {}, { toast: "Annulé" });
+  const rac = $("[data-raccourci]", vue); if (rac) rac.onclick = async () => { try { const r = await S.post("/api/raccourci"); S.toast("Raccourci créé sur le bureau et dans le menu Démarrer"); } catch (er) { S.toast(er.message); } };
   $("[data-imdb]", vue).onclick = async () => { await S.post("/api/imdb/maj"); S.toast("Téléchargement des notes IMDb lancé"); };
   $("[data-cle-ok]", vue).onclick = async () => { await S.post("/api/reglages", { cle_tmdb: $("[data-cle]", vue).value }); S.toast("Clé enregistrée"); };
   // imports
