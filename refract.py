@@ -151,8 +151,7 @@ class Refract:
                 return self._retirer_visionnage(rid, (op.get("avant") or {}), op.get("ref"))
             idem = hashlib.sha1(("silencio" + jid).encode()).hexdigest()
             rep = self._req("POST", "history/movies", {"movie_id": rid, "watched_at": d + "T20:00:00Z"}, idem=idem) or {}
-            donnees = rep.get("data") if isinstance(rep.get("data"), dict) else rep
-            return "ok", str(donnees.get("id") or "") or None
+            return "ok", _id_visionnage(rep)
         if s == "wl":
             rid = self.identifiant(cle_titre)
             if not rid:
@@ -310,6 +309,22 @@ class Refract:
         self.stock.sauver_appareil()
         return presence, a_importer
 
+
+
+def _id_visionnage(rep):
+    """L'identifiant du visionnage créé, quelle que soit la forme de la réponse (sinon on le retrouvera par sa date)."""
+    for bloc in (rep.get("data") if isinstance(rep, dict) else None, rep):
+        if isinstance(bloc, list):
+            bloc = bloc[0] if bloc and isinstance(bloc[0], dict) else None
+        if not isinstance(bloc, dict):
+            continue
+        for k in ("id", "play_id", "history_id", "watch_id", "entry_id"):
+            if bloc.get(k):
+                return str(bloc[k])
+        for k in ("play", "history", "entry", "watch"):
+            if isinstance(bloc.get(k), dict) and bloc[k].get("id"):
+                return str(bloc[k]["id"])
+    return None
 
 
 def lire_capacites(doc):

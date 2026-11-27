@@ -21,7 +21,7 @@ import miroir
 from reseau import ErreurHTTP, HorsLigne, requete
 
 # films témoins : peu connus, présents sur TMDB, IMDb, Letterboxd et Refract ; le premier absent de ton profil sert
-TEMOINS = [6, 3, 2, 5]
+TEMOINS = [6, 3, 2, 8, 9, 17, 20, 5]
 ATTENTE_EXT = 150                     # secondes laissées à l'extension pour répondre (sa veille passe chaque minute)
 SYMBOLE = {"ok": "OK", "attention": "ATTENTION", "erreur": "ERREUR", "info": "info", "saute": "sauté"}
 
@@ -145,17 +145,18 @@ class Diagnostic:
         for sec in ("titres", "watchlist"):
             pris |= set((doc.get(sec) or {}).keys())
         pris |= {e.get("cle") for e in (doc.get("journal") or {}).values()}
-        for n in TEMOINS:
+        libres = [n for n in TEMOINS if f"m:{n}" not in pris]
+        for n in libres:
             c = f"m:{n}"
-            if c in pris:
-                continue
             try:
                 self.app.tmdb.assurer_metas([c], attendre=True)
             except Exception:  # noqa: BLE001
                 pass
             m = self.app._meta(c) or {}
             return {"cle": c, "tmdb": n, "imdb": m.get("im") or "", "titre": m.get("t") or "", "vo": m.get("o") or "",
-                    "annee": m.get("a")}
+                    "annee": m.get("a"),
+                    # d'autres films libres, si le premier est déjà dans ton journal Letterboxd
+                    "autres": [{"tmdb": x, "cle": f"m:{x}"} for x in libres if x != n]}
         return None
 
     # ------------------------------------------------------------------ le test
@@ -243,6 +244,10 @@ class Diagnostic:
             droits = (r or {}).get("permissions") or {}
             self._ligne(s, "ok" if droits.get("push") else "erreur", "Jeton GitHub accepté",
                         "écriture autorisée" if droits.get("push") else f"pas le droit d'écrire ({droits})")
+            if r and r.get("private") is False:
+                self._ligne(s, "attention", "Le dépôt de tes profils est PUBLIC",
+                            "n'importe qui peut lire ton journal (seuls les films cachés et critiques privées sont chiffrés) : "
+                            "un dépôt privé à part est plus sûr")
         except Exception as x:  # noqa: BLE001
             self._ligne(s, "erreur", "Jeton GitHub refusé ou dépôt introuvable", self._erreur(x))
         et = sy.etat
@@ -273,12 +278,52 @@ class Diagnostic:
             etat = "ok" if total < 30 else "attention"
             self._ligne(s, etat, f"{nom} : {total} envoi(s) en attente, {len(echecs)} en échec",
                         f"dernier passage {_depuis((passages.get(p) or {}).get('quand'))}")
+            if total:
+                self._detail_file(s, doc, p, echecs)
             ech = [h for h in hist if h.get("p") == p and h.get("etat") == "echec"][-3:]
             for h in ech:
                 self._ligne(s, "attention", f"   échec récent ({_depuis(h['t'])}) : {h.get('cle')}", h.get("erreur", ""))
+        # visionnages en double (même film, même date) : chacun part séparément vers les plateformes
+        vus, doubles = {}, 0
+        for e in (doc.get("journal") or {}).values():
+            if e.get("x") or not e.get("cle") or not e.get("date"):
+                continue
+            k = (e["cle"], e["date"])
+            doubles += 1 if k in vus else 0
+            vus[k] = 1
+        self._ligne(s, "ok" if not doubles else "attention",
+                    "Journal sans doublon" if not doubles else f"{doubles} visionnage(s) en double dans ton journal (même film, même date)",
+                    "" if not doubles else "souvent un import fait deux fois : chaque doublon attend un envoi")
         n = len(app.get("file_tmdb") or [])
         self._ligne(s, "ok" if n < 30 else "attention", f"TMDB : {n} envoi(s) en attente",
                     self.app.tmdb.etat_file.get("erreur") or "")
+
+    def _detail_file(self, s, doc, p, echecs):
+        """Ce qui attend, par sorte : pour comprendre un retard (vraies nouveautés, ou valeurs qui ont changé ?)."""
+        o = miroir.operations(doc, p, self.app._meta, echecs, limite=100000)
+        NOMS = {"vu": "journal", "marque": "vu sans date", "note": "note", "like": "coup de cœur", "wl": "watchlist",
+                "fav": "watchlist", "liste": "liste", "item": "film de liste", "ep": "épisode", "critique": "critique"}
+        par = {}
+        for op in o["ops"]:
+            k = (op["sorte"], op["action"], "modif" if op["action"] == "poser" and op.get("avant") is not None else "")
+            par[k] = par.get(k, 0) + 1
+        morceaux = [f"{n} {NOMS.get(so, so)} {'à retirer' if a == 'retirer' else 'à modifier' if m else 'à ajouter'}"
+                    for (so, a, m), n in sorted(par.items(), key=lambda x: -x[1])]
+        self._ligne(s, "info", "   détail : " + ", ".join(morceaux))
+        # quelques exemples, avec ce qui a changé par rapport au dernier envoi
+        vus = set()
+        for op in o["ops"]:
+            k = (op["sorte"], op["action"])
+            if k in vus or len(vus) >= 6:
+                continue
+            vus.add(k)
+            avant, apres = op.get("avant"), op.get("valeur")
+            if isinstance(avant, dict) and isinstance(apres, dict):
+                diff = {c: (avant.get(c), apres.get(c)) for c in set(avant) | set(apres) if c != "ref" and avant.get(c) != apres.get(c)}
+                quoi = "changé : " + ", ".join(f"{c} {a!r} → {b!r}" for c, (a, b) in diff.items())
+            else:
+                quoi = f"avant {avant!r} → maintenant {apres!r}"
+            self._ligne(s, "info", f"   exemple : {op['sorte']} {op['action']} « {op.get('titre') or op['cle']} »", quoi[:300])
 
     def _tmdb(self):
         e = self.etat

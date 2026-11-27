@@ -439,6 +439,13 @@ async function diagLb(s, L, d, c, b) {
     const r = await delai(parler(onglet, { type: "silencio-diagnostic", p: "lb", ctx, temoin: d.temoin, complet: d.complet }), 240000, "test Letterboxd");
     for (const x of (r && r.etapes) || []) L(s, x.etat, x.texte, x.detail);
     if (r && r.bloque) L(s, "erreur", "Letterboxd a bloqué le test", r.bloque);
+    // Letterboxd répond normalement : une pause (anti-robot ou refus) encore en cours est levée, la synchro reprend
+    const marche = ((r && r.etapes) || []).some(x => x.texte.startsWith("Recherche d'un film") && x.etat === "ok") && !(r && r.bloque);
+    const c2 = await cfg();
+    if (marche && ((c2.pauses.lb || 0) > Date.now() || (c2.cloudflare || {}).lb)) {
+      await poser({ pauses: { ...c2.pauses, lb: 0 }, cloudflare: { ...(c2.cloudflare || {}), lb: 0 } });
+      L(s, "info", "Pause Letterboxd levée : le site répond normalement, la synchro reprend");
+    }
   } catch (x) {
     L(s, "erreur", "Test Letterboxd impossible", x.message || String(x));
   } finally {

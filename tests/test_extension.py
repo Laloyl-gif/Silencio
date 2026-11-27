@@ -19,7 +19,7 @@ PORT = 9930
 RECU = []
 
 FILM = """<!DOCTYPE html><html><body><div class="film-poster" data-film-slug="{slug}" data-postered-identifier='{{"lid":"{lid}","uid":"film:{fid}","type":"film"}}'></div>
-<a href="https://www.themoviedb.org/movie/{tmdb}/">TMDB</a></body></html>"""
+<a href="https://www.themoviedb.org/movie/{tmdb}/">TMDB</a><script src="/cdn-cgi/challenge-platform/scripts/jsd/main.js"></script></body></html>"""
 FILMS = {"1018": ("mulholland-drive", "2a8i", "51561"), "793": ("blue-velvet", "29xk", "48102"),
          "638": ("lost-highway", "1Xa2", "47788"), "985": ("eraserhead", "2bc4", "49001"), "6977": ("no-country-for-old-men", "1fKz", "40102")}
 

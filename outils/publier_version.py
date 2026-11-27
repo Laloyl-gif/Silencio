@@ -25,6 +25,27 @@ def git(*args, verifier=True):
     return r.returncode
 
 
+def assurer_origine():
+    """Le dossier doit savoir où envoyer (le dépôt GitHub du code) : sinon on le règle depuis depot.json."""
+    r = subprocess.run(["git", "remote", "get-url", "origin"], cwd=ICI, capture_output=True, text=True)
+    if r.returncode == 0 and "github.com" in r.stdout:
+        return
+    depot = "Laloyl-gif/Silencio"
+    try:
+        import json
+        with open(os.path.join(ICI, "depot.json"), encoding="utf-8") as f:
+            d = (json.load(f).get("github") or "").strip()
+        if d and not d.startswith("COMPTE/"):
+            depot = d
+    except (OSError, ValueError):
+        pass
+    print(f"Adresse GitHub du dépôt réglée : https://github.com/{depot}")
+    if r.returncode == 0:
+        git("remote", "set-url", "origin", f"https://github.com/{depot}.git")
+    else:
+        git("remote", "add", "origin", f"https://github.com/{depot}.git")
+
+
 def main():
     if len(sys.argv) < 2 or not zipfile.is_zipfile(sys.argv[1]):
         raise SystemExit(__doc__)
@@ -57,10 +78,12 @@ def main():
     else:
         git("commit", "-m", f"Silencio : {version}")
     # on envoie toujours : une version restée sur le PC (envoi raté la fois d'avant) part aussi
-    if git("push", verifier=False):
+    assurer_origine()
+    if git("push", "-u", "origin", "main", verifier=False):
         print("\nL'ENVOI SUR GITHUB A ÉCHOUÉ : le PC a la nouvelle version, pas les téléphones.")
         print("Essai de rattrapage (récupère ce qui est sur GitHub puis renvoie)…")
-        if git("pull", "--rebase", "--no-edit", verifier=False) or git("push", verifier=False):
+        if git("pull", "--rebase", "origin", "main", verifier=False) or git("push", "-u", "origin", "main", verifier=False):
+            git("rebase", "--abort", verifier=False)
             raise SystemExit("\nToujours impossible d'envoyer. Recopie le message d'erreur ci-dessus (lignes « error » ou "
                              "« fatal ») et envoie-le à Claude.")
     print(f"Publié ({version}) : PC et téléphones se mettront à jour au prochain lancement.")

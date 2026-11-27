@@ -42,6 +42,10 @@
     return !!t;
   }
 
+  // Une vraie page de vérification anti-robot : titre « Just a moment… » ou formulaire de défi. Les pages normales de
+  // Letterboxd chargent souvent un script /cdn-cgi/challenge-platform/ : ce n'est PAS un blocage.
+  const defiCloudflare = html => /<title>\s*Just a moment|id="challenge-form"|cf-chl-widget|cf_chl_opt/i.test(String(html || "").slice(0, 60000));
+
   function verifier(r, action) {
     if (r.status === 401) throw new Bloque("session Letterboxd expirée : reconnecte-toi sur letterboxd.com dans Firefox.");
     if (r.status === 403 && !action) throw new Bloque("Letterboxd refuse pour l'instant (403) : nouvel essai au prochain passage.");
@@ -57,7 +61,7 @@
     if (!r.ok) throw new Error(`fiche introuvable (${r.status})`);
     const m = new URL(r.url).pathname.match(/^\/film\/([^/]+)\//);
     const html = await r.text();
-    if (/cf-chl|challenge-platform|Just a moment/i.test(html)) throw new Bloque("Letterboxd vérifie le navigateur (Cloudflare).");
+    if (defiCloudflare(html)) throw new Bloque("Letterboxd vérifie le navigateur (Cloudflare).");
     const jeton = jetonDans(html); if (jeton) csrf = jeton;
     if (!m) return null;
     const doc = new DOMParser().parseFromString(html, "text/html");
@@ -313,9 +317,10 @@
     pseudo = ctx.pseudo || ""; csrf = csrfDeLaPage() || ctx.csrf || ""; cache = {};
     adresses = { ...(ctx.adresses || {}) }; essais = {};
     if (!FOND) {
-      const html = document.documentElement.innerHTML.slice(0, 40000);
-      if (/cf-chl|challenge-platform|Just a moment/i.test(html)) E("erreur", "La page Letterboxd est bloquée par Cloudflare", "ouvre letterboxd.com dans Firefox et passe la vérification");
-      const lien = pseudo && [...document.querySelectorAll("a[href]")].some(a => (a.getAttribute("href") || "").toLowerCase() === `/${pseudo.toLowerCase()}/`);
+      if (defiCloudflare(document.documentElement.outerHTML)) E("erreur", "La page Letterboxd est bloquée par Cloudflare", "ouvre letterboxd.com dans Firefox et passe la vérification");
+      const moi = `/${pseudo.toLowerCase()}/`;
+      const lien = pseudo && ([...document.querySelectorAll("a[href]")].some(a => { try { return a.hostname.endsWith("letterboxd.com") && a.pathname.toLowerCase() === moi; } catch { return false; } })
+        || new RegExp(`["'/]${pseudo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["'/]`, "i").test(document.documentElement.outerHTML.slice(0, 200000)));
       const connexion = document.querySelector('a[href="/sign-in/"], a[href*="/sign-in"], a[href*="signin"]');
       if (lien) E("ok", `Connecté à Letterboxd en tant que ${pseudo}`);
       else if (connexion) E("erreur", "Pas connecté à Letterboxd dans Firefox", "ouvre letterboxd.com et connecte-toi (coche « rester connecté »)");
@@ -357,22 +362,37 @@
     if (ok(await faire("Coup de cœur : ajout", { cle: `like|${c}`, sorte: "like", action: "poser", valeur: 1 })))
       await faire("Coup de cœur : retrait", { cle: `like|${c}`, sorte: "like", action: "retirer", valeur: null });
     if (ok(note)) await faire("Note : retrait", { cle: `note|${c}`, sorte: "note", action: "retirer", valeur: null });
-    if (entrees && entrees.length) E("saute", "Journal : le film témoin est déjà dans ton journal Letterboxd, test sauté pour ne rien perdre");
+    // journal : il faut un film absent de ton journal Letterboxd ; sinon on essaie les autres films témoins
+    let fj = f;
+    if (pseudo && entrees && entrees.length) {
+      fj = null;
+      for (const autre of t.autres || []) {
+        try {
+          const g = await film(autre.tmdb);
+          if (!g || !g.filmId) continue;
+          const l = await entreesLb(g);
+          if (l && !l.length) { fj = g; E("info", "Journal : film témoin de remplacement (le premier est déjà dans ton journal)", `/film/${g.slug}/`); break; }
+        } catch { /* suivant */ }
+      }
+    }
+    if (!fj) E("saute", "Journal : tous les films témoins sont déjà dans ton journal Letterboxd, test sauté pour ne rien perdre");
     else if (!pseudo) E("saute", "Journal : pseudo Letterboxd absent, test sauté");
     else {
       const jour = new Date().toISOString().slice(0, 10);
       const v = { date: jour, rewatch: false, note: null, like: false, critique: "" };
-      const cree = await faire("Journal : entrée créée (aujourd'hui)", { cle: "vu|diag", sorte: "vu", action: "poser", valeur: v, extra: {}, nb: 1 });
+      const bj = fj === f ? {} : { tmdb: Object.keys(cache).find(k => cache[k] === fj) };
+      const cj = fj === f ? c : `m:${bj.tmdb}`;
+      const cree = await faire("Journal : entrée créée (aujourd'hui)", { ...bj, cle: "vu|diag", sorte: "vu", action: "poser", valeur: v, extra: {}, nb: 1 });
       if (ok(cree)) {
         const ref = cree.ref;
         if (!ref) E("attention", "Journal : identifiant de l'entrée non renvoyé par Letterboxd", "retrouvée ensuite par sa date");
-        await faire("Journal : entrée modifiée (note 3 étoiles)", { cle: "vu|diag", sorte: "vu", action: "poser", valeur: { ...v, note: 3 }, ref, avant: v, nb: 1 });
-        await faire("Journal : entrée supprimée", { cle: "vu|diag", sorte: "vu", action: "retirer", valeur: null, ref, avant: v });
-        const reste = await entreesLb(f).catch(() => null);
-        if (reste) E(reste.length ? "erreur" : "ok", "Journal : vérification après suppression", reste.length ? `${reste.length} entrée(s) encore là : supprime-la à la main sur /${pseudo}/film/${f.slug}/diary/` : "plus aucune entrée");
-        await faire("Note : retrait (laissée par l'entrée)", { cle: `note|${c}`, sorte: "note", action: "retirer", valeur: null });
+        await faire("Journal : entrée modifiée (note 3 étoiles)", { ...bj, cle: "vu|diag", sorte: "vu", action: "poser", valeur: { ...v, note: 3 }, ref, avant: v, nb: 1 });
+        await faire("Journal : entrée supprimée", { ...bj, cle: "vu|diag", sorte: "vu", action: "retirer", valeur: null, ref, avant: v });
+        const reste = await entreesLb(fj).catch(() => null);
+        if (reste) E(reste.length ? "erreur" : "ok", "Journal : vérification après suppression", reste.length ? `${reste.length} entrée(s) encore là : supprime-la à la main sur /${pseudo}/film/${fj.slug}/diary/` : "plus aucune entrée");
+        await faire("Note : retrait (laissée par l'entrée)", { ...bj, cle: `note|${cj}`, sorte: "note", action: "retirer", valeur: null });
       }
-      await faire("Vu : marque retirée (nettoyage)", { cle: `marque|${c}`, sorte: "marque", action: "retirer", valeur: null });
+      await faire("Vu : marque retirée (nettoyage)", { ...bj, cle: `marque|${cj}`, sorte: "marque", action: "retirer", valeur: null });
     }
     return { etapes, adresses };
   }
