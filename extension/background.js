@@ -123,6 +123,7 @@ async function ongletPour(p, motif) {
   const ecart = motif === "ajout" ? 2 * 60e3 : hasard(2, 4) * 3600e3;
   if (motif !== "bouton" && Date.now() - (c.dernierOnglet[p] || 0) < ecart) return null;
   const t = await B.tabs.create({ url: SITE[p], active: false });
+  if (B.tabs.hide) await B.tabs.hide(t.id).catch(() => {});      // caché de la barre d'onglets (Firefox ordinateur)
   await attendreChargement(t.id);
   await poser({ dernierOnglet: { ...c.dernierOnglet, [p]: Date.now() } });
   return { id: t.id, cree: true };
@@ -217,7 +218,9 @@ async function plateforme(p, aBlanc, motif, modes) {
 // requêtes) ; si le site refuse cette voie (Cloudflare, réseau), dans un onglet du site ouvert en arrière-plan.
 const reseau = x => /NetworkError|Failed to fetch|injoignable|Cloudflare|vérifie le navigateur/i.test(x || "");
 async function executerOps(p, ops, ctx, aBlanc, motif, c) {
-  const fond = (globalThis.__silencioExec || {})[p];
+  // IMDb : sans onglet (l'API du site accepte la session jointe). Letterboxd : son pare-feu (Cloudflare, nginx)
+  // refuse les requêtes qui ne viennent pas d'une vraie page : on passe par un onglet caché, refermé aussitôt.
+  const fond = p === "imdb" ? (globalThis.__silencioExec || {})[p] : null;
   const echecFond = (c.fondKo || {})[p] || 0;
   let rep = null, reste = ops;
   if (fond && Date.now() - echecFond > 6 * 3600e3) {

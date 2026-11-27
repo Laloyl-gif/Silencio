@@ -312,11 +312,11 @@ with sync_playwright() as p:
         webRequest: { onBeforeRequest: { addListener() {} } }
       };
       window.__msg = m => ecoutes[0](m);
-      // les scripts des sites tournent dans l'extension (sans onglet) : Letterboxd réussit, IMDb refuse cette voie
+      // IMDb tourne dans l'extension (sans onglet) ; Letterboxd passe par un onglet caché
       window.__onglets = [];
       globalThis.__silencioExec = {
         lb: async ops => ({ resultats: ops.map(o => ({ id: o.id, cle: o.cle, action: o.action, valeur: o.valeur, titre: o.titre, etat: "ok" })), cache: {} }),
-        imdb: async ops => ({ resultats: ops.map(o => ({ id: o.id, cle: o.cle, action: o.action, valeur: o.valeur, titre: o.titre, etat: "echec", erreur: "IMDb injoignable (NetworkError when attempting to fetch resource.)" })) })
+        imdb: async ops => ({ resultats: ops.map(o => ({ id: o.id, cle: o.cle, action: o.action, valeur: o.valeur, titre: o.titre, etat: "ok" })) })
       };
       const envoi = browser.tabs.sendMessage;
       browser.tabs.sendMessage = async (id, m) => { window.__onglets.push(m.p); return envoi(id, m); };
@@ -339,7 +339,7 @@ with sync_playwright() as p:
     pl = api("/api/etat")["plateformes"]
     assert pl["lb"]["envoye"] >= 4 and pl["imdb"]["envoye"] >= 4 and pl["extension_vue"].get("lb"), pl["lb"]
     onglets = pe.evaluate("window.__onglets")
-    assert "lb" not in onglets and "imdb" in onglets, f"Letterboxd sans onglet, IMDb par un onglet en secours : {onglets}"
+    assert "imdb" not in onglets and "lb" in onglets, f"IMDb sans onglet, Letterboxd par un onglet caché : {onglets}"
     etat_ext = pe.evaluate("async () => await window.__msg({ type: 'etat' })")
     assert etat_ext["quota"]["lb"]["n"] >= 4, etat_ext["quota"]
     # un film ajouté dans Silencio : la veille de l'extension le voit et l'envoie sans attendre le prochain tour

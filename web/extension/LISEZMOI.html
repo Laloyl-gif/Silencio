@@ -45,11 +45,14 @@
 </ol>
 
 <h2>3. Sur ton téléphone (Firefox pour Android)</h2>
+<p>Pas besoin de cocher Android sur addons.mozilla.org : le même fichier <code>.xpi</code> signé s'installe sur le téléphone, depuis un menu caché de Firefox.</p>
 <ol>
-  <li>Copie le <code>.xpi</code> signé sur ton téléphone (par exemple dans Téléchargements).</li>
-  <li>Dans Firefox : <b>Paramètres</b>, <b>À propos de Firefox</b>, touche 5 fois le logo Firefox, puis reviens aux Paramètres.</li>
-  <li>Touche <b>Installer une extension depuis un fichier</b> et choisis le <code>.xpi</code>.</li>
-  <li>Ouvre l'appli Silencio (l'extension lui parle pendant qu'elle est ouverte), puis dans Firefox : <b>Extensions</b>, <b>Silencio Sync</b>, <b>Paramètres</b>. Mets <code>http://127.0.0.1:8642</code> et le même code d'appairage.</li>
+  <li>Mets Firefox à jour (Play Store) : il faut la version 142 ou plus récente.</li>
+  <li>Mets le <code>.xpi</code> signé sur le téléphone : envoie-le-toi (mail, Drive, câble USB dans le dossier Téléchargements), ou ouvre ta page de développeur addons.mozilla.org dans Firefox sur le téléphone, appui long sur le lien du fichier <code>.xpi</code>, puis <b>Télécharger le lien</b>.</li>
+  <li>Dans Firefox : menu (les trois points), <b>Paramètres</b>, tout en bas <b>À propos de Firefox</b>.</li>
+  <li>Touche 5 fois de suite, rapidement, le logo Firefox, jusqu'au message « Menu de débogage activé ».</li>
+  <li>Reviens dans <b>Paramètres</b> : dans la partie <b>Avancé</b>, touche <b>Installer une extension depuis un fichier</b>, choisis le <code>.xpi</code>, puis <b>Ajouter</b>.</li>
+  <li>Ouvre l'appli Silencio (l'extension lui parle pendant qu'elle est ouverte), puis dans Firefox : menu, <b>Extensions</b>, <b>Silencio Sync</b>, <b>Paramètres</b>. Mets <code>http://127.0.0.1:8642</code> et le code d'appairage affiché dans Silencio.</li>
   <li>Connecte-toi une fois sur letterboxd.com et imdb.com dans Firefox sur le téléphone.</li>
 </ol>
 
@@ -70,7 +73,7 @@
 </ul>
 <h2>6. Discret par construction</h2>
 <ul>
-  <li>L'extension parle elle-même à Letterboxd et IMDb, avec ta session Firefox : <b>aucun onglet ne s'ouvre</b>. Si un site refuse cette voie, elle passe en secours par un onglet du site ouvert en arrière-plan puis refermé.</li>
+  <li>IMDb : l'extension lui parle elle-même, avec ta session Firefox, <b>sans aucun onglet</b>. Letterboxd refuse ce genre de requêtes : l'extension utilise un onglet Letterboxd déjà ouvert, sinon elle en ouvre un caché (sur ordinateur, il n'apparaît pas dans la barre d'onglets) et le referme aussitôt.</li>
   <li>3 à 6 actions par passage, espacées de 5 à 13 secondes, 40 au plus par jour et par site, à des heures irrégulières.</li>
   <li>Une adresse qui marche est retenue ; les autres ne sont essayées qu'une fois par jour. Au moindre refus du site, l'extension se met en pause 12 à 24 heures.</li>
 </ul>
