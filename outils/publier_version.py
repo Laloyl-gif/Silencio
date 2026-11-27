@@ -47,18 +47,23 @@ def main():
         shutil.copytree(a, b) if os.path.isdir(a) else shutil.copyfile(a, b)
     shutil.rmtree(tmp, ignore_errors=True)
     git("add", "-A")
-    if git("diff", "--cached", "--quiet", verifier=False) == 0:
-        print("Rien de nouveau.")
-        return
     try:
         with open(os.path.join(ICI, "VERSION"), encoding="utf-8") as f:
             version = "version " + f.read().strip()
     except OSError:
         version = "nouvelle version"
-    git("commit", "-m", f"Silencio : {version}")
-    git("push")
+    if git("diff", "--cached", "--quiet", verifier=False) == 0:
+        print("Code déjà à jour sur ce PC : vérification de l'envoi sur GitHub…")
+    else:
+        git("commit", "-m", f"Silencio : {version}")
+    # on envoie toujours : une version restée sur le PC (envoi raté la fois d'avant) part aussi
+    if git("push", verifier=False):
+        print("\nL'ENVOI SUR GITHUB A ÉCHOUÉ : le PC a la nouvelle version, pas les téléphones.")
+        print("Essai de rattrapage (récupère ce qui est sur GitHub puis renvoie)…")
+        if git("pull", "--rebase", "--no-edit", verifier=False) or git("push", verifier=False):
+            raise SystemExit("\nToujours impossible d'envoyer. Recopie le message d'erreur ci-dessus (lignes « error » ou "
+                             "« fatal ») et envoie-le à Claude.")
     print(f"Publié ({version}) : PC et téléphones se mettront à jour au prochain lancement.")
-
 
 if __name__ == "__main__":
     main()
