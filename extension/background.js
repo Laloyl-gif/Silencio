@@ -71,6 +71,26 @@ async function parler(onglet, message) {
   throw new Error(/Receiving end/i.test(derniere?.message || "") ? "la page du site ne répond pas (rechargée pendant l'envoi ?) : nouvel essai au prochain passage." : (derniere?.message || "le script n'a pas répondu"));
 }
 
+// ---------------------------------------------------------------- requêtes sans onglet
+// Quand l'extension parle elle-même à Letterboxd ou IMDb, ses requêtes partent comme celles du site : avec ta session
+// (les cookies du site, lus par l'API cookies) et l'origine du site. Seules les requêtes de l'extension sont touchées.
+if (B.webRequest && B.webRequest.onBeforeSendHeaders) {
+  try {
+    B.webRequest.onBeforeSendHeaders.addListener(async d => {
+      if (!String(d.originUrl || d.documentUrl || "").startsWith(location.origin)) return {};
+      const site = d.url.startsWith("https://letterboxd.com") ? "https://letterboxd.com" : "https://www.imdb.com";
+      const h = d.requestHeaders.filter(x => !/^(origin|referer)$/i.test(x.name));
+      if (!h.some(x => /^cookie$/i.test(x.name))) {
+        const ks = await B.cookies.getAll({ url: d.url }).catch(() => []);
+        if (ks.length) h.push({ name: "Cookie", value: ks.map(k => `${k.name}=${k.value}`).join("; ") });
+      }
+      h.push({ name: "Referer", value: site + "/" });
+      if (d.method !== "GET" && d.method !== "HEAD") h.push({ name: "Origin", value: site });
+      return { requestHeaders: h };
+    }, { urls: ["https://letterboxd.com/*", "https://www.imdb.com/*", "https://api.graphql.imdb.com/*"] }, ["blocking", "requestHeaders"]);
+  } catch (e) { /* navigateur sans webRequest bloquant : on passera par un onglet */ }
+}
+
 // ---------------------------------------------------------------- onglets
 function attendreChargement(id, max = 45000) {
   return new Promise(ok => {
@@ -149,19 +169,17 @@ async function plateforme(p, aBlanc, motif, modes) {
     await noter(`${NOM[p]} : tu n'es pas connecté dans Firefox. Ouvre ${p === "lb" ? "letterboxd.com" : "imdb.com"} et connecte-toi une fois (coche « rester connecté »).`, "erreur");
     return { bloque: "connexion" };
   }
-  const onglet = await ongletPour(p, motif);
-  if (!onglet) return { attend: true, en_attente: r.ops.length };
   ctx.adresses = c.adresses[p] || {};
   ctx.essais = c.essais[p] || {};
+  const { rep, onglet } = await executerOps(p, r.ops, ctx, aBlanc, motif, c);
+  if (!rep) return { attend: true, en_attente: r.ops.length };
   try {
-    const rep = await parler(onglet, { type: "silencio-executer", p, ops: r.ops, ctx, aBlanc });
-    if (!rep) throw new Error("le script n'a pas répondu");
     const c2 = await cfg();
     const maj = { adresses: { ...c2.adresses, [p]: rep.adresses || ctx.adresses }, essais: { ...c2.essais, [p]: rep.essais || ctx.essais } };
     if (p === "lb" && rep.cache) maj.cacheLb = { ...c2.cacheLb, ...rep.cache };
     const faites = (rep.resultats || []).filter(x => ["ok", "deja", "echec"].includes(x.etat)).length;
     if (!aBlanc) maj.quota = { ...c2.quota, [p]: { jour: aujourdhui(), n: q + faites } };
-    if (rep.bloque) maj.pauses = { ...c2.pauses, [p]: Date.now() + hasard(12, 24) * 3600e3 };
+    if (rep.bloque) maj.pauses = { ...c2.pauses, [p]: Date.now() + (reseau(rep.bloque) ? hasard(2, 4) * 3600e3 : hasard(30, 60) * 60e3) };
     await poser(maj);
     const resultats = (rep.resultats || []).filter(x => x.etat !== "attente" && x.etat !== "blanc");
     const manuels = resultats.filter(x => x.etat === "manuel" && x.lien);
@@ -179,11 +197,36 @@ async function plateforme(p, aBlanc, motif, modes) {
       await noter(`${NOM[p]} : ${n("ok") + n("deja")} fait(s), ${n("echec")} échec(s), ${n("manuel")} à faire à la main${r.reste ? `, ${r.reste} au prochain passage` : ""}.`, n("echec") ? "erreur" : "info");
     }
     for (const x of resultats.filter(x => x.etat === "echec").slice(0, 5)) await noter(`${NOM[p]}, ${x.titre || x.cle} : ${x.erreur}`, "erreur");
-    if (rep.bloque) await noter(`${NOM[p]} : ${rep.bloque} Pause de quelques heures.`, "erreur");
+    if (rep.bloque) await noter(`${NOM[p]} : ${rep.bloque} Nouvel essai ${reseau(rep.bloque) ? "dans quelques heures" : "dans moins d'une heure"}.`, "erreur");
     return { fait: n("ok") + n("deja"), echecs: n("echec"), manuels: n("manuel"), bloque: rep.bloque || "" };
   } finally {
-    if (onglet.cree) B.tabs.remove(onglet.id).catch(() => {});
+    if (onglet && onglet.cree) B.tabs.remove(onglet.id).catch(() => {});
   }
+}
+
+// Exécute les opérations : d'abord dans l'extension elle-même, sans aucun onglet (ta session est jointe aux
+// requêtes) ; si le site refuse cette voie (Cloudflare, réseau), dans un onglet du site ouvert en arrière-plan.
+const reseau = x => /NetworkError|Failed to fetch|injoignable|Cloudflare|vérifie le navigateur/i.test(x || "");
+async function executerOps(p, ops, ctx, aBlanc, motif, c) {
+  const fond = (globalThis.__silencioExec || {})[p];
+  const echecFond = (c.fondKo || {})[p] || 0;
+  let rep = null, reste = ops;
+  if (fond && Date.now() - echecFond > 6 * 3600e3) {
+    try { rep = await fond(ops, { ...ctx }, aBlanc); } catch (e) { rep = { resultats: [], bloque: String(e.message || e) }; }
+    const bons = (rep.resultats || []).filter(x => !(x.etat === "echec" && reseau(x.erreur)));
+    const voieKo = reseau(rep.bloque) || (rep.resultats || []).some(x => x.etat === "echec" && reseau(x.erreur));
+    if (!voieKo) return { rep, onglet: null };
+    await poser({ fondKo: { ...((await cfg()).fondKo || {}), [p]: Date.now() } });
+    const faits = new Set(bons.filter(x => x.etat !== "attente").map(x => x.id));
+    reste = ops.filter(o => !faits.has(o.id));
+    rep = { ...rep, resultats: bons, bloque: "" };
+    if (!reste.length) return { rep, onglet: null };
+  }
+  const onglet = await ongletPour(p, motif);
+  if (!onglet) return { rep: rep && rep.resultats.length ? rep : null, onglet: null };
+  const rep2 = await parler(onglet, { type: "silencio-executer", p, ops: reste, ctx, aBlanc });
+  if (!rep) return { rep: rep2, onglet };
+  return { rep: { ...rep2, resultats: [...rep.resultats, ...(rep2.resultats || [])], cache: { ...(rep.cache || {}), ...(rep2.cache || {}) } }, onglet };
 }
 
 let enCours = false;
@@ -262,7 +305,7 @@ async function veille() {
   if (!auto("lb") && !auto("imdb")) return;
   // une modification récente (ou des envois restés en route) : on y va, après 20 s de calme
   const recent = b.modif && b.modif > (c.vuModif || 0);
-  if (!recent && Date.now() - (c.dernier?.quand || 0) < 10 * 60e3) return;
+  if (!recent && Date.now() - (c.dernier?.quand || 0) < 3 * 60e3) return;
   if (b.modif && Date.now() - b.modif * 1000 < 20000) return;
   await synchroniser("ajout");
 }
@@ -315,9 +358,8 @@ async function executerUn(p, id) {
     ctx.adresses = c.adresses[p] || {};
     ctx.essais = {};
     ctx.rapide = true;                        // c'est toi qui cliques : pas d'attente artificielle
-    const onglet = await ongletPour(p, "bouton");
+    const { rep, onglet } = await executerOps(p, [op], ctx, false, "bouton", c);
     try {
-      const rep = await parler(onglet, { type: "silencio-executer", p, ops: [op], ctx });
       const tous = (rep && rep.resultats || []).filter(x => x.etat !== "attente");
       const res = tous.find(x => x.id === id);
       if (!res) return { ok: false, erreur: "pas encore possible pour ce type d'action" };
@@ -328,7 +370,7 @@ async function executerUn(p, id) {
       if (res.etat === "manuel") return { ok: true, manuel: res };
       return res.etat === "echec" ? { ok: false, erreur: res.erreur } : { ok: true };
     } finally {
-      if (onglet.cree) B.tabs.remove(onglet.id).catch(() => {});
+      if (onglet && onglet.cree) B.tabs.remove(onglet.id).catch(() => {});
     }
   } catch (e) {
     return { ok: false, erreur: e.message };
@@ -361,8 +403,6 @@ B.runtime.onMessage.addListener(async m => {
   if (m?.type === "veille") { await veille(); return { ok: true }; }
   if (m?.type === "imdb-gql") {
     try {
-      const tous = await B.cookies.getAll({ domain: "imdb.com" }).catch(() => []);
-      cookiesImdb = tous.map(k => `${k.name}=${k.value}`).join("; ");
       const r = await fetch("https://api.graphql.imdb.com/", { method: "POST", credentials: "include", headers: m.entetes || {}, body: m.corps });
       return { status: r.status, texte: await r.text() };
     } catch (e) { return { erreur: "IMDb injoignable (" + e.message + ")" }; }

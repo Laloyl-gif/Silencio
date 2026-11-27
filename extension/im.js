@@ -5,6 +5,7 @@
   if (window.__silencioIm) return;
   window.__silencioIm = true;
   const B = globalThis.browser;
+  const FOND = location.protocol === "moz-extension:";     // dans l'extension elle-même : sans onglet
   const F = (typeof content !== "undefined" && content.fetch) ? content.fetch.bind(content) : window.fetch.bind(window);
   const GQL = "https://api.graphql.imdb.com/";
   let vitesse = 1;                         // 1 en vrai ; les tests accélèrent
@@ -19,8 +20,12 @@
     if (session) h["x-amzn-sessionid"] = session;
     const corps = JSON.stringify({ query, operationName, variables });
     let r = null, raison = "";
+    if (FOND) {
+      try { r = await fetch(GQL, { method: "POST", credentials: "include", headers: h, body: corps }); }
+      catch (e) { throw new Error("IMDb injoignable (" + (e.message || e) + ")"); }
+    }
     // 1) par l'extension elle-même (avec ta session IMDb) : Firefox refuse souvent l'appel fait depuis la page
-    if (B && B.runtime && B.runtime.sendMessage && !parPage) {
+    if (!r && B && B.runtime && B.runtime.sendMessage && !parPage) {
       const x = await B.runtime.sendMessage({ type: "imdb-gql", corps, entetes: h }).catch(e => ({ erreur: String(e && e.message || e) }));
       if (x && !x.erreur) r = { status: x.status, json: async () => JSON.parse(x.texte) };
       else raison = x && x.erreur || "";
@@ -121,7 +126,8 @@
     return { resultats, bloque };
   }
 
-  B.runtime.onMessage.addListener(m => {
+  if (FOND) (globalThis.__silencioExec ||= {}).imdb = executer;
+  else B.runtime.onMessage.addListener(m => {
     if (m && m.type === "silencio-executer") return executer(m.ops, m.ctx || {}, !!m.aBlanc);
   });
 })();

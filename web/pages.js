@@ -169,8 +169,9 @@ P.accueil = async (vue) => {
     if (S.memo.sorties) remplir(S.memo.sorties); else S.api("/api/sorties").then(d => { S.memo.sorties = d.r; remplir(d.r); }).catch(() => {});
   }
   const remplirAnniv = r => {
-    if (!r.length) return;
-    $("[data-anniv]", vue).innerHTML = `<div class="section-titre"><h2>Anniversaires</h2></div><div class="rangee">${r.slice(0, 12).map(p => `<a class="personne-v anniv" href="#/personne/${p.id}">${S.portrait(p.photo, p.nom)}<b>${esc(p.nom)}</b><span>${p.dans === 0 ? "aujourd'hui" : p.dans === 1 ? "demain" : `dans ${p.dans} jours`}${p.deces ? "" : `, ${p.age} ans`}</span></a>`).join("")}</div>`;
+    const auj = r.filter(p => p.dans === 0);              // seulement ceux dont c'est l'anniversaire aujourd'hui
+    if (!auj.length) return;
+    $("[data-anniv]", vue).innerHTML = `<div class="section-titre"><h2>Anniversaires du jour</h2></div><div class="rangee rangee-anniv">${auj.slice(0, 12).map(p => `<a class="personne-v anniv" href="#/personne/${p.id}">${S.portrait(p.photo, p.nom)}<b>${esc(p.nom)}</b><span>${p.deces ? `aurait eu ${p.age} ans` : `${p.age} ans`}</span></a>`).join("")}</div>`;
   };
   if (S.memo.anniv) remplirAnniv(S.memo.anniv); else S.api("/api/anniversaires").then(d => { S.memo.anniv = d.r; remplirAnniv(d.r); }).catch(() => {});
 };
@@ -361,12 +362,14 @@ function monJournal(z, cle, t, journal) {
   const cit = t.citations || [], et = t.etiquettes || [], det = Object.entries(t.detail || {}).filter(([, v]) => v);
   const LIB = { scenario: "Scénario", realisation: "Mise en scène", jeu: "Jeu", image: "Image", musique: "Musique", son: "Son" };
   const ou = j => j.ou?.type === "cinema" ? `au ${esc(j.ou.cinema || "cinéma")}${j.ou.salle ? `, salle ${esc(j.ou.salle)}` : ""}` : j.ou?.nom ? `sur ${esc(j.ou.nom)}` : "";
-  z.innerHTML = `${journal.length ? journal.map(j => `<button class="toi-vis" data-j="${j.id}"><span class="toi-date">${esc(S.fmtDateP(j.date))}</span><span class="toi-det">${[j.revision ? "revu" : "", ou(j), j.version, (j.avec || []).length ? "avec " + esc(j.avec.map(a => S.amis[a]?.profil?.nom || a).join(", ")) : ""].filter(Boolean).join(", ")}</span>${j.note != null ? `<span class="toi-note">${S.fmtNote(j.note)}</span>` : ""}${j.critique ? `<span class="toi-critique">${esc(j.critique)}</span>` : ""}</button>`).join("") : `<p class="toi-vide">Pas encore dans ton journal.</p>`}
+  z.innerHTML = `${journal.length ? journal.map(j => `<button class="toi-vis" data-j="${j.id}"><span class="toi-date">${esc(S.fmtDateP(j.date))}</span><span class="toi-det">${[j.revision ? "revu" : "", ou(j), j.version, (j.avec || []).length ? "avec " + esc(j.avec.map(a => S.amis[a]?.profil?.nom || a).join(", ")) : ""].filter(Boolean).join(", ")}${!j.ou || j.approx ? `<em class="toi-completer">${j.approx ? "date approximative, " : ""}ajouter le lieu, la version…</em>` : ""}</span>${j.note != null ? `<span class="toi-note">${S.fmtNote(j.note)}</span>` : ""}<span class="toi-modifier">Modifier</span>${j.critique ? `<span class="toi-critique">${esc(j.critique)}</span>` : ""}</button>`).join("")
+      : t.vu ? `<button class="toi-vis" data-sans-date><span class="toi-date">Vu</span><span class="toi-det">sans date dans ton journal<em class="toi-completer">ajouter la date, le cinéma, la version…</em></span><span class="toi-modifier">Compléter</span></button>` : `<p class="toi-vide">Pas encore dans ton journal.</p>`}
     ${det.length ? `<dl class="prog-equipe" style="margin-top:14px">${det.map(([k, v]) => `<dt>${LIB[k] || k}</dt><dd>${v} sur 10</dd>`).join("")}</dl>` : ""}
     ${cit.map((c, i) => `<blockquote class="toi-citation">${esc(c)}<button data-cit-suppr="${i}">retirer</button></blockquote>`).join("")}
     ${et.length ? `<p class="toi-etiquettes">${et.map(e => `<span>${esc(e)} <button data-et-suppr="${esc(e)}" aria-label="Retirer">×</button></span>`).join(", ")}</p>` : ""}
     <div class="toi-actions"><button data-cit>Ajouter une réplique</button><button data-et>Ajouter une étiquette</button><button data-prive>${t.prive ? "Montrer ce film à tes amis" : "Cacher ce film à tes amis"}</button></div>`;
   $$("[data-j]", z).forEach(l => l.onclick = () => S.ouvrirAjout(cle, journal.find(j => j.id === l.dataset.j)));
+  const sd = $("[data-sans-date]", z); if (sd) sd.onclick = () => S.ouvrirAjout(cle, null, { sansDate: true });
   $$("[data-cit-suppr]", z).forEach(b => b.onclick = () => S.agir("titre", { cle, champs: { citations: cit.filter((_, i) => i !== +b.dataset.citSuppr) } }, { toast: "Réplique retirée" }));
   $$("[data-et-suppr]", z).forEach(b => b.onclick = () => S.agir("titre", { cle, champs: { etiquettes: et.filter(e => e !== b.dataset.etSuppr) } }, { toast: "Étiquette retirée" }));
   $("[data-cit]", z).onclick = () => {

@@ -147,16 +147,16 @@ function formulaire(modale, corps, cle, ex, o = {}) {
   const m = S.info(cle) || {};
   const t = S.monTitre(cle);
   const dejaVu = !!(t.vu || S.journalDe(cle).length);
-  if (o.suite && !ex) ex = { date: S.aujourdhui().slice(0, 4), revision: false };   // vu sans date : à toi de la retrouver
+  if ((o.suite || o.sansDate) && !ex) ex = { date: S.aujourdhui().slice(0, 4), revision: false };   // vu sans date : à toi de la retrouver
   const e = Object.assign({ cle, date: S.aujourdhui(), note: t.note ?? null, coeur: !!t.coeur, revision: dejaVu, critique: "", critique_privee: true, prive: false, ou: null, prix: null, avec: [], version: "" }, ex || {});
   const detail = Object.assign({}, t.detail || {});
   $("h2", modale).textContent = o.suite ? `Compléter, ${o.position}` : ex ? "Modifier" : "J'ai vu";
   const mesCinemas = [...new Map(Object.values(S.vivants(S.moi.journal)).filter(j => j.ou?.type === "cinema" && j.ou.cinema).sort((a, b) => (b.date || "").localeCompare(a.date || "")).map(j => [j.ou.cinema, j.ou])).values()].slice(0, 6);
   const precisionInit = e.date.length === 4 ? "annee" : e.date.length === 7 ? "mois" : "jour";
-  const moment = o.suite ? "autre" : e.date === S.aujourdhui() ? "auj" : e.date === S.hier() ? "hier" : "autre";
+  const moment = o.suite || o.sansDate ? "autre" : e.date === S.aujourdhui() ? "auj" : e.date === S.hier() ? "hier" : "autre";
   let cinema = e.ou?.type === "cinema" ? { nom: e.ou.cinema || "", salle: e.ou.salle || "" } : null;
   corps.innerHTML = `
-    <div class="aj-film">${S.affiche(m, { taille: "w154" })}<div style="min-width:0"><h3>${esc(S.nomTitre(m))}</h3><div class="aj-sous">${[m.a, dejaVu && !ex ? "déjà dans ton journal" : "", o.suite && ex?.approx ? "date approximative (importée)" : "", o.suite && !ex?.id ? "vu, sans date dans ton journal" : ""].filter(Boolean).join(", ")}</div>${!ex ? `<button class="aj-changer" data-retour>Changer de film</button>` : ""}</div></div>
+    <div class="aj-film">${S.affiche(m, { taille: "w154" })}<div style="min-width:0"><h3>${esc(S.nomTitre(m))}</h3><div class="aj-sous">${[m.a, dejaVu && !ex ? "déjà dans ton journal" : "", o.sansDate ? "vu, sans date dans ton journal" : "", o.suite && ex?.approx ? "date approximative (importée)" : "", o.suite && !ex?.id ? "vu, sans date dans ton journal" : ""].filter(Boolean).join(", ")}</div>${!ex ? `<button class="aj-changer" data-retour>Changer de film</button>` : ""}</div></div>
     <section class="panneau aj-panneau">
       <div class="pan-etats deux"><button data-coeur class="${e.coeur ? "actif" : ""}" style="--c:#f0505f">Coup de cœur</button><button data-rev class="${e.revision ? "actif" : ""}" style="--c:#4cc46f">Revisionnage</button></div>
       <div class="prog-note"><div class="pan-tete"><span>Ta note</span><b data-chiffre-aj></b></div><div data-note></div></div>

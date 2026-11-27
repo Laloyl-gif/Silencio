@@ -4,8 +4,12 @@
   if (window.__silencioLb) return;
   window.__silencioLb = true;
   const B = globalThis.browser;
-  // content.fetch : la requête part comme une requête de la page letterboxd.com (même origine, mêmes cookies)
-  const F = (typeof content !== "undefined" && content.fetch) ? content.fetch.bind(content) : window.fetch.bind(window);
+  // Deux façons de tourner : dans l'extension elle-même (sans onglet : la session Letterboxd est jointe par
+  // background.js), ou dans un onglet letterboxd.com (content.fetch : requête de la page, mêmes cookies).
+  const FOND = location.protocol === "moz-extension:";
+  const F = FOND
+    ? (url, o = {}) => { const x = { ...o, credentials: "include" }; delete x.referrer; return fetch(/^https?:/.test(url) ? url : "https://letterboxd.com" + url, x); }
+    : (typeof content !== "undefined" && content.fetch) ? content.fetch.bind(content) : window.fetch.bind(window);
   let vitesse = 1;                         // 1 en vrai ; les tests accélèrent
   const pause = ms => new Promise(r => setTimeout(r, ms * vitesse));
   const hasard = (a, b) => a + Math.random() * (b - a);
@@ -274,7 +278,8 @@
     return { resultats, cache, bloque, adresses, essais };
   }
 
-  B.runtime.onMessage.addListener(m => {
+  if (FOND) (globalThis.__silencioExec ||= {}).lb = executer;
+  else B.runtime.onMessage.addListener(m => {
     if (m && m.type === "silencio-executer") return executer(m.ops, m.ctx || {}, !!m.aBlanc);
   });
 })();

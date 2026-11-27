@@ -1351,3 +1351,11 @@ body.avec-barre-film #principal { padding-bottom: calc(var(--barre-bas) + 96px +
 }
 .pied-completer .aj-supprimer { color: var(--texte-2); }
 .pied-completer .aj-supprimer:hover { color: #fff; }
+.rangee-anniv { padding-top: 8px; padding-bottom: 8px; }
+.personne-v.anniv { flex: none; }
+.personne-v.anniv .portrait { box-shadow: 0 0 0 2px var(--fond), 0 0 0 4px #fff; }
+.toi-vis { position: relative; }
+.toi-completer { display: block; font-style: normal; color: var(--texte-3); font-size: 12.5px; margin-top: 2px; }
+.toi-vis { grid-template-columns: 1fr auto auto; }
+.toi-note { grid-column: 2; }
+.toi-modifier { grid-column: 3; grid-row: 1 / span 2; align-self: center; font-size: 13px; color: var(--texte-2); text-decoration: underline; text-underline-offset: 3px; }

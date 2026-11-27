@@ -229,6 +229,11 @@ def main():
         verifier(gql[0][1].get("x-amzn-sessionid") == "123-456", "IMDb : identifiant de session transmis")
         nav.close()
     s.shutdown()
+    # les scripts chargés dans l'extension elle-même (sans onglet) : pas de variable oubliée, session jointe
+    import subprocess
+    sortie = subprocess.run(["node", os.path.join(ICI, "verif_fond.js")], capture_output=True, text=True, timeout=60)
+    verifier(sortie.returncode == 0 and '"etat":"ok"' in sortie.stdout and "session-id=1" in sortie.stdout,
+             "sans onglet : scripts chargés dans l'extension, session et origine du site jointes" + (sortie.stderr[-300:] if sortie.returncode else ""))
     print("Extension OK")
 
 

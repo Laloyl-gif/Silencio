@@ -275,7 +275,13 @@ async function rendre(garderPosition) {
     if (res && res.then) await res;
   } catch (e) {
     console.error(e);
-    if (n === rendus) vue.innerHTML = S.vide("Oups", `<div class="petit">${esc(e.message)}</div>`);
+    if (n === rendus) {
+      const reseau = e.horsLigne || /NetworkError|Failed to fetch|Load failed/i.test(e.message || "");
+      vue.innerHTML = S.vide(reseau ? "Silencio ne répond pas pour l'instant" : "Cette page n'a pas pu s'afficher",
+        `<div class="petit">${reseau ? "Nouvel essai dans un instant." : esc(e.message)}</div><button class="bouton" data-reessayer style="margin-top:14px">Réessayer</button>`);
+      const b = $("[data-reessayer]", vue); if (b) b.onclick = () => rendre(true);
+      if (reseau && !rendre.essai) { rendre.essai = 1; setTimeout(() => { if (n === rendus) rendre(true).finally(() => { rendre.essai = 0; }); }, 2000); }
+    }
   }
   if (n !== rendus) return;
   activerGlisse(vue);
