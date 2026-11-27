@@ -261,6 +261,33 @@ S.couleursAffiche = src => new Promise(ok => {
   im.onerror = () => ok(null); im.src = src;
 });
 
+// ------------------------------------------------------------------ tirer vers le bas pour actualiser (téléphone, accueil)
+(() => {
+  let y0 = null, dy = 0, ind = null;
+  const accueil = () => /^#?\/?$/.test(location.hash) || location.hash === "#/";
+  const indic = () => ind || (ind = document.body.appendChild(Object.assign(document.createElement("div"), { className: "tirer" })));
+  addEventListener("touchstart", e => { y0 = (accueil() && scrollY <= 0 && !document.querySelector(".modale")) ? e.touches[0].clientY : null; dy = 0; }, { passive: true });
+  addEventListener("touchmove", e => {
+    if (y0 == null) return;
+    dy = Math.max(0, e.touches[0].clientY - y0);
+    const i = indic(); i.style.transform = `translate(-50%, ${Math.min(dy, 110) * .6 - 40}px)`; i.style.opacity = Math.min(1, dy / 80);
+    i.textContent = dy > 80 ? "Relâche pour actualiser" : "Tire pour actualiser";
+  }, { passive: true });
+  addEventListener("touchend", async () => {
+    if (y0 == null) return;
+    y0 = null;
+    const i = indic();
+    if (dy <= 80) { i.style.opacity = 0; return; }
+    i.textContent = "Actualisation…";
+    try { await S.post("/api/synchroniser"); } catch { /* hors ligne */ }
+    await S.chargerEtat().catch(() => {});
+    await S.chargerBase(true).catch(() => {});
+    S.memo.anniv = null; S.memo.sorties = null;
+    S.rafraichir(true);
+    setTimeout(() => { i.style.opacity = 0; }, 600);
+  });
+})();
+
 // ------------------------------------------------------------------ navigation
 function lireRoute() {
   const h = location.hash.replace(/^#\/?/, "");

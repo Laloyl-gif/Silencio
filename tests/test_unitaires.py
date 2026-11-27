@@ -262,28 +262,30 @@ verifier(lb[f"vu|{jids['m:1018']}"] == {"cle": "m:1018", "date": "2024-03-01", "
          and lb["marque|m:793"] == 1, "miroir Letterboxd : journal daté (note, like, critique publique), vu sans date")
 verifier(lb["note|m:1018"] == 4.5 and lb["note|m:793"] == 4.0 and lb["like|m:1018"] == 1 and lb["wl|m:490"] == 1, "miroir Letterboxd : notes en étoiles, coup de cœur, watchlist")
 verifier(not any("m:6977" in k for k in lb) and "liste|lB" not in lb and "wl|t:1920" not in lb, "miroir : films cachés, listes privées et séries jamais envoyés à Letterboxd")
-verifier(lb["item|lA|m:1018"] == 1 and lb["item|lA|m:793"] == 2 and "item|lA|t:1920" not in lb, "miroir : liste classée (films seulement sur Letterboxd)")
+verifier(not any(k.startswith(("liste|", "item|")) for k in lb), "miroir : pas de listes pour Letterboxd (pas encore prises en charge)")
+imx = miroir.souhaite(ms.doc, "imdb")
+verifier(imx["item|lA|m:1018"] == 1 and imx["item|lA|m:793"] == 2 and "liste|lB" not in imx, "miroir IMDb : liste classée, listes privées jamais envoyées")
 meta = lambda c: {"m:1018": {"im": "tt0166924", "t": "Mulholland Drive"}, "m:793": {"im": "tt0090756"}, "m:638": {"im": "tt0116922"},
                   "m:490": {"im": "tt0050976"}, "t:1920": {"im": "tt0098936"}, "m:155": {"im": "tt0468569"}}.get(c, {})
 o = miroir.operations(ms.doc, "lb", meta)
 sortes = [x["sorte"] for x in o["ops"]]
-verifier(sortes[0] == "liste" and "item" not in sortes and o["en_attente"] == 2, "opérations : la liste d'abord, ses films attendent qu'elle existe")
+oi = miroir.operations(ms.doc, "imdb", meta)
+verifier([x["sorte"] for x in oi["ops"]][0] == "liste" and "item" not in [x["sorte"] for x in oi["ops"]] and oi["en_attente"] >= 2,
+         "opérations IMDb : la liste d'abord, ses films attendent qu'elle existe")
 vu = next(x for x in o["ops"] if x["cle"] == f"vu|{jids['m:1018']}")
 verifier(vu["extra"] == {"note": 4.5, "like": True, "critique": "Rêve"} and vu["tmdb"] == 1018, "opération journal : note, coup de cœur et critique publique")
 vu2 = next(x for x in o["ops"] if x["cle"] == f"vu|{jids['m:638']}")
 verifier(vu2["extra"]["critique"] == "", "critique privée par défaut : jamais envoyée")
-res = [{"cle": x["cle"], "id": x["id"], "action": x["action"], "valeur": x["valeur"], "etat": "ok",
-        "ref": "https://letterboxd.com/etienne/list/lynch/" if x["sorte"] == "liste" else None} for x in o["ops"]]
-miroir.appliquer_resultats(ms, "lb", res)
-o = miroir.operations(ms.doc, "lb", meta)
-verifier([x["sorte"] for x in o["ops"]] == ["item", "item"] and o["ops"][0]["ref"].endswith("/lynch/"), "après création de la liste : ses films partent")
 miroir.appliquer_resultats(ms, "lb", [dict(x, etat="ok") for x in o["ops"]])
 verifier(miroir.operations(ms.doc, "lb", meta)["ops"] == [], "tout envoyé : plus rien à faire")
 ms.action("watchlist", {"cle": "m:490", "val": False})
 ms.action("noter", {"cle": "m:1018", "note": 7})
 o = miroir.operations(ms.doc, "lb", meta)
-verifier({(x["sorte"], x["action"]) for x in o["ops"]} == {("note", "poser")} and o["ops"][0]["valeur"] == 3.5,
-         "Letterboxd : la note modifiée part, le retrait de la watchlist ne touche jamais Letterboxd")
+verifier({(x["sorte"], x["action"]) for x in o["ops"]} == {("note", "poser"), ("wl", "retirer")} and
+         next(x for x in o["ops"] if x["sorte"] == "note")["valeur"] == 3.5,
+         "Letterboxd : la note modifiée part, le retrait de la watchlist (fait dans Silencio) aussi")
+miroir.appliquer_resultats(ms, "lb", [dict(x, etat="ok") for x in o["ops"] if x["sorte"] != "note"])
+o = {"ops": [x for x in o["ops"] if x["sorte"] == "note"]}
 miroir.appliquer_resultats(ms, "lb", [{"cle": o["ops"][0]["cle"], "id": o["ops"][0]["id"], "etat": "echec", "erreur": "x"}])
 verifier(miroir.operations(ms.doc, "lb", meta, ms.appareil["miroir_echecs"]["lb"])["ops"] == [] and
          len(miroir.operations(ms.doc, "lb", meta, ms.appareil["miroir_echecs"]["lb"], forcer=True)["ops"]) == 1, "un échec est mis en pause")
@@ -307,7 +309,7 @@ md.poser_miroirs({"imdb|liste|_favoris": {"nom": "Favoris", "ref": "ls1"}})
 md.action("watchlist", {"cle": "m:155", "val": True})
 md.action("watchlist", {"cle": "m:550", "val": False})
 o = miroir.operations(md.doc, "imdb", meta)["ops"]
-verifier([(x["cle"], x["action"]) for x in o] == [("fav|m:155", "poser")], "IMDb : seul l'ajout part, rien n'est retiré de la liste")
+verifier([(x["cle"], x["action"]) for x in o] == [("fav|m:155", "poser")], "IMDb : l'ajout à la watchlist part")
 # Refract : coups de cœur et critiques publiques, seulement si son API les accepte, et seulement les nouveaux
 faux_services.REFRACT_CAPS = True
 mc = Stock(tempfile.mkdtemp(prefix="silencio_rfc_"))
@@ -462,6 +464,27 @@ a6.stock.action("noter", {"cle": "m:13", "note": 7})
 compte.connexion(a6, {"identifiant": "haika", "mot_de_passe": "nouveau-mdp-42", "garder_local": True})
 verifier(a6.stock.pid == "haika" and a6.stock.titre("m:13").get("note") == 7 and a6.stock.titre("m:9426").get("note") == 7
          and a6.stock.appareil.get("imdb_pseudo") == "Haika", "compte : connexion depuis un profil sans compte, films gardés, réglages récupérés")
+
+# retirer un film de son profil : il part de partout (note, coup de cœur, visionnages), ce qui a été envoyé est retiré
+mr2 = Stock(tempfile.mkdtemp(prefix="silencio_retrait_"))
+mr2.choisir_profil("e", "E")
+mr2.action("journal", {"entree": {"cle": "m:1018", "date": "2026-11-01", "note": 9, "coeur": True}})
+for p_ in ("lb", "imdb", "rf"):
+    miroir.poser_depart(mr2, p_, miroir.souhaite(mr2.doc, p_))
+j_ = next(iter(mr2.doc["journal"]))
+res_ = mr2.action("suppr_journal", {"id": j_})
+verifier(not mr2.titre("m:1018").get("vu") and mr2.titre("m:1018").get("note") is None and ("note", "m:1018", None) in res_.get("tmdb", []),
+         "dernier visionnage supprimé : le film quitte le profil (et TMDB)")
+ret = {p_: {(o["sorte"], o["action"]) for o in miroir.operations(mr2.doc, p_, meta)["ops"]} for p_ in ("lb", "imdb", "rf")}
+verifier({("vu", "retirer"), ("note", "retirer"), ("like", "retirer")} <= ret["lb"] and ("note", "retirer") in ret["imdb"] and
+         {("vu", "retirer"), ("note", "retirer")} <= ret["rf"], f"retraits envoyés partout : {ret}")
+mr2.action("liste", {"liste": {"nom": "Gros", "items": ["m:550", "m:603"]}})
+verifier(not any(o["sorte"] in ("liste", "item") for o in miroir.operations(mr2.doc, "lb", meta)["ops"]),
+         "Letterboxd : rien en attente pour les listes (pas encore prises en charge)")
+
+h = ms.appareil.get("historique_envois") or []
+verifier(any(e["etat"] == "echec" and e["p"] == "lb" and e["erreur"] == "x" for e in h) and any(e["etat"] == "ok" for e in h),
+         "Historique des envois : chaque envoi réussi ou raté est noté, avec son erreur")
 
 print(f"{OK} vérifications réussies")
 shutil.rmtree(DOSSIER, ignore_errors=True)

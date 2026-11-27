@@ -17,7 +17,7 @@ import imdb
 import imports
 import wiki
 from reseau import ErreurHTTP, HorsLigne, requete
-from stockage import SECTIONS, Stock, lire_json, slug
+from stockage import SECTIONS, Stock, ecrire_json, lire_json, slug
 import compte
 import miroir
 from refract import Refract
@@ -135,6 +135,18 @@ class App:
                 self.image("w342", af)
             except Exception:  # noqa: BLE001
                 break
+        # les fiches complètes des films récents et de la watchlist, pour les ouvrir sans réseau
+        doc = self.stock.doc or {}
+        recents = [e.get("cle") for e in sorted((e for e in (doc.get("journal") or {}).values() if not e.get("x")),
+                                                key=lambda e: e.get("date") or "", reverse=True)[:30]]
+        wl = [c for c, w in (doc.get("watchlist") or {}).items() if not w.get("x")][:30]
+        for c in dict.fromkeys(c for c in recents + wl if c):
+            if not self.tmdb.en_ligne:
+                break
+            try:
+                self.tmdb.details(c, ttl=30 * 86400)
+            except Exception:  # noqa: BLE001
+                break
 
     # ---- images
     def _f_img(self, taille, chemin):
@@ -144,7 +156,16 @@ class App:
         f = self._f_img(taille, chemin)
         if os.path.exists(f):
             return f
-        octets = requete(config.IMG_TMDB + taille + "/" + chemin.strip("/"), brut=True, delai=20)
+        try:
+            octets = requete(config.IMG_TMDB + taille + "/" + chemin.strip("/"), brut=True, delai=20)
+        except HorsLigne:
+            # hors ligne : la même affiche dans une autre taille déjà gardée sur l'appareil
+            nom = chemin.strip("/").replace("/", "_")
+            for t in ("w342", "w500", "w185", "w154", "w780", "w92", "original"):
+                autre = os.path.join(config.CACHE, "img", t, nom)
+                if os.path.exists(autre):
+                    return autre
+            raise
         os.makedirs(os.path.dirname(f), exist_ok=True)
         tmp = f + ".tmp"
         with open(tmp, "wb") as g:
@@ -268,6 +289,8 @@ class App:
         if p not in ("lb", "imdb"):
             raise ValueError("Plateforme inconnue.")
         bilan = miroir.appliquer_resultats(self.stock, p, corps.get("resultats") or [])
+        if corps.get("notes_lb"):
+            self.poser_notes_lb(corps["notes_lb"])
         self.synchro.demander(5)
         try:
             self.notifier_echecs()
@@ -621,6 +644,29 @@ class App:
         threading.Thread(target=self.tmdb.vider_file, daemon=True).start()
         return {"ok": True}
 
+    def en_attente(self, p, n=100):
+        """Ce qui attend d'être envoyé sur une plateforme (pour le montrer dans Réglages)."""
+        if p not in miroir.PLATEFORMES or not self.stock.doc:
+            raise ValueError("Plateforme inconnue.")
+        echecs = (self.stock.appareil.get("miroir_echecs") or {}).get(p) or {}
+        r = miroir.operations(self.stock.doc, p, self._meta, echecs, limite=n)
+        noms = {"vu": "Visionnage", "note": "Note", "like": "Coup de cœur", "wl": "Watchlist", "fav": "Watchlist",
+                "marque": "Vu", "critique": "Critique", "liste": "Liste", "item": "Dans une liste", "ep": "Épisode"}
+        return {"total": r["total"], "r": [{"titre": o.get("titre") or o["cle"], "quoi": ("Retirer : " if o["action"] == "retirer" else "")
+                                            + noms.get(o["sorte"], o["sorte"])} for o in r["ops"]]}
+
+    def envois(self, n=300):
+        """L'historique des envois, du plus récent au plus ancien, avec le titre de chaque film."""
+        doc = self.stock.doc or {}
+        journal = doc.get("journal") or {}
+        r = []
+        for e in reversed((self.stock.appareil.get("historique_envois") or [])[-n:]):
+            parts = e["cle"].split("|")
+            c = (journal.get(parts[1]) or {}).get("cle") if parts[0] in ("vu", "critique") and len(parts) > 1 else parts[-1]
+            m = (self._meta(c) or {}) if c and ":" in c else {}
+            r.append(dict(e, sorte=parts[0], film=c if c and ":" in c else None, titre=e.get("titre") or m.get("t") or ""))
+        return {"r": r}
+
     def a_faire_ext(self):
         doc = self.stock.doc
         if not doc:
@@ -664,8 +710,72 @@ class App:
             self.refract.etat["erreur"] = str(e)[:200]
 
     # ---- pages
+    # ---- note moyenne Letterboxd : donnée par l'extension quand elle passe sur la fiche, sinon lue sur la page publique
+    def _notes_lb(self):
+        if not hasattr(self, "_cache_lb"):
+            self._cache_lb = lire_json(os.path.join(config.DONNEES, "notes_letterboxd.json"), {}) or {}
+        return self._cache_lb
+
+    def poser_notes_lb(self, notes):
+        c = self._notes_lb()
+        for k, v in (notes or {}).items():
+            if isinstance(v, (int, float)) and 0 < v <= 5:
+                c[k if ":" in str(k) else f"m:{k}"] = [round(float(v), 2), time.time()]
+        ecrire_json(os.path.join(config.DONNEES, "notes_letterboxd.json"), c)
+
+    def note_letterboxd(self, cle):
+        if not cle.startswith("m:"):
+            return None
+        c = self._notes_lb().get(cle)
+        if c and time.time() - c[1] < 21 * 86400:
+            return c[0]
+        if not getattr(self, "_lb_essais", None):
+            self._lb_essais = {}
+        if time.time() - self._lb_essais.get(cle, 0) > 6 * 3600:
+            self._lb_essais[cle] = time.time()
+            threading.Thread(target=self._lire_note_lb, args=(cle,), daemon=True).start()
+        return c[0] if c else None
+
+    def _lire_note_lb(self, cle):
+        try:
+            html = requete(f"https://letterboxd.com/tmdb/{cle[2:]}/", brut=True, delai=15, entetes={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0",
+                "Accept": "text/html", "Accept-Language": "fr,en;q=0.8"}).decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001  (Cloudflare, hors ligne…)
+            return
+        m = re.search(r'"ratingValue"\s*:\s*([0-9.]+)', html) or re.search(r'twitter:data2" content="([0-9.]+) out of 5', html)
+        if m:
+            self.poser_notes_lb({cle: float(m.group(1))})
+
+    def _fiche_hors_ligne(self, cle):
+        """Sans réseau et sans fiche en cache : une fiche reconstruite depuis ce que Silencio garde sur l'appareil."""
+        brut = lire_json(self.tmdb._f_meta(cle)) or {}
+        m, pers = brut.get("m") or {}, brut.get("pers") or {}
+        if not m:
+            return None
+        nom = lambda i: (pers.get(str(i)) or pers.get(i) or {}).get("n", "")
+        tv = cle.startswith("t:")
+        d = {"id": int(cle[2:]), "poster_path": m.get("af"), "backdrop_path": m.get("fd"), "genres": [{"id": g} for g in m.get("g") or []],
+             "overview": "", "hors_ligne": True, "vote_average": m.get("vt") or 0, "vote_count": m.get("nv") or 0,
+             "budget": m.get("b") or 0, "revenue": m.get("rc") or 0,
+             "production_countries": [{"iso_3166_1": p} for p in m.get("p") or []]}
+        cast = [{"id": i, "name": nom(i), "profile_path": (pers.get(str(i)) or {}).get("ph")} for i in m.get("ca") or []]
+        crew = [{"id": i, "name": nom(i), "job": "Director"} for i in m.get("re") or []]
+        if tv:
+            d.update(name=m.get("t"), original_name=m.get("o"), first_air_date=m.get("ds"), created_by=crew,
+                     aggregate_credits={"cast": cast, "crew": []}, number_of_episodes=m.get("ne"))
+        else:
+            d.update(title=m.get("t"), original_title=m.get("o"), release_date=m.get("ds"), runtime=m.get("r"),
+                     credits={"cast": cast, "crew": crew})
+        return d
+
     def titre(self, cle):
-        d = self.tmdb.details(cle)
+        try:
+            d = self.tmdb.details(cle)
+        except HorsLigne:
+            d = self._fiche_hors_ligne(cle)
+            if d is None:
+                raise
         if d is None:
             return None
         meta = self._meta(cle) or {}
@@ -693,7 +803,7 @@ class App:
                            "critiques": [{"date": e.get("date"), "note": e.get("note"), "texte": e.get("critique")}
                                          for e in sorted(j, key=lambda e: e.get("date", ""), reverse=True)
                                          if e.get("critique")]}
-        return {"d": d, "meta": meta, "imdb": n, "collection": col, "amis": amis,
+        return {"d": d, "meta": meta, "imdb": n, "collection": col, "amis": amis, "letterboxd": self.note_letterboxd(cle),
                 "fournisseurs": ((d.get("watch/providers") or {}).get("results") or {}).get(config.REGION) or {}}
 
     def personne(self, pid):
@@ -1029,6 +1139,10 @@ def fabriquer_handler(app):
                 return self._envoyer(200, d)
             if r.startswith("envoi/"):
                 return self._envoyer(200, app.envoi_titre(urllib.parse.unquote(r[6:])))
+            if r == "envois":
+                return self._envoyer(200, app.envois())
+            if r == "plateformes/attente":
+                return self._envoyer(200, app.en_attente(q.get("p", "")))
             if r == "tableau":
                 return self._envoyer(200, app.tableau())
             if r == "profils":

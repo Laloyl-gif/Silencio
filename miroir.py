@@ -34,7 +34,10 @@ FAVORIS = "_favoris"                               # la watchlist IMDb, qui reç
 # Partout, seuls tes ajouts et changements faits dans Silencio après la liaison partent ; ce qui existait avant est
 # considéré comme déjà en place. Sur IMDb, rien n'est jamais retiré (1 000 films dans ta watchlist IMDb restent
 # 1 000) ; sur Letterboxd, une entrée de journal que Silencio a créée suit ses modifications et sa suppression.
-RETIRABLE = {"lb": {"vu"}, "imdb": set(), "rf": {"wl", "ep", "like"}}
+# Ce qui a été envoyé par Silencio (ou était déjà là quand tu as relié la plateforme) suit Silencio : si tu le
+# retires dans Silencio, il est retiré là-bas. Ce que Silencio n'a jamais connu n'est jamais touché.
+RETIRABLE = {"lb": {"vu", "note", "like", "wl", "marque"}, "imdb": {"note", "fav", "item"},
+             "rf": {"vu", "note", "wl", "ep", "like"}}
 PAUSE_ECHEC = 6 * 3600                             # une opération ratée n'est retentée qu'après ce délai
 PAUSE_COURTE = 20 * 60                             # … sauf un refus passager (jeton, pare-feu, réseau)
 PASSAGER = re.compile(r"csrf|expired|403|cloudflare|injoignable|networkerror|429|ralentir", re.I)
@@ -106,7 +109,7 @@ def souhaite(doc, plateforme):
         for jid, e in journal.items():
             c = e.get("cle", "")
             if c.startswith("m:") and c not in caches and not e.get("prive") and e.get("date"):
-                r[f"vu|{jid}"] = {"date": e["date"]}
+                r[f"vu|{jid}"] = {"date": e["date"], "cle": c}
         for c in wl:
             if c not in caches:
                 r[f"wl|{c}"] = 1
@@ -129,7 +132,9 @@ def souhaite(doc, plateforme):
                 if texte and not e.get("critique_privee", True) and not e.get("prive") and e.get("cle") not in caches:
                     r[f"critique|{jid}"] = texte
         return r
-    # listes (Letterboxd : films seulement)
+    # listes : IMDb seulement (Letterboxd ne sait pas encore les recevoir : rien ne s'accumule en attente)
+    if plateforme == "lb":
+        return r
     for lid, l in listes.items():
         if l.get("privee"):
             continue
@@ -148,6 +153,8 @@ def _sans_ref(v):
 
 
 def _pareil(plateforme, cle, avant, voulu):
+    if plateforme == "rf" and cle.startswith("vu|") and isinstance(avant, dict):
+        return avant.get("date") == (voulu or {}).get("date")          # le film d'un visionnage ne change pas
     if plateforme == "lb" and cle.startswith("vu|") and isinstance(avant, dict) and "note" not in avant:
         # entrée notée avant la v7 (date et revisionnage seulement) : on ne compare que ça
         return {"date": avant.get("date"), "rewatch": avant.get("rewatch")} == \
@@ -309,10 +316,23 @@ def appliquer_resultats(stock, plateforme, resultats, ops_connues=None):
                            "titre": r.get("titre") or ""}
             bilan["manuel" if etat == "manuel" else "echec"] += 1
     stock.poser_miroirs(entrees)
+    noter_envois(stock, plateforme, resultats)
     passages = stock.appareil.setdefault("miroir_passages", {})
     passages[plateforme] = {"quand": time.time(), **bilan}
     stock.sauver_appareil()
     return bilan
+
+
+def noter_envois(stock, plateforme, resultats):
+    """Historique des envois (les 800 derniers), pour la page « Historique des envois »."""
+    h = stock.appareil.setdefault("historique_envois", [])
+    maintenant_ = time.time()
+    for r in resultats or []:
+        if not r.get("cle") or r.get("etat") in ("attente", "blanc"):
+            continue
+        h.append({"t": maintenant_, "p": plateforme, "cle": r["cle"], "titre": r.get("titre") or "",
+                  "action": r.get("action") or "poser", "etat": r.get("etat"), "erreur": (r.get("erreur") or "")[:200]})
+    del h[:-800]
 
 
 def _source(doc, cle):

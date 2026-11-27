@@ -12,7 +12,7 @@ const DEFAUT = {
   // discrétion : pauses après un refus, quota par jour, onglets ouverts rarement, adresses qui marchent
   pauses: {}, quota: {}, dernierOnglet: {}, adresses: {}, essais: {}, prochain: 0,
   sites: { lb: true, imdb: true }, attente: { lb: [], imdb: [] }, modes: { lb: "auto", imdb: "clic" }, vuModif: 0,
-  silencioAbsent: true, apresLancement: 0
+  silencioAbsent: true, apresLancement: 0, cloudflare: {}
 };
 const ORIGINES = ["https://letterboxd.com/*", "https://www.imdb.com/*", "https://m.imdb.com/*", "https://api.graphql.imdb.com/*"];
 const QUOTA_JOUR = 80;                       // actions par site et par jour, au plus
@@ -162,13 +162,17 @@ async function plateforme(p, aBlanc, motif, modes) {
     return { a_reporter: r.ops.length, mode };
   }
   if ((c.attente[p] || []).length) await poser({ attente: { ...c.attente, [p]: [] } });
-  if ((c.pauses[p] || 0) > Date.now() && motif !== "bouton") return { pause: c.pauses[p] };
+  if ((c.pauses[p] || 0) > Date.now() && motif !== "bouton") {
+    const ouvert = p === "lb" && ((c.cloudflare || {}).lb || 0) > 0 &&
+      (await B.tabs.query({ url: "https://letterboxd.com/*" }).catch(() => [])).some(t => t.status === "complete");
+    if (!ouvert) return { pause: c.pauses[p] };
+  }
   const q = c.quota[p] && c.quota[p].jour === aujourdhui() ? c.quota[p].n : 0;
   const reste = QUOTA_JOUR - q;
   if (reste <= 0 && !aBlanc) return { quota: true };
   // quelques actions à la fois seulement, jamais le même nombre
   // après un ajout dans Silencio, tout ce qui attend part (jusqu'à 12 à la fois), toujours espacé comme à la main
-  const n = aBlanc ? 40 : Math.max(1, Math.min(reste, motif === "ajout" || motif === "bouton" ? 12 : Math.round(hasard(3, 6))));
+  const n = aBlanc ? 40 : Math.max(1, Math.min(reste, p === "lb" ? Math.round(hasard(3, 6)) : motif === "ajout" || motif === "bouton" ? 12 : Math.round(hasard(3, 6))));
   const r = await silencio(`/api/ext/ops?p=${p}&n=${n}`);
   if (!r.ops.length) return { rien: true, attente: r.en_attente || 0 };
   if (p === "lb" && !r.pseudo) {
@@ -190,7 +194,11 @@ async function plateforme(p, aBlanc, motif, modes) {
     if (p === "lb" && rep.cache) maj.cacheLb = { ...c2.cacheLb, ...rep.cache };
     const faites = (rep.resultats || []).filter(x => ["ok", "deja", "echec"].includes(x.etat)).length;
     if (!aBlanc) maj.quota = { ...c2.quota, [p]: { jour: aujourdhui(), n: q + faites } };
-    if (rep.bloque) maj.pauses = { ...c2.pauses, [p]: Date.now() + (reseau(rep.bloque) ? hasard(2, 4) * 3600e3 : hasard(30, 60) * 60e3) };
+    const cf = /Cloudflare|vérifie le navigateur/i.test(rep.bloque || "");
+    const nCf = cf ? ((c2.cloudflare || {})[p] || 0) + 1 : 0;
+    maj.cloudflare = { ...(c2.cloudflare || {}), [p]: nCf };
+    const pauseMin = cf ? Math.min(10 * 2 ** (nCf - 1), 240) * hasard(1, 1.5) : hasard(30, 60);
+    if (rep.bloque) maj.pauses = { ...c2.pauses, [p]: Date.now() + pauseMin * 60e3 };
     await poser(maj);
     const resultats = (rep.resultats || []).filter(x => x.etat !== "attente" && x.etat !== "blanc");
     const manuels = resultats.filter(x => x.etat === "manuel" && x.lien);
@@ -199,7 +207,9 @@ async function plateforme(p, aBlanc, motif, modes) {
       const ids = new Set(liste.map(m => m.id));
       await poser({ manuels: [...liste, ...manuels.filter(m => !ids.has(m.id)).map(m => ({ ...m, plateforme: p, t: Date.now() }))].slice(-60) });
     }
-    if (!aBlanc && resultats.length) await silencio("/api/ext/resultats", { method: "POST", body: JSON.stringify({ plateforme: p, resultats }) });
+    // au passage : la note moyenne Letterboxd des films visités, pour la page du film dans Silencio
+    const notesLb = p === "lb" ? Object.fromEntries(Object.entries(rep.cache || {}).filter(([, f]) => f && f.note).map(([t, f]) => [t, f.note])) : {};
+    if (!aBlanc && (resultats.length || Object.keys(notesLb).length)) await silencio("/api/ext/resultats", { method: "POST", body: JSON.stringify({ plateforme: p, resultats, notes_lb: notesLb }) });
     const n = k => resultats.filter(x => x.etat === k).length;
     if (aBlanc) {
       const trouves = (rep.resultats || []).filter(x => x.etat === "blanc").length;
@@ -208,7 +218,9 @@ async function plateforme(p, aBlanc, motif, modes) {
       await noter(`${NOM[p]} : ${n("ok") + n("deja")} fait(s), ${n("echec")} échec(s), ${n("manuel")} à faire à la main${r.reste ? `, ${r.reste} au prochain passage` : ""}.`, n("echec") ? "erreur" : "info");
     }
     for (const x of resultats.filter(x => x.etat === "echec").slice(0, 5)) await noter(`${NOM[p]}, ${x.titre || x.cle} : ${x.erreur}`, "erreur");
-    if (rep.bloque) await noter(`${NOM[p]} : ${rep.bloque} Nouvel essai ${reseau(rep.bloque) ? "dans quelques heures" : "dans moins d'une heure"}.`, "erreur");
+    if (rep.bloque) await noter(cf
+      ? `${NOM[p]} demande une vérification anti-robot. Ouvre letterboxd.com dans Firefox (souvent, rien à faire de plus) : l'extension se sert de cet onglet et réessaie dans ${Math.round(pauseMin)} minutes.`
+      : `${NOM[p]} : ${rep.bloque} Nouvel essai dans moins d'une heure.`, "erreur");
     return { fait: n("ok") + n("deja"), echecs: n("echec"), manuels: n("manuel"), bloque: rep.bloque || "" };
   } finally {
     if (onglet && onglet.cree) B.tabs.remove(onglet.id).catch(() => {});

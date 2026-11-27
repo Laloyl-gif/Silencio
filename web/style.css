@@ -1418,3 +1418,39 @@ body.avec-barre-film #principal { padding-bottom: calc(var(--barre-bas) + 96px +
 .ff-pf li small { display: block; color: #ff8a80; font-size: 12px; margin-top: 2px; }
 .ff-pf li em { font-style: normal; font-size: 12px; color: var(--texte-3); }
 .ff-pf p { margin: 6px 0 0; font-size: 12px; color: var(--texte-3); }
+/* icônes des plateformes avec leur état (point en bas à droite) */
+.plo { position: relative; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 2px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); flex: none; }
+.plo img { width: 16px; height: 16px; border-radius: 3px; display: block; }
+.plo b { font-size: 9.5px; font-weight: 700; letter-spacing: .02em; color: #fff; }
+.plo::after { content: ""; position: absolute; right: -3px; bottom: -3px; width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 2px var(--fond); }
+.plo-ok::after { background: #4cc46f; }
+.plo-attente::after, .plo-clic::after { background: var(--fond); border: 2px solid #f2b84b; width: 5px; height: 5px; }
+.plo-erreur { border-color: rgba(240,80,95,.7); } .plo-erreur::after { background: #f0505f; border-radius: 1px; }
+.plo-off, .plo-na { opacity: .35; } .plo-off::after, .plo-na::after { display: none; }
+.tdb-plats { gap: 9px; }
+.ff-pf summary .plo { margin-right: 2px; }
+.ff-pf-nom { font-weight: 500; font-size: 14px; }
+.tirer { position: fixed; top: calc(8px + env(safe-area-inset-top)); left: 50%; transform: translate(-50%, -40px); opacity: 0; z-index: 80; background: #262626; color: #fff; font-size: 13px; padding: 7px 14px; border-radius: 2px; pointer-events: none; transition: opacity .2s; }
+.ff-notes small { color: var(--texte-3); font-size: 12px; margin-left: 2px; }
+.ff-notes .plo { width: 22px; height: 22px; } .plo-brut::after { display: none; }
+.pf-echecs[data-attente] summary { color: var(--texte-2); }
+.pf-echecs [data-attente-l] { display: block; max-height: 260px; overflow-y: auto; border: 0; }
+/* sélection de plusieurs films */
+.en-selection [data-cle] { position: relative; }
+.en-selection .vignette::after, .en-selection .ligne[data-cle]::after { content: ""; position: absolute; top: 6px; right: 6px; width: 18px; height: 18px; border: 2px solid #fff; border-radius: 50%; background: rgba(0,0,0,.45); }
+.en-selection .choisi::after { background: #fff; box-shadow: inset 0 0 0 3px #121212; }
+.en-selection .vignette:not(.choisi) .affiche { opacity: .55; }
+.barre-selection { position: fixed; left: 0; right: 0; bottom: calc(var(--barre-bas) + env(safe-area-inset-bottom)); z-index: 60; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 10px 14px; background: rgba(24,24,24,.97); border-top: 1px solid rgba(255,255,255,.1); }
+.barre-selection b { font-weight: 600; font-size: 14px; margin-right: auto; }
+.barre-selection button { background: none; border: 0; color: #fff; font: inherit; font-size: 13.5px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 4px 0; }
+@media (min-width: 900px) { .barre-selection { left: var(--lateral); bottom: 0; } }
+.ff-hors-ligne { margin: 14px 0 0; font-size: 13px; color: var(--texte-2); border-left: 2px solid #f2b84b; padding-left: 10px; }
+.ligne.envoi { align-items: center; gap: 12px; }
+.ligne.envoi time { margin-left: auto; color: var(--texte-3); font-size: 12.5px; }
+.envoi-err { font-style: normal; color: #ff8a80; }
+/* sélection dans le journal : la case prend la place du jour, à gauche */
+.en-selection { padding-bottom: 96px; }
+.en-selection .ligne[data-cle] .jour { visibility: hidden; }
+.en-selection .ligne[data-cle]::after { top: 50%; right: auto; left: 10px; width: 20px; height: 20px; margin-top: -12px; }
+.en-selection .ligne[data-cle]:not(.choisi) > * { opacity: .55; }
+.en-selection .ligne[data-cle].choisi::after, .en-selection .vignette.choisi::after { background: #fff radial-gradient(circle, #121212 0 3px, transparent 3.5px); }

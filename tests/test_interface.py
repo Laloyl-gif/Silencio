@@ -80,6 +80,8 @@ def capture(page, nom, plein=False):
 with sync_playwright() as p:
     nav = p.chromium.launch()
     tel = nav.new_context(**TEL)
+    ICONE = open(os.path.join(RACINE, "extension", "icone-48.png"), "rb").read()
+    tel.route("**/favicon.ico", lambda r: r.fulfill(status=200, content_type="image/png", body=ICONE))
     pg = tel.new_page()
     pg.on("console", lambda m: erreurs.append(("tel", m.text)) if m.type == "error" else None)
     pg.on("pageerror", lambda e: erreurs.append(("tel", str(e))))
@@ -232,6 +234,21 @@ with sync_playwright() as p:
     wl = api("/api/etat")["profil"]["watchlist"].get(cle_glisse, {})
     assert wl and not wl.get("x"), ("glisser à gauche → watchlist", cle_glisse, wl)
     capture(pg, "09_tel_journal")
+    # sélection multiple dans le journal : supprimer deux visionnages d'un coup
+    avant_j = len([1 for v in api("/api/etat")["profil"]["journal"].values() if not v.get("x")])
+    pg.click("[data-selection]")
+    lignes_j = pg.locator(".ligne[data-j]:not([data-cle='m:1018'])")
+    lignes_j.nth(-1).click(); lignes_j.nth(-2).click()
+    capture(pg, "09b_tel_journal_selection")
+    pg.click(".barre-selection [data-a=suppr]")
+    pg.click(".modale [data-oui]")
+    pg.wait_for_timeout(1200)
+    apres_j = len([1 for v in api("/api/etat")["profil"]["journal"].values() if not v.get("x")])
+    assert apres_j == avant_j - 2, (avant_j, apres_j)
+    pg.goto(URL + "/#/envois")
+    pg.wait_for_selector(".entete h1")
+    pg.wait_for_timeout(500)
+    capture(pg, "09c_tel_envois")
     pg.goto(URL + "/#/stats")
     pg.wait_for_selector("[data-bloc=distribution] svg")
     pg.wait_for_timeout(900)
@@ -413,6 +430,7 @@ with sync_playwright() as p:
 
     # ---------------------------------------------------------------- PC
     pc = nav.new_context(**PC)
+    pc.route("**/favicon.ico", lambda r: r.fulfill(status=200, content_type="image/png", body=ICONE))
     pp = pc.new_page()
     pp.on("console", lambda m: erreurs.append(("pc", m.text)) if m.type == "error" else None)
     pp.on("pageerror", lambda e: erreurs.append(("pc", str(e))))

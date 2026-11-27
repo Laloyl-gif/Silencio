@@ -82,7 +82,8 @@
     }
     // Letterboxd range aussi des téléfilms et mini-séries : on vérifie que c'est bien ce film TMDB
     if (/themoviedb\.org\/tv\//.test(html) && !/themoviedb\.org\/movie\//.test(html)) return null;
-    const f = { slug: m[1], filmId, lid };
+    const nm = html.match(/"ratingValue"\s*:\s*([0-9.]+)/) || html.match(/twitter:data2" content="([0-9.]+) out of 5/);
+    const f = { slug: m[1], filmId, lid, ...(nm ? { note: +nm[1] } : {}) };
     cache[tmdb] = f;
     return f;
   }
@@ -290,7 +291,9 @@
         else if (op.sorte === "wl") r = await essayer(poser ? "wl" : "wl-", poser
           ? [[`/film/${f.slug}/add-to-watchlist/`, {}], [`/s/film:${f.filmId}/watchlist/`, { watchlist: "true" }]]
           : [[`/film/${f.slug}/remove-from-watchlist/`, {}], [`/s/film:${f.filmId}/watchlist/`, { watchlist: "false" }]], f.slug);
-        else if (op.sorte === "marque") r = await essayer("marque", [[`/s/film:${f.filmId}/watch/`, { watched: "true" }], [`/film/${f.slug}/mark-as-watched/`, {}]], f.slug);
+        else if (op.sorte === "marque") r = await essayer(poser ? "marque" : "marque-", poser
+          ? [[`/s/film:${f.filmId}/watch/`, { watched: "true" }], [`/film/${f.slug}/mark-as-watched/`, {}]]
+          : [[`/s/film:${f.filmId}/watch/`, { watched: "false" }], [`/film/${f.slug}/mark-as-not-watched/`, {}]], f.slug);
         else r = { etat: "attente" };
         resultats.push({ ...base, ...r });
       } catch (e) {

@@ -441,8 +441,41 @@ class Stock:
         return max(dates) if dates else ""
 
     def _a_suppr_journal(self, trace, tmdb, d):
+        e = self.doc["journal"].get(d["id"]) or {}
         self._supprimer(trace, "journal", d["id"])
+        cle = e.get("cle")
+        if cle and not any(v.get("cle") == cle and not v.get("x") for v in self.doc["journal"].values()):
+            # plus aucun visionnage : le film quitte ton profil (et donc tes plateformes)
+            self._retirer_titre(trace, tmdb, cle, garder_watchlist=True)
+            return "Visionnage supprimé, film retiré de ton profil"
         return "Visionnage supprimé"
+
+    def _retirer_titre(self, trace, tmdb, cle, garder_watchlist=False):
+        t = self.doc["titres"].get(cle)
+        if t and not t.get("x"):
+            if t.get("note") is not None:
+                tmdb.append(("note", cle, None))
+            if t.get("coeur"):
+                tmdb.append(("favori", cle, False))
+            garder = {k: v for k, v in t.items() if k in ("collection",) and v}
+            if garder:
+                self._poser(trace, "titres", cle, garder)       # sa place dans ta collection reste
+            else:
+                self._supprimer(trace, "titres", cle)
+        if not garder_watchlist and self._dans_watchlist(cle):
+            self._supprimer(trace, "watchlist", cle)
+            tmdb.append(("watchlist", cle, False))
+
+    def _a_suppr_titre(self, trace, tmdb, d):
+        """Retire un film de ton profil : tous ses visionnages, sa note, son coup de cœur, sa watchlist."""
+        cle = d["cle"]
+        for k, v in list(self.doc["journal"].items()):
+            if v.get("cle") == cle and not v.get("x"):
+                self._supprimer(trace, "journal", k)
+        self._retirer_titre(trace, tmdb, cle)
+        if cle in (self.doc.get("series") or {}) and not self.doc["series"][cle].get("x"):
+            self._supprimer(trace, "series", cle)
+        return "Film retiré de ton profil"
 
     def _a_watchlist(self, trace, tmdb, d):
         cle = d["cle"]

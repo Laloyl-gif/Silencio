@@ -255,6 +255,15 @@ class TMDB:
             self.stock.sauver_appareil()
         self.etat_file["attente"] = len(self.stock.appareil.get("file_tmdb", []))
 
+    def _noter(self, op, etat, erreur=""):
+        sorte, cle, val = op
+        quoi = {"note": "note", "watchlist": "wl", "favori": "like", "liste": "liste"}.get(sorte, sorte)
+        retirer = val is None or val is False
+        h = self.stock.appareil.setdefault("historique_envois", [])
+        h.append({"t": time.time(), "p": "tmdb", "cle": f"{quoi}|{cle}", "titre": "", "action": "retirer" if retirer else "poser",
+                  "etat": etat, "erreur": erreur})
+        del h[:-800]
+
     def vider_file(self):
         """Envoie les modifications en attente. Renvoie le nombre envoyé."""
         if not self.session:
@@ -269,6 +278,7 @@ class TMDB:
             try:
                 self._envoyer(*op)
                 self.etat_file["erreur"] = ""
+                self._noter(op, "ok")
             except HorsLigne:
                 self.etat_file["erreur"] = "hors ligne"
                 break
@@ -280,6 +290,7 @@ class TMDB:
                     time.sleep(2)
                     continue
                 self.etat_file["erreur"] = f"TMDB a refusé une modification ({e.code})"
+                self._noter(op, "echec", f"TMDB a répondu {e.code}")
             with self.stock.verrou:
                 f = self.stock.appareil.get("file_tmdb") or []
                 if f and list(f[0]) == op:

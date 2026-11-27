@@ -106,6 +106,10 @@ P.choixProfil = async (vue, onglet) => {
 
 // ------------------------------------------------------------------ tableau de bord : tes derniers films et leur envoi
 const PLATS = [["lb", "Letterboxd"], ["imdb", "IMDb"], ["rf", "Refract"], ["tmdb", "TMDB"]];
+// l'icône de chaque site (son favicon, chargé depuis le site lui-même) ; sans réseau, ses initiales
+const FAVICONS = { lb: "https://letterboxd.com/favicon.ico", imdb: "https://www.imdb.com/favicon.ico", rf: "https://getrefract.app/favicon.ico", tmdb: "https://www.themoviedb.org/favicon.ico" };
+const INITIALES = { lb: "LB", imdb: "IM", rf: "RF", tmdb: "TM" };
+S.iconePlateforme = (p, nom, e, detail) => `<span class="plo plo-${e}" title="${esc(nom)} : ${ETATS[e] || e}${detail ? " (" + esc(detail) + ")" : ""}"><img src="${FAVICONS[p]}" alt="${esc(nom)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('b'),{textContent:'${INITIALES[p]}'}))"></span>`;
 const ETATS = { ok: "envoyé", attente: "en attente", clic: "attend ton clic", erreur: "erreur", off: "non relié", na: "rien à envoyer" };
 S.synchroniser = async () => {
   try { await S.post("/api/synchroniser"); S.toast("Synchronisation lancée : Refract et GitHub tout de suite, Letterboxd et IMDb dans la minute"); }
@@ -116,14 +120,14 @@ async function tableauDeBord(z) {
   try { d = await S.api("/api/tableau"); } catch { return; }
   d.r = d.r.slice(0, 8);
   if (!d.r.length) return;
-  z.innerHTML = `<div class="section-titre"><h2>Tes derniers films</h2><button class="lien" data-sync-tout>Synchroniser</button></div>
+  z.innerHTML = `<div class="section-titre"><h2>Tes derniers films</h2><a class="lien" href="#/envois" style="margin-right:16px">Historique</a><button class="lien" data-sync-tout>Synchroniser</button></div>
     <div class="tdb">${d.r.map(x => { const m = S.info(x.cle) || {}; return `<a class="tdb-ligne" href="#/titre/${x.cle}">
       ${S.affiche(m, { taille: "w92" })}
       <div class="tdb-corps"><b>${esc(S.nomTitre(m))}</b>
         <div class="tdb-infos">${S.noteJolie(x.note)}${x.coeur ? S.ICONES.coeur : ""}${x.revu ? S.ICONES.revu : ""}${x.critique ? `<span class="ic-crit ${x.critique_privee ? "privee" : "publique"}" title="Critique ${x.critique_privee ? "privée" : "publique"}">${S.ICONES.critique}</span>` : ""}${x.cinema ? S.ICONES.cinema : ""}<span class="tdb-date">${x.date ? esc(S.fmtDate(x.date, true)) : ""}</span></div>
-        <div class="tdb-plats">${PLATS.map(([p, nom]) => { const e = x.plateformes[p] || { e: "na" }; return `<span class="pl pl-${e.e}" title="${esc(nom)} : ${ETATS[e.e]}${e.m ? " (" + esc(e.m) + ")" : ""}">${nom}</span>`; }).join("")}</div>
+        <div class="tdb-plats">${PLATS.map(([p, nom]) => { const e = x.plateformes[p] || { e: "na" }; return S.iconePlateforme(p, nom, e.e, e.m); }).join("")}</div>
       </div></a>`; }).join("")}</div>
-    <p class="tdb-legende"><span class="pl pl-ok">envoyé</span><span class="pl pl-attente">en attente</span><span class="pl pl-erreur">erreur</span><span class="pl pl-na">rien à envoyer</span></p>`;
+    <p class="tdb-legende"><span class="pl pl-ok">envoyé</span><span class="pl pl-attente">en attente</span><span class="pl pl-erreur">erreur</span><span class="pl pl-na">rien à envoyer ou non relié</span></p>`;
   $("[data-sync-tout]", z).onclick = async ev => { ev.preventDefault(); await S.synchroniser(); setTimeout(() => tableauDeBord(z), 6000); setTimeout(() => tableauDeBord(z), 75000); };
 }
 
@@ -322,9 +326,10 @@ function rendreTitre(vue, cle, data) {
         ${S.autreTitre(m) ? `<div class="ff-vo">${esc(S.autreTitre(m))}</div>` : ""}
         <div class="ff-ligne">${annees ? `<span>${annees}</span>` : ""}${reals.length ? `<span>${tv ? "créée par " : "de "}${reals.map(r => `<a href="#/personne/${r.id}">${esc(r.name)}</a>`).join(", ")}</span>` : ""}</div>
         <div class="ff-tags">${(d.genres || []).map(g => `<a href="#/decouvrir/explorer?genre=${g.id}&type=${tv ? "tv" : "movie"}">${esc(S.GENRES[g.id] || g.name)}</a>`).join("")}${motscles.map(k => `<a class="mc" href="#/motcle/${k.id}">${esc(k.name)}</a>`).join("")}</div>
-        <div class="ff-notes">${data.imdb ? `<span>${S.LOGOS.imdb}<b>${S.fmtNote(data.imdb[0])}</b></span>` : ""}${d.vote_count ? `<span>${S.LOGOS.tmdb}<b>${S.fmtNote(d.vote_average)}</b></span>` : ""}</div>
+        <div class="ff-notes">${data.imdb ? `<span>${S.LOGOS.imdb}<b>${S.fmtNote(data.imdb[0])}</b></span>` : ""}${d.vote_count ? `<span>${S.LOGOS.tmdb}<b>${S.fmtNote(d.vote_average)}</b></span>` : ""}${data.letterboxd ? `<span title="Note moyenne Letterboxd, sur 5">${S.iconePlateforme("lb", "Letterboxd", "brut")}<b>${String(Math.round(data.letterboxd * 10) / 10).replace(".", ",")}</b><small>sur 5</small></span>` : ""}</div>
       </div>
     </header>
+    ${d.hors_ligne ? `<p class="ff-hors-ligne">Hors ligne : fiche simplifiée, gardée sur l'appareil. Tout revient avec le réseau.</p>` : ""}
     <div class="ff-prix" data-prix></div>
     <section class="ff-cartes">
       <div class="ff-carte ff-note"><div data-anneau></div>
@@ -399,7 +404,7 @@ async function envoiTitre(z, cle) {
   const quand = t => t ? new Date(t * 1000).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
   z.innerHTML = `<div class="ff-envoi-tete"><h2>Sur tes plateformes</h2><button class="lien" data-sync-film>Synchroniser</button></div>
     <div class="ff-envoi">${ordre.map(p => { const x = d[p], r = resume(x); return `<details class="ff-pf" ${r === "erreur" ? "open" : ""}>
-      <summary><span class="pl pl-${r}">${esc(x.nom)}</span><em>${r === "na" ? "rien à envoyer" : LIB[r]}</em></summary>
+      <summary>${S.iconePlateforme(p, x.nom, r === "na" ? "na" : r)}<b class="ff-pf-nom">${esc(x.nom)}</b><em>${r === "na" ? "rien à envoyer" : LIB[r]}</em></summary>
       <ul>${x.lignes.map(l => `<li><span class="pl pl-${l.e}"></span><span>${esc(l.libelle)}${l.m ? `<small>${esc(l.m)}</small>` : ""}</span><em>${LIB[l.e] || ""}</em></li>`).join("") || `<li><span>Rien à envoyer pour ce titre.</span></li>`}</ul>
       <p>${x.passage ? `Dernier passage : ${quand(x.passage.quand)}` : ""}${p === "imdb" && x.mode !== "auto" ? `${x.passage ? ", " : ""}envoi d'un clic depuis l'extension` : ""}${r === "erreur" ? ` <button class="lien" data-reessayer-pf="${p}">Réessayer</button>` : ""}</p></details>`; }).join("")}</div>`;
   $("[data-sync-film]", z).onclick = async () => { await S.synchroniser(); setTimeout(() => envoiTitre(z, cle), 6000); };
@@ -415,7 +420,7 @@ function monJournal(z, cle, t, journal) {
     ${det.length ? `<dl class="prog-equipe" style="margin-top:14px">${det.map(([k, v]) => `<dt>${LIB[k] || k}</dt><dd>${v} sur 10</dd>`).join("")}</dl>` : ""}
     ${cit.map((c, i) => `<blockquote class="toi-citation">${esc(c)}<button data-cit-suppr="${i}">retirer</button></blockquote>`).join("")}
     ${et.length ? `<p class="toi-etiquettes">${et.map(e => `<span>${esc(e)} <button data-et-suppr="${esc(e)}" aria-label="Retirer">×</button></span>`).join(", ")}</p>` : ""}
-    <div class="toi-actions"><button data-cit>Ajouter une réplique</button><button data-et>Ajouter une étiquette</button><button data-prive>${t.prive ? "Montrer ce film à tes amis" : "Cacher ce film à tes amis"}</button></div>`;
+    <div class="toi-actions"><button data-cit>Ajouter une réplique</button><button data-et>Ajouter une étiquette</button><button data-prive>${t.prive ? "Montrer ce film à tes amis" : "Cacher ce film à tes amis"}</button>${t.vu || journal.length || t.note != null ? `<button data-suppr-titre>Retirer ce film de ton profil</button>` : ""}</div>`;
   $$("[data-j]", z).forEach(l => l.onclick = () => S.ouvrirAjout(cle, journal.find(j => j.id === l.dataset.j)));
   const sd = $("[data-sans-date]", z); if (sd) sd.onclick = () => S.ouvrirAjout(cle, null, { sansDate: true });
   $$("[data-cit-suppr]", z).forEach(b => b.onclick = () => S.agir("titre", { cle, champs: { citations: cit.filter((_, i) => i !== +b.dataset.citSuppr) } }, { toast: "Réplique retirée" }));
@@ -434,6 +439,11 @@ function monJournal(z, cle, t, journal) {
     $$("[data-v]", c).forEach(b => b.onclick = () => ajouter(b.dataset.v));
     $("[data-ok]", c.closest(".modale")).onclick = () => ajouter($("input", c).value);
     $("input", c).onkeydown = e => { if (e.key === "Enter") ajouter(e.target.value); };
+  };
+  const st = $("[data-suppr-titre]", z);
+  if (st) st.onclick = async () => {
+    if (!(await S.demander("Retirer ce film de ton profil ?", "Ses visionnages, ta note et ton coup de cœur sont retirés, ici et sur tes plateformes (Letterboxd, IMDb, Refract, TMDB).", "Retirer", "Annuler"))) return;
+    await S.agir("suppr_titre", { cle }, { toast: "Film retiré de ton profil" }); S.rafraichir(true);
   };
   $("[data-prive]", z).onclick = () => S.agir("titre", { cle, champs: { prive: !t.prive } }, { toast: t.prive ? "Film visible par tes amis" : "Film caché à tes amis" });
 }

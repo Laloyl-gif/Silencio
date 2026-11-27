@@ -141,14 +141,18 @@ class Refract:
         if s == "vu":
             jid = op["cle"].split("|")[1]
             e = (self.stock.doc.get("journal") or {}).get(jid) or {}
-            rid = self.identifiant(e.get("cle", ""))
+            film = e.get("cle") or (op.get("avant") or {}).get("cle") or (f"m:{op['tmdb']}" if op.get("tmdb") else "")
+            rid = self.identifiant(film)
             if not rid:
                 return "introuvable", None
             d = (op["valeur"] or {}).get("date") or ""
             d = (d + "-01-01")[:10] if len(d) == 4 else (d + "-01")[:10] if len(d) == 7 else d
+            if a == "retirer":
+                return self._retirer_visionnage(rid, (op.get("avant") or {}), op.get("ref"))
             idem = hashlib.sha1(("silencio" + jid).encode()).hexdigest()
-            self._req("POST", "history/movies", {"movie_id": rid, "watched_at": d + "T20:00:00Z"}, idem=idem)
-            return "ok", None
+            rep = self._req("POST", "history/movies", {"movie_id": rid, "watched_at": d + "T20:00:00Z"}, idem=idem) or {}
+            donnees = rep.get("data") if isinstance(rep.get("data"), dict) else rep
+            return "ok", str(donnees.get("id") or "") or None
         if s == "wl":
             rid = self.identifiant(cle_titre)
             if not rid:
@@ -203,6 +207,9 @@ class Refract:
             if not rid:
                 return "introuvable", None
             genre = "shows" if cle.startswith("t:") else "movies"
+            if a == "retirer":
+                self._req("DELETE", f"ratings/{genre}/{urllib.parse.quote(rid)}")
+                return "ok", None
             try:
                 self._req("PUT", f"ratings/{genre}/{urllib.parse.quote(rid)}", {"value": int(op["valeur"])})
             except ErreurHTTP as e:
@@ -211,6 +218,33 @@ class Refract:
                 raise
             return "ok", None
         return "attente", None
+
+    def _retirer_visionnage(self, rid, avant, ref):
+        """Retire un visionnage de l'historique Refract : par son identifiant, sinon retrouvé par film et date."""
+        if not ref:
+            date = (avant.get("date") or "")[:10]
+            curseur = None
+            for _ in range(10):
+                r = self._req("GET", "history/movies", params={"limit": 200, "cursor": curseur}) or {}
+                for it in r.get("data") or []:
+                    texte = json.dumps(it)
+                    if f'"{rid}"' in texte and (not date or date in str(it.get("watched_at") or texte)):
+                        ref = str(it.get("id") or "")
+                        break
+                if ref or not r.get("has_more"):
+                    break
+                curseur = r.get("next_cursor")
+        if not ref:
+            return "deja", None                    # plus dans l'historique Refract
+        try:
+            self._req("DELETE", f"history/movies/{urllib.parse.quote(ref)}")
+        except ErreurHTTP as e:
+            texte = (e.corps or b"").decode("utf-8", "replace")
+            if e.code == 409 and "remove_rewatches_first" in texte:
+                return "deja", None                 # Refract garde la 1re vision tant qu'il y a des revisionnages
+            if e.code != 404:
+                raise
+        return "ok", None
 
     def passage(self, limite=PAR_PASSAGE):
         """Envoie ce qui manque chez Refract. Renvoie le bilan."""

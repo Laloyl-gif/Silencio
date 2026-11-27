@@ -160,9 +160,11 @@ function rendreJournal(z, doc, pid) {
   peindre();
 }
 P.journal = (vue) => {
-  vue.innerHTML = `<div class="entete"><h1>Journal</h1><span class="espace"></span><button class="lien" data-ajout2>Ajouter un visionnage</button></div><div data-z></div>`;
+  vue.innerHTML = `<div class="entete"><h1>Journal</h1><span class="espace"></span><nav class="liens-tete"><button data-selection>Sélectionner</button><button data-ajout2>Ajouter un visionnage</button></nav></div><div data-z></div>`;
   $("[data-ajout2]", vue).onclick = () => S.ouvrirAjout();
   rendreJournal($("[data-z]", vue), S.moi, "");
+  const sel = S.selectionnable($("[data-z]", vue), { attr: "j", actions: ["suppr", "liste", "wl"] });
+  $("[data-selection]", vue).onclick = () => sel.commencer();
 };
 
 // ------------------------------------------------------------------ listes
@@ -204,9 +206,11 @@ P.listes = (vue, args = []) => {
     const items = def ? S.listeAuto(def[0]) : [];
     const vraie = Object.entries(S.vivants(S.moi.listes)).find(([, l]) => l.auto === args[1]);
     vue.innerHTML = `<a class="fil" href="#/listes">Listes</a><div class="entete"><div><h1>${esc(def ? def[1] : "Liste")}</h1><div class="mini discret">${S.pluriel(items.length, "titre")}, liste automatique</div></div><span class="espace"></span>
-      ${vraie ? `<a class="lien" href="#/liste/${vraie[0]}">Voir la vraie liste</a>` : `<button class="lien" data-vraie>En faire une vraie liste</button>`}</div>
+      <button class="lien" data-selection style="margin-right:16px">Sélectionner</button>${vraie ? `<a class="lien" href="#/liste/${vraie[0]}">Voir la vraie liste</a>` : `<button class="lien" data-vraie>En faire une vraie liste</button>`}</div>
       ${vraie ? "" : `<p class="mini discret" style="margin-top:-6px">Une vraie liste part sur tes plateformes (IMDb, TMDB…) et reste à jour toute seule.</p>`}
       ${items.length ? `<div class="grille">${items.map(c => S.vignette(c, { vu: S.monTitre(c).vu })).join("")}</div>` : S.vide("Rien pour l'instant", "Elle se remplit toute seule avec ton journal.")}`;
+    const grilleAuto = $(".grille", vue);
+    if (grilleAuto) { const sel = S.selectionnable(grilleAuto); $("[data-selection]", vue).onclick = () => sel.commencer(); }
     const bv = $("[data-vraie]", vue);
     if (bv) bv.onclick = async () => { await S.agir("liste", { liste: { nom: def[1], auto: def[0], items, privee: false } }, { toast: "Vraie liste créée : elle suivra ton journal" }); S.rafraichir(true); };
     return;
@@ -240,7 +244,7 @@ P.liste = (vue, args, params) => {
   const moi = estMoi(pid);
   const items = (l.items || []);
   const f = S.filtresMemo["liste_" + id] = S.filtresMemo["liste_" + id] || { vue: l.classee ? "liste" : "grille" };
-  vue.innerHTML = `<div class="entete"><div style="min-width:0"><h1>${esc(l.nom)}</h1><div class="mini discret">${pid ? `par ${esc(S.nomDe(pid))}, ` : ""}${S.pluriel(items.length, "titre")}${l.classee ? ", classée" : ""}</div></div><span class="espace"></span>${moi ? `<nav class="liens-tete"><button data-ajouter>Ajouter</button><button data-editer>Modifier</button></nav>` : ""}</div>
+  vue.innerHTML = `<div class="entete"><div style="min-width:0"><h1>${esc(l.nom)}</h1><div class="mini discret">${pid ? `par ${esc(S.nomDe(pid))}, ` : ""}${S.pluriel(items.length, "titre")}${l.classee ? ", classée" : ""}</div></div><span class="espace"></span>${moi ? `<nav class="liens-tete"><button data-selection>Sélectionner</button><button data-ajouter>Ajouter</button><button data-editer>Modifier</button></nav>` : ""}</div>
     ${l.description ? `<p class="synopsis">${esc(l.description)}</p>` : ""}
     <div class="filtres"><div class="segments" data-vue><button data-v="grille">Grille</button><button data-v="liste">Liste</button></div><span class="mini discret">${S.pluriel(items.filter(c => S.monTitre(c).vu).length, "titre vu", "titres vus")} par toi</span></div>
     <div data-items></div>`;
@@ -262,12 +266,13 @@ P.liste = (vue, args, params) => {
   };
   $$("[data-vue] button", vue).forEach(b => b.onclick = () => { f.vue = b.dataset.v; peindre(); });
   if (moi) { $("[data-ajouter]", vue).onclick = () => S.choisirTitre(c => S.agir("liste_item", { id, cle: c, val: true }, { toast: "Ajouté à la liste" }), "Ajouter à « " + l.nom + " »"); $("[data-editer]", vue).onclick = () => editerListe(id); }
+  if (moi) { const sel = S.selectionnable($("[data-items]", vue), { liste: id }); $("[data-selection]", vue).onclick = () => sel.commencer(); }
   peindre();
 };
 P.watchlist = (vue) => {
   const f = S.filtresMemo.wl = S.filtresMemo.wl || { type: "", duree: 0, dispo: false };
   const mesPlat = S.reglage("plateformes", []) || [];
-  vue.innerHTML = `<div class="entete"><h1>Watchlist</h1><span class="espace"></span><nav class="liens-tete"><button data-tirage>Au hasard</button></nav></div>
+  vue.innerHTML = `<div class="entete"><h1>Watchlist</h1><span class="espace"></span><nav class="liens-tete"><button data-selection>Sélectionner</button><button data-tirage>Au hasard</button></nav></div>
     <div class="filtres defile-x" style="flex-wrap:nowrap">
       <div class="segments" data-type><button data-v="">Tout</button><button data-v="m">Films</button><button data-v="t">Séries</button></div>
       <div class="segments" data-duree><button data-v="0">Toutes durées</button><button data-v="95">≤ 1 h 35</button><button data-v="120">≤ 2 h</button></div>
@@ -293,6 +298,8 @@ P.watchlist = (vue) => {
   $$("[data-duree] button", vue).forEach(b => b.onclick = () => { f.duree = +b.dataset.v; peindre(); });
   $("[data-dispo]", vue).onclick = () => { f.dispo = !f.dispo; peindre(); };
   peindre();
+  const selW = S.selectionnable($("[data-g]", vue), { actions: ["retirer_wl", "vu", "liste"] });
+  $("[data-selection]", vue).onclick = () => selW.commencer();
 };
 
 // ------------------------------------------------------------------ amis
@@ -610,6 +617,9 @@ function plateformes(z, e) {
         <div class="aj-ligne"><span>Dernier passage</span><b>${x.passage ? `${quand(x.passage.quand)}${x.passage.echec ? `, ${x.passage.echec} échec${x.passage.echec > 1 ? "s" : ""}` : ""}` : "jamais"}</b></div>
       </div>
       ${p !== "rf" ? `<p class="pf-intro" style="margin-top:10px">${x.depuis ? `Relié depuis le ${quand(x.depuis)} : ` : "Dès le premier passage de l'extension, "}seuls tes ajouts et tes changements faits dans Silencio partent. Rien n'est jamais retiré de ${x.nom}.</p>` : ""}
+      ${(x.a_envoyer || 0) > 0 ? `<details class="pf-echecs" data-attente="${p}"><summary>Voir ce qui attend (${S.fmtNombre(x.a_envoyer)})</summary><div data-attente-l>${S.chargement()}</div>
+        <p class="pf-intro">Si ce sont des choses déjà présentes sur ${x.nom}, marque-les comme déjà envoyées : seuls tes ajouts suivants partiront.</p>
+        <button class="lien-souligne" data-deja="${p}">Tout considérer comme déjà envoyé</button></details>` : ""}
       ${(x.echecs || []).length ? `<details class="pf-echecs"><summary>${x.echecs.length} opération${x.echecs.length > 1 ? "s" : ""} en échec</summary>${x.echecs.slice(0, 20).map(f => `<div><b>${esc(f.titre || f.cle)}</b><span>${esc(f.erreur || f.etat || "")}</span></div>`).join("")}<button class="lien-souligne" data-reessayer="${p}">Réessayer maintenant</button></details>` : ""}
     </div>`; };
   const rf = P.rf || {}, lb = P.lb || {}, im = P.imdb || {};
@@ -627,12 +637,21 @@ function plateformes(z, e) {
       <div class="aj-ligne aj-sous-ligne"><span>Ta watchlist IMDb</span><div><input class="aj-champ" data-im-wl value="${esc(im.watchlist || "")}" placeholder="https://www.imdb.com/user/…/watchlist">${im.watchlist ? `<div class="toi-actions" style="margin-top:4px"><a href="${esc(im.watchlist)}" target="_blank" rel="noopener">Ouvrir</a></div>` : ""}</div></div>
       <div class="aj-ligne"><span>Envoi</span><select class="aj-valeur" data-mode="imdb">${[["auto", "automatique et discret"], ["clic", "un clic par action"], ["liens", "à la main, avec les liens"], ["coupe", "coupé"]].map(([k, l]) => `<option value="${k}" ${(P.modes || {}).imdb === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
       <div class="aj-ligne"><span>Extension vue</span><b>${quand(e.plateformes?.extension_vue?.imdb)}</b></div>`)}
+    <div class="pf" data-pf="tmdb">
+      <h4>TMDB</h4><p class="pf-intro">Par l'API officielle de TMDB, tout seul : notes, coups de cœur, watchlist et listes, ajouts comme retraits.</p>
+      <div class="aj-lignes">
+        <div class="aj-ligne"><span>Compte</span><b>${e.appareil.tmdb.connecte ? esc(e.appareil.tmdb.nom || "relié") : "pas relié"}</b></div>
+        <div class="aj-ligne"><span>À envoyer</span><b>${S.fmtNombre(e.file_tmdb?.attente || 0)}</b></div>
+      </div>
+      ${e.file_tmdb?.erreur ? `<p class="pf-alerte">${esc(e.file_tmdb.erreur)}</p>` : ""}
+      <div class="toi-actions"><a href="#/reglages/tmdb">${e.appareil.tmdb.connecte ? "Gérer le compte TMDB" : "Relier TMDB"}</a></div>
+    </div>
     <div class="pf">
       <h4>Extension Silencio Sync</h4>
       <p class="pf-intro">Colle ce code d'appairage dans l'extension, une seule fois par appareil.</p>
       <div class="aj-lignes"><div class="aj-ligne"><span>Code</span><b class="pf-jeton" data-jeton>${esc(P.jeton || "")}</b></div>
         <div class="aj-ligne"><span>Adresse de Silencio</span><b>${esc(location.origin)}</b></div></div>
-      <div class="toi-actions"><button data-copier>Copier le code</button><button data-nouveau-jeton>Nouveau code</button><a href="extension/LISEZMOI.html" target="_blank">Installer l'extension</a></div>
+      <div class="toi-actions"><a href="#/envois">Historique des envois</a><button data-copier>Copier le code</button><button data-nouveau-jeton>Nouveau code</button><a href="extension/LISEZMOI.html" target="_blank">Installer l'extension</a></div>
     </div>`;
   const enreg = async (corps, toast) => { try { await S.post("/api/reglages", corps); S.toast(toast); S.rafraichir(true); } catch (er) { S.toast(er.message); } };
   $("[data-rf-ok]", z).onclick = () => { const v = $("[data-rf-cle]", z).value.trim(); if (v) enreg({ refract_cle: v }, "Refract relié"); };
@@ -643,6 +662,15 @@ function plateformes(z, e) {
   $$("[data-mode]", z).forEach(x => x.onchange = () => enreg({ modes_ext: { [x.dataset.mode]: x.value } }, "Envoi réglé"));
   $("[data-copier]", z).onclick = () => { navigator.clipboard?.writeText(P.jeton || "").then(() => S.toast("Code copié"), () => S.toast("Sélectionne le code pour le copier")); };
   $("[data-nouveau-jeton]", z).onclick = () => { if (confirm("Créer un nouveau code ? Il faudra le recoller dans l'extension sur chaque appareil.")) enreg({ nouveau_jeton: true }, "Nouveau code créé"); };
+  $$("[data-attente]", z).forEach(d => d.addEventListener("toggle", async () => {
+    if (!d.open || d.dataset.charge) return; d.dataset.charge = 1;
+    try { const r = await S.api("/api/plateformes/attente?p=" + d.dataset.attente); $("[data-attente-l]", d).innerHTML = r.r.map(o => `<div><b>${esc(o.titre)}</b><span>${esc(o.quoi)}</span></div>`).join("") + (r.total > r.r.length ? `<div><span>et ${r.total - r.r.length} autres</span></div>` : ""); }
+    catch (er) { $("[data-attente-l]", d).textContent = er.message; }
+  }));
+  $$("[data-deja]", z).forEach(b => b.onclick = async () => {
+    if (!(await S.demander("Tout considérer comme déjà envoyé ?", "Ce qui attend ne partira pas. Seuls tes ajouts et changements faits à partir de maintenant partiront.", "Oui", "Annuler"))) return;
+    await S.post("/api/plateformes/depart", { plateforme: b.dataset.deja, vide: false }); S.toast("C'est noté : seuls tes prochains ajouts partiront"); S.rafraichir(true);
+  });
   $$("[data-reessayer]", z).forEach(b => b.onclick = async () => { await S.post("/api/plateformes/reessayer", { plateforme: b.dataset.reessayer }); S.toast("Nouvel essai au prochain passage"); S.rafraichir(true); });
 }
 
@@ -694,7 +722,7 @@ P.reglages = async (vue, args, params) => {
     <section class="carte" data-rub="avance"><h3>Raccourcis clavier</h3><dl class="tableau-infos petit"><dt>n</dt><dd>Ajouter un visionnage</dd><dt>/</dt><dd>Recherche</dd><dt>1 … 0, puis « . »</dt><dd>Note (dans l'ajout) : 8 puis . = 7,5</dd><dt>Entrée</dt><dd>Valider l'ajout</dd><dt>h, j, s</dt><dd>Accueil, Journal, Stats</dd><dt>z</dt><dd>Annuler la dernière action</dd><dt>Échap</dt><dd>Fermer</dd></dl></section>
     <p class="mini discret centre" data-rub="avance">Silencio ${esc(e.app)}, données TMDB (ce produit utilise l'API TMDB sans être approuvé ni certifié par TMDB), notes IMDb : datasets.imdbws.com, prix : Wikidata, plateformes : JustWatch</p>
   </div>`;
-  const RUBS = [["compte", e.compte?.connecte ? "Compte" : "Compte : se connecter ou en créer un", "moi"], ["affichage", "Affichage", "reglages"], ["plateformes", "Letterboxd, IMDb, Refract", "sync"], ["tmdb", "Compte TMDB", "sync"], ["amis", "Amis et synchro", "amis"], ["importer", "Importer", "plus"], ["completer", "Compléter tes films importés", "plus"], ["exporter", "Exporter", "lien"], ["historique", "Historique", "annuler"], ["avance", "Avancé", "info"]];
+  const RUBS = [["compte", e.compte?.connecte ? "Compte" : "Compte : se connecter ou en créer un", "moi"], ["affichage", "Affichage", "reglages"], ["plateformes", "Letterboxd, IMDb, Refract, TMDB", "sync"], ["tmdb", "Compte TMDB", "sync"], ["amis", "Amis et synchro", "amis"], ["importer", "Importer", "plus"], ["completer", "Compléter tes films importés", "plus"], ["exporter", "Exporter", "lien"], ["historique", "Historique", "annuler"], ["avance", "Avancé", "info"]];
   const rub = args[0];
   $$("[data-rub]", vue).forEach(x => x.classList.toggle("cache", x.dataset.rub !== rub));
   if (!rub) $(".col", vue).insertAdjacentHTML("afterbegin", `<div class="lignes menu-reglages">${RUBS.map(([k, l, i]) => `<a class="ligne" href="#/reglages/${k}"><div class="corps"><b>${l}</b></div></a>`).join("")}</div>`);
@@ -749,5 +777,34 @@ P.reglages = async (vue, args, params) => {
     $$("[data-id]", corps).forEach(b => b.onclick = async () => { S.fermerModale(); const r = await S.post("/api/import/twinpicks" + versTmdb(), { id: b.dataset.id, chemin: d.chemin_twin_picks }); suivre(r.tache, "Import Twin Picks"); });
     $("[data-ch-ok]", corps).onclick = async () => { await S.post("/api/reglages", { twin_picks: $("[data-chemin]", corps).value.trim() }); S.fermerModale(); setTimeout(() => $("[data-imp-tp]", vue).click(), 350); };
   };
+};
+})();
+
+// ------------------------------------------------------------------ historique des envois
+(() => {
+const S = window.Silencio, P = S.pages;
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const NOMS = { lb: "Letterboxd", imdb: "IMDb", rf: "Refract", tmdb: "TMDB" };
+const QUOI = { vu: "visionnage", note: "note", like: "coup de cœur", wl: "watchlist", fav: "watchlist", marque: "vu", critique: "critique", liste: "liste", item: "liste", ep: "épisode" };
+P.envois = async (vue, args, params) => {
+  const f = params.p || "";
+  vue.innerHTML = `<a class="fil" href="#/reglages/plateformes">Réglages</a><div class="entete"><h1>Historique des envois</h1></div>
+    <div class="segments" data-filtre style="margin-bottom:14px">${[["", "Tout"], ["lb", "Letterboxd"], ["imdb", "IMDb"], ["rf", "Refract"], ["tmdb", "TMDB"], ["echec", "Erreurs"]].map(([k, l]) => `<button data-v="${k}" class="${k === f ? "actif" : ""}">${l}</button>`).join("")}</div>
+    <div data-l>${S.chargement()}</div>`;
+  $("[data-filtre]", vue).onclick = e => { const b = e.target.closest("[data-v]"); if (b) location.hash = "#/envois" + (b.dataset.v ? "?p=" + b.dataset.v : ""); };
+  let d; try { d = await S.api("/api/envois"); } catch (er) { $("[data-l]", vue).innerHTML = S.vide("Indisponible", esc(er.message)); return; }
+  const l = d.r.filter(e => !f || (f === "echec" ? e.etat === "echec" : e.p === f));
+  let jour = "", html = "";
+  for (const e of l) {
+    const j = new Date(e.t * 1000).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+    if (j !== jour) { jour = j; html += `<div class="mois-titre">${esc(j)}</div>`; }
+    const etat = e.etat === "ok" || e.etat === "deja" ? "ok" : e.etat === "manuel" ? "clic" : "erreur";
+    const m = e.film ? S.info(e.film) || {} : {};
+    html += `<${e.film ? `a href="#/titre/${e.film}"` : "div"} class="ligne envoi">${S.iconePlateforme ? S.iconePlateforme(e.p, NOMS[e.p] || e.p, etat, e.erreur) : ""}
+      <div class="corps"><b>${esc(e.titre || S.nomTitre(m) || e.cle)}</b><span>${e.action === "retirer" ? "retiré" : "envoyé"} : ${esc(QUOI[e.sorte] || e.sorte)}${e.etat === "deja" ? ", déjà là" : ""}${e.erreur ? `, <em class="envoi-err">${esc(e.erreur)}</em>` : ""}</span></div>
+      <time>${new Date(e.t * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</time></${e.film ? "a" : "div"}>`;
+  }
+  $("[data-l]", vue).innerHTML = html ? `<div class="lignes">${html}</div>` : S.vide("Rien pour l'instant", "Chaque envoi vers Letterboxd, IMDb, Refract et TMDB apparaîtra ici.");
 };
 })();
