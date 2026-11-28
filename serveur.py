@@ -22,6 +22,7 @@ from stockage import SECTIONS, Stock, ecrire_json, lire_json, slug
 import compte
 import diagnostic
 import miroir
+import sauvegarde
 import seances
 from refract import Refract
 from synchro import Synchro
@@ -197,6 +198,8 @@ class App:
                     imdb.mettre_a_jour()
                 self.notifs.verifier()
                 self.preferences_v21()
+                if tour % 20 == 0:
+                    sauvegarde.faire(self.stock)
                 if time.time() - self._verif_cine > 6 * 3600:
                     self._verif_cine = time.time()
                     threading.Thread(target=self.alerter_cinemas, daemon=True).start()
@@ -1352,7 +1355,12 @@ def fabriquer_handler(app):
                 return self._envoyer(200, {"prix": wiki.prix_personne(int(m.group(1)))})
             m = re.fullmatch(r"prix/titre/([mt]:\d+)", r)
             if m:
-                return self._envoyer(200, wiki.prix_film(m.group(1)))
+                r = wiki.prix_film(m.group(1))
+                try:
+                    r["personnes"] = wiki.prix_personnes_film(m.group(1))
+                except Exception:  # noqa: BLE001
+                    r["personnes"] = {}
+                return self._envoyer(200, r)
             if r == "cinemas":
                 return self._envoyer(200, {"r": app.cinemas(q.get("q", ""))})
             if r == "anniversaires":
@@ -1411,6 +1419,14 @@ def fabriquer_handler(app):
                 return self._envoyer(200, {"r": app.seances.chercher(q.get("q", ""))})
             if r == "semaine":
                 return self._envoyer(200, app.sorties_semaine())
+            if r == "sauvegardes":
+                return self._envoyer(200, {"r": sauvegarde.liste(app.stock), "derniere": app.stock.appareil.get("sauvegarde_t", 0)})
+            if r == "images":
+                c = q.get("cle", "")
+                type_, id_ = ("tv" if c.startswith("t:") else "movie"), int(c[2:])
+                d = app.tmdb.get(f"/{type_}/{id_}/images", ttl=30 * 86400, langue=False, include_image_language="fr,en,null") or {}
+                return self._envoyer(200, {"affiches": [i["file_path"] for i in (d.get("posters") or [])][:40],
+                                           "fonds": [i["file_path"] for i in (d.get("backdrops") or [])][:30]})
             if r == "ouvrir":
                 return self._envoyer(200, app.ouvrir(q.get("url", ""), q.get("tmdb", "")))
             if r == "anecdotes":
@@ -1484,6 +1500,12 @@ def fabriquer_handler(app):
                 return self._envoyer(404, {"erreur": "inconnu"})
             if r == "diagnostic":
                 return self._envoyer(200, app.diag.lancer(bool(self._json().get("complet"))))
+            if r == "sauvegardes/faire":
+                return self._envoyer(200, {"nom": sauvegarde.faire(app.stock, forcer=True)})
+            if r == "sauvegardes/restaurer":
+                sauvegarde.restaurer(app.stock, self._json().get("nom", ""))
+                app.synchro.demander(3)
+                return self._envoyer(200, app.etat())
             if r == "raccourci":
                 return self._envoyer(200, app.creer_raccourci())
             if r == "synchroniser":

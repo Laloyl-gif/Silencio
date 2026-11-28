@@ -73,6 +73,16 @@ TEL = {"viewport": {"width": 390, "height": 844}, "device_scale_factor": 2, "is_
 PC = {"viewport": {"width": 1440, "height": 900}}
 
 
+DEBORDE = """() => [...document.querySelectorAll('#vue *')].filter(e => { const st = getComputedStyle(e);
+  return /auto|scroll/.test(st.overflowX) && e.scrollWidth > e.clientWidth + 2 && e.offsetParent; }).map(e => e.className).slice(0, 5)
+  .concat(document.documentElement.scrollWidth > innerWidth + 2 ? ['page'] : [])"""
+
+
+def sans_defilement(page, ou):
+    d = page.evaluate(DEBORDE)
+    assert not d, (f"défilement sur le côté ({ou})", d)
+
+
 def capture(page, nom, plein=False):
     page.wait_for_timeout(450)
     page.screenshot(path=os.path.join(CAPT, nom + ".png"), full_page=plein)
@@ -158,6 +168,7 @@ with sync_playwright() as p:
     pg.wait_for_selector(".bonjour")
     pg.wait_for_selector(".tdb-ligne")
     pg.wait_for_timeout(1200)
+    sans_defilement(pg, "accueil")
     capture(pg, "03_tel_accueil", plein=True)
     tdb = api("/api/tableau")["r"]
     assert tdb and set(tdb[0]["plateformes"]) == {"lb", "imdb", "rf", "tmdb"}, tdb[:1]
@@ -219,6 +230,7 @@ with sync_playwright() as p:
     pg.wait_for_timeout(400)
     assert "2x3" in api("/api/etat")["profil"]["series"]["t:1920"]["episodes"]
     pg.locator(".saison[data-s='2']").scroll_into_view_if_needed()
+    sans_defilement(pg, "série")
     capture(pg, "08_tel_serie")
     # glisser vers la gauche dans le journal : watchlist
     pg.goto(URL + "/#/journal")
@@ -234,6 +246,7 @@ with sync_playwright() as p:
     pg.wait_for_timeout(600)
     wl = api("/api/etat")["profil"]["watchlist"].get(cle_glisse, {})
     assert wl and not wl.get("x"), ("glisser à gauche → watchlist", cle_glisse, wl)
+    sans_defilement(pg, "journal")
     capture(pg, "09_tel_journal")
     # sélection multiple dans le journal : supprimer deux visionnages d'un coup
     avant_j = len([1 for v in api("/api/etat")["profil"]["journal"].values() if not v.get("x")])
@@ -253,7 +266,13 @@ with sync_playwright() as p:
     pg.goto(URL + "/#/stats")
     pg.wait_for_selector("[data-bloc=distribution] svg")
     pg.wait_for_timeout(900)
+    sans_defilement(pg, "stats")
     capture(pg, "10_tel_stats")
+    pg.click("#barre-bas [data-menu]")
+    pg.wait_for_selector(".modale .menu-tel a")
+    capture(pg, "10b_tel_menu")
+    pg.click(".menu-tel a[href='#/journal']")
+    pg.wait_for_url("**/#/journal", timeout=5000)
     pg.goto(URL + "/#/decouvrir/soir")
     pg.wait_for_selector(".grille")
     capture(pg, "11_tel_ce_soir")
@@ -597,7 +616,8 @@ with sync_playwright() as p:
     pp.wait_for_selector("[data-similaires] .sim-crit button.actif")
     pp.wait_for_timeout(800)
     capture(pp, "38_pc_fiche_enrichie", plein=True)
-    pp.click("[data-partager]")
+    pp.click("[data-plus-film]")
+    pp.click(".modale [data-a=partager]")
     pp.wait_for_selector(".modale [data-canvas]")
     pp.wait_for_timeout(800)
     capture(pp, "39_pc_partage")
@@ -625,6 +645,31 @@ with sync_playwright() as p:
     pp.wait_for_selector(".tdb")
     assert pp.locator(".tdb-ligne").count() <= 3
     capture(pp, "41_pc_accueil_v21", plein=True)
+    # prix résumés, palmarès, statuette (Naomi Watts nommée pour Mulholland Drive)
+    pp.goto(URL + "/#/titre/m:1018")
+    pp.wait_for_selector(".ff-prix [data-palmares]")
+    pp.wait_for_selector(".ff-cast .statuette-b")
+    capture(pp, "42_pc_fiche_prix")
+    pp.click(".ff-prix [data-palmares]")
+    pp.wait_for_selector(".modale .palm-c")
+    assert "Pour ce film" in pp.inner_text(".modale"), "palmarès avec les personnes"
+    capture(pp, "43_pc_palmares")
+    pp.keyboard.press("Escape")
+    # choisir une autre affiche
+    pp.click(".ff-affiche")
+    pp.wait_for_selector(".modale .choix-images, .modale .vide")
+    pp.keyboard.press("Escape")
+    # filmographie à finir
+    api("/api/action", {"type": "objectif", "pid": 5602, "nom": "David Lynch", "role": "real", "annee": int(time.strftime("%Y")) + 1})
+    pp.goto(URL + "/#/objectifs")
+    pp.reload()
+    pp.wait_for_selector(".obj .obj-chiffres")
+    capture(pp, "44_pc_objectifs")
+    # sauvegardes
+    pp.goto(URL + "/#/reglages/historique")
+    pp.wait_for_selector("[data-sauvegardes] [data-faire]")
+    pp.click("[data-sauvegardes] [data-faire]")
+    pp.wait_for_selector("[data-sauvegardes] [data-rest]")
     # réglages : tes cinémas
     pp.goto(URL + "/#/reglages/affichage")
     pp.wait_for_selector("[data-cinemas] .ligne")

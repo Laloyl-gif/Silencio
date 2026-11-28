@@ -15,7 +15,9 @@ const DEFAUT = {
   silencioAbsent: true, apresLancement: 0, cloudflare: {}, avisQuota: {}, fondKo: {}
 };
 const ORIGINES = ["https://letterboxd.com/*", "https://www.imdb.com/*", "https://m.imdb.com/*", "https://api.graphql.imdb.com/*"];
-const QUOTA_JOUR = 80;                       // actions par site et par jour, au plus
+// Rythme : une action toutes les 20 à 45 s environ (jamais régulier), avec de temps en temps une pause plus longue,
+// comme quelqu'un qui clique à la main. Plafond de sécurité très large : au-delà, plus aucun humain ne suit.
+const QUOTA_JOUR = 500;                      // actions par site et par jour, au plus (filet de sécurité)
 const hasard = (a, b) => a + Math.random() * (b - a);
 const aujourdhui = () => new Date().toISOString().slice(0, 10);
 
@@ -196,8 +198,8 @@ async function plateforme(p, aBlanc, motif, modes) {
     if (!ouvert) return { pause: c.pauses[p] };
   }
   const q = c.quota[p] && c.quota[p].jour === aujourdhui() ? c.quota[p].n : 0;
-  // quota par jour (discrétion) ; ton clic sur « Synchroniser » en accorde un peu plus
-  const reste = QUOTA_JOUR + (motif === "bouton" ? 40 : 0) - q;
+  // plafond de sécurité par jour ; ton clic sur « Synchroniser » en accorde un peu plus
+  const reste = QUOTA_JOUR + (motif === "bouton" ? 100 : 0) - q;
   if (reste <= 0 && !aBlanc) {
     if ((c.avisQuota || {})[p] !== aujourdhui() || motif === "bouton") {
       await poser({ avisQuota: { ...(c.avisQuota || {}), [p]: aujourdhui() } });
@@ -207,7 +209,8 @@ async function plateforme(p, aBlanc, motif, modes) {
   }
   // quelques actions à la fois seulement, jamais le même nombre
   // après un ajout dans Silencio, tout ce qui attend part (jusqu'à 12 à la fois), toujours espacé comme à la main
-  const n = aBlanc ? 40 : Math.max(1, Math.min(reste, p === "lb" ? Math.round(hasard(3, 6)) : motif === "ajout" || motif === "bouton" ? 12 : Math.round(hasard(3, 6))));
+  // jusqu'à une dizaine d'actions par passage (5 à 7 minutes au rythme humain), puis un nouveau passage dans la minute
+  const n = aBlanc ? 40 : Math.max(1, Math.min(reste, Math.round(hasard(8, 12))));
   const r = await silencio(`/api/ext/ops?p=${p}&n=${n}`);
   if (!r.ops.length) return { rien: true, attente: r.en_attente || 0 };
   if (p === "lb" && !r.pseudo) {
@@ -284,7 +287,7 @@ async function executerOps(p, ops, ctx, aBlanc, motif, c) {
   }
   const onglet = await ongletPour(p, motif);
   if (!onglet) return { rep: rep && rep.resultats.length ? rep : null, onglet: null };
-  const rep2 = await delai(parler(onglet, { type: "silencio-executer", p, ops: reste, ctx, aBlanc }), 8 * 60e3, `${NOM[p]} (onglet)`)
+  const rep2 = await delai(parler(onglet, { type: "silencio-executer", p, ops: reste, ctx, aBlanc }), 15 * 60e3, `${NOM[p]} (onglet)`)
     .catch(e => ({ resultats: [], bloque: e.message }));
   if (!rep) return { rep: rep2, onglet };
   return { rep: { ...rep2, resultats: [...rep.resultats, ...(rep2.resultats || [])], cache: { ...(rep.cache || {}), ...(rep2.cache || {}) } }, onglet };
@@ -293,7 +296,7 @@ async function executerOps(p, ops, ctx, aBlanc, motif, c) {
 // Une seule synchro à la fois. Si une précédente est restée bloquée (onglet qui ne répond plus, Firefox mis en
 // veille…), le verrou est libéré au bout de 10 minutes : la synchro automatique et le bouton remarchent.
 let enCoursFlag = false, enCoursDepuis = 0;
-const verrou = { get on() { if (enCoursFlag && Date.now() - enCoursDepuis > 10 * 60e3) enCoursFlag = false; return enCoursFlag; },
+const verrou = { get on() { if (enCoursFlag && Date.now() - enCoursDepuis > 25 * 60e3) enCoursFlag = false; return enCoursFlag; },
   set on(v) { enCoursFlag = v; if (v) enCoursDepuis = Date.now(); } };
 async function synchroniser(motif, aBlanc = false) {
   if (verrou.on) { if (motif === "bouton") await noter("Une synchro est déjà en cours : le résultat arrive dans le journal ci-dessous."); return { occupe: true }; }

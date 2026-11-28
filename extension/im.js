@@ -11,6 +11,8 @@
   let vitesse = 1;                         // 1 en vrai ; les tests accélèrent
   const pause = ms => new Promise(r => setTimeout(r, ms * vitesse));
   const hasard = (a, b) => a + Math.random() * (b - a);
+  // entre deux actions : 20 à 45 s, et environ une fois sur huit une « respiration » d'une à deux minutes
+  const rythme = () => hasard(20000, 45000) + (Math.random() < 0.125 ? hasard(60000, 120000) : 0);
   class Bloque extends Error {}
   let session = "";
   let parPage = false;                     // l'appel par l'extension a échoué mais celui de la page marche : on garde la page
@@ -125,7 +127,7 @@
         if (e instanceof Bloque) { bloque = e.message; break; }
         resultats.push({ ...base, etat: "echec", erreur: String(e.message || e).slice(0, 200) });
       }
-      await pause(aBlanc ? 200 : hasard(4000, 10000));
+      await pause(aBlanc ? 200 : rythme());
     }
     return { resultats, bloque };
   }

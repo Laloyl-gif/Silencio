@@ -344,7 +344,11 @@ class H(BaseHTTPRequestHandler):
             return self.envoyer(200, monde())
         if p == "/wikidata":
             qq = q.get("query", "")
-            if "P1411" in qq and '"496243"' in qq:
+            if "?pid" in qq and '"1018"' in qq:
+                b = [{"type": {"value": "nomme"}, "pid": {"value": "3489"}, "prixFr": {"value": "César de la meilleure actrice"}, "prixEn": {"value": "César Award for Best Actress"}, "annee": {"value": "2002"}}]
+            elif "?pid" in qq:
+                b = []
+            elif "P1411" in qq and '"496243"' in qq:
                 b = [{"type": {"value": "gagne"}, "prixFr": {"value": "Palme d'or"}, "prixEn": {"value": "Palme d'Or"}, "annee": {"value": "2019"}},
                      {"type": {"value": "gagne"}, "prixFr": {"value": "Oscar du meilleur film"}, "prixEn": {"value": "Academy Award for Best Picture"}, "annee": {"value": "2020"}},
                      {"type": {"value": "gagne"}, "prixFr": {"value": "Oscar du meilleur réalisateur"}, "prixEn": {"value": "Academy Award for Best Director"}, "annee": {"value": "2020"}},

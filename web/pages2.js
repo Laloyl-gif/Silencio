@@ -273,7 +273,7 @@ P.watchlist = (vue) => {
   const f = S.filtresMemo.wl = S.filtresMemo.wl || { type: "", duree: 0, dispo: false };
   const mesPlat = S.reglage("plateformes", []) || [];
   vue.innerHTML = `<div class="entete"><h1>Watchlist</h1><span class="espace"></span><nav class="liens-tete"><button data-selection>Sélectionner</button><button data-tirage>Au hasard</button></nav></div>
-    <div class="filtres defile-x" style="flex-wrap:nowrap">
+    <div class="filtres">
       <div class="segments" data-type><button data-v="">Tout</button><button data-v="m">Films</button><button data-v="t">Séries</button></div>
       <div class="segments" data-duree><button data-v="0">Toutes durées</button><button data-v="95">≤ 1 h 35</button><button data-v="120">≤ 2 h</button></div>
       <button class="puce ${f.dispo ? "actif" : ""}" data-dispo>Sur mes plateformes</button>
@@ -719,6 +719,7 @@ P.reglages = async (vue, args, params) => {
       <div class="flex" style="margin-top:12px"><button class="bouton principal" data-g-ok>Enregistrer</button>${s.active ? `<button class="bouton" data-versions>Historique des versions</button>` : ""}</div>
       <div data-versions-l></div>
     </section>
+    <section class="carte" data-rub="historique" data-sauvegardes></section>
     <section class="carte" data-rub="historique"><h3>Historique et annulation</h3>
       ${(e.historique || []).length ? `<div class="lignes">${e.historique.slice(0, 12).map((h, i) => `<div class="ligne" style="padding:7px 2px"><div class="corps"><b style="font-weight:500">${esc(h.libelle)}</b><span>${new Date(h.quand * 1000).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span></div>${i === 0 ? `<button class="bouton petit" data-annuler>Annuler</button>` : ""}</div>`).join("")}</div>` : `<p class="mini discret">Rien à annuler depuis le lancement. (Raccourci : <b>z</b>.)</p>`}
       <p class="mini discret">Chaque modification envoyée sur GitHub est aussi gardée dans l'historique du dépôt (bouton « Historique des versions »).</p>
@@ -741,6 +742,7 @@ P.reglages = async (vue, args, params) => {
   if (rub === "plateformes") plateformes($("[data-plateformes]", vue), e);
   if (rub === "test") rubriqueTest($("[data-test]", vue));
   if (rub === "affichage") rubriqueCinemas($("[data-cinemas]", vue));
+  if (rub === "historique") rubriqueSauvegardes($("[data-sauvegardes]", vue));
   if (rub === "compte") rubriqueCompte($("[data-compte]", vue), e);
   if (rub === "completer") rubriqueCompleter($("[data-completer]", vue));
   $("[data-sons]", vue).onchange = ev => S.agir("profil", { champs: { reglages: { sons: ev.target.checked } } }, { toast: ev.target.checked ? "Sons activés" : "Sons coupés", sansAnnuler: true });
@@ -900,6 +902,23 @@ function rubriqueCinemas(z) {
         : `<p class="mini discret">Rien trouvé. Sur allocine.fr, ouvre la page du cinéma et colle son adresse ici.</p>`;
       res.querySelectorAll("[data-pris]").forEach(b => b.onclick = async () => { const c = r.r[+b.dataset.pris]; await enregistrer([...liste(), { nom: c.nom, code: c.code }]); peindre(); });
     };
+  };
+  peindre();
+}
+
+// ------------------------------------------------------------------ sauvegardes automatiques
+async function rubriqueSauvegardes(z) {
+  const S = window.Silencio, $ = (q, r = document) => r.querySelector(q);
+  const peindre = async () => {
+    let d; try { d = await S.api("/api/sauvegardes"); } catch { z.innerHTML = ""; return; }
+    z.innerHTML = `<h3>Sauvegardes automatiques</h3><p class="petit muet">Chaque semaine, une copie complète de ton profil est gardée sur cet appareil (chiffrée avec ton compte). Les 8 dernières restent disponibles.</p>
+      <div class="lignes">${d.r.map(x => `<div class="ligne"><div class="corps"><b>${new Date(x.t * 1000).toLocaleString("fr-FR", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}</b><span>${Math.round(x.taille / 1024)} Ko</span></div><button class="lien" data-rest="${x.nom}">Restaurer</button></div>`).join("") || `<p class="mini discret">Pas encore de sauvegarde : la première se fait toute seule, ou tout de suite avec le bouton.</p>`}</div>
+      <button class="bouton petit" data-faire style="margin-top:10px">Sauvegarder maintenant</button>`;
+    $("[data-faire]", z).onclick = async () => { await S.post("/api/sauvegardes/faire", {}); S.toast("Sauvegarde faite"); peindre(); };
+    z.querySelectorAll("[data-rest]").forEach(b => b.onclick = async () => {
+      if (!(await S.demander("Restaurer cette sauvegarde ?", "Ton profil revient à cet état, ici et sur tes autres appareils. L'état actuel est sauvegardé juste avant, au cas où.", "Restaurer", "Annuler"))) return;
+      try { await S.post("/api/sauvegardes/restaurer", { nom: b.dataset.rest }); await S.chargerEtat(true); S.toast("Profil restauré"); S.rafraichir(true); } catch (e) { S.toast(e.message); }
+    });
   };
   peindre();
 }

@@ -1511,3 +1511,55 @@ body.avec-barre-film #principal { padding-bottom: calc(var(--barre-bas) + 96px +
 @media (max-width: 520px) { .serie-bilan { grid-template-columns: repeat(2, 1fr); } }
 .duel { max-width: 620px; margin-left: auto; margin-right: auto; }
 .duel-film .affiche { max-height: 46vh; width: auto; margin: 0 auto; }
+/* ---- v22 : plus rien ne défile sur le côté ---- */
+.rangee, .prog-rangee { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 14px 10px; overflow: visible; margin: 0; padding: 0; scroll-snap-type: none; }
+.rangee > *, .prog-rangee > * { width: auto !important; flex: initial; }
+.rangee .vignette, .prog-rangee .vignette { width: auto; }
+@media (min-width: 900px) { .rangee, .prog-rangee { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); margin: 0; padding: 0; } }
+.rangee-anniv { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); }
+.suivre { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; overflow: visible; margin: 0; padding: 0; }
+.ff-cast, .prog-cast { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 14px 8px; overflow: visible; margin: 0; padding: 0; scroll-snap-type: none; }
+.ff-cast > *, .prog-cast > * { width: auto !important; }
+.onglets, .segments, .defile-x, .filtres, .liens-tete { flex-wrap: wrap; overflow: visible !important; }
+.onglets { row-gap: 2px; }
+[data-bloc=personnes] [data-role] { flex-wrap: wrap !important; overflow: visible !important; }
+.plus-grille-b { display: block; margin: 10px 0 0; font-size: 13px; }
+[hidden] { display: none !important; }
+/* menu du téléphone */
+.bas-menu { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; }
+.menu-tel { display: grid; gap: 2px; }
+.menu-tel a { display: flex; justify-content: space-between; padding: 13px 4px; border-bottom: 1px solid rgba(255,255,255,.06); font-size: 16px; color: var(--texte); }
+.menu-tel a b { font-size: 12px; background: var(--rouge); color: #fff; border-radius: 2px; padding: 1px 6px; }
+/* transitions */
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .18s; }
+  #vue.entree { animation: apparait .2s ease-out; }
+  @keyframes apparait { from { opacity: .35; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  ::view-transition-group(*) { animation-duration: .28s; animation-timing-function: cubic-bezier(.2,.7,.2,1); }
+}
+/* prix : résumé, palmarès, statuettes */
+.ff-prix .nomination { border-style: dashed; }
+.ff-prix [data-palmares] { font-size: 13px; padding: 4px 2px; }
+.palm-t { font-size: 13px; font-weight: 600; color: var(--texte-2); margin: 16px 0 6px; }
+.palm-t:first-child { margin-top: 0; }
+.palm-c { padding: 8px 0; border-top: 1px solid rgba(255,255,255,.06); display: grid; gap: 3px; font-size: 14px; }
+.palm-c em { color: var(--texte-3); font-style: normal; }
+.statuette { width: 10px; height: 20px; vertical-align: -5px; }
+.statuette.gagne { fill: #e3b341; }
+.statuette.nomme { fill: none; stroke: #e3b341; stroke-width: 1.1; }
+.tete-acteur { position: relative; }
+.statuette-b { position: absolute; right: -2px; bottom: -2px; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 2px; background: #121212; border: 1px solid rgba(227,179,65,.6); cursor: pointer; }
+.ff-equipe .statuette-b { position: static; display: inline-grid; width: 18px; height: 20px; margin-left: 6px; border: 0; background: none; vertical-align: middle; }
+/* filmographies à finir */
+.obj + .obj { margin-top: 14px; }
+.obj-tete { display: flex; gap: 12px; align-items: center; }
+.obj-tete > div { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.obj-tete span { color: var(--texte-2); font-size: 13px; }
+.obj-tete .portrait, .obj-tete img { width: 48px; height: 48px; }
+.obj-chiffres { margin: 4px 0 8px; font-size: 14px; }
+/* choisir l'affiche */
+.choix-images { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.choix-images.fonds { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+.choix-images button { padding: 0; border: 2px solid transparent; border-radius: 2px; background: #1c1c1c; cursor: pointer; }
+.choix-images button.actif { border-color: #fff; }
+.choix-images img { width: 100%; display: block; }

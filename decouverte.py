@@ -184,6 +184,8 @@ class Notifications:
             return
         self.d["verif"] = time.time()
         self._recap()
+        self._dimanche()
+        self._il_y_a_un_an()
         try:
             self._sorties()
             self._dispo()
@@ -213,6 +215,41 @@ class Notifications:
             texte += f" · ton préféré : {m['m'].get('t')}"
         self.ajouter("recap:" + code, "recap", f"Ton mois de {MOIS[mois - 1]}", texte, f"#/wrapped/{code}",
                      (m.get("m") or {}).get("fd"))
+
+    def _dimanche(self):
+        """Le dimanche soir : ta semaine cinéma en une notification."""
+        t = time.localtime()
+        if t.tm_wday != 6 or t.tm_hour < 17:
+            return
+        code = time.strftime("%G-%V")
+        debut = time.strftime("%Y-%m-%d", time.localtime(time.time() - 6 * 86400))
+        vus = [e for e in _vivants((self.stock.doc or {}).get("journal")).values() if (e.get("date") or "") >= debut and len(e.get("date") or "") == 10]
+        if not vus:
+            return
+        notes = [e["note"] for e in vus if e.get("note") is not None]
+        meilleur = max(vus, key=lambda e: e.get("note") or 0)
+        m = (self.tmdb.meta(meilleur["cle"]) or {}).get("m") or {}
+        salle = sum(1 for e in vus if (e.get("ou") or {}).get("type") == "cinema")
+        texte = f"{len(vus)} film{'s' if len(vus) > 1 else ''}" + (f", dont {salle} en salle" if salle else "")
+        if notes:
+            texte += f", moyenne {sum(notes) / len(notes):.1f}".replace(".", ",")
+        if m.get("t"):
+            texte += f". Ton préféré : {m['t']}"
+        self.ajouter("semaine:" + code, "recap", "Ta semaine cinéma", texte, "#/journal", m.get("fd"))
+
+    def _il_y_a_un_an(self):
+        """« Il y a un an jour pour jour, tu voyais… »"""
+        auj = time.strftime("%Y-%m-%d")
+        il_y_a = f"{int(auj[:4]) - 1}{auj[4:]}"
+        for jid, e in _vivants((self.stock.doc or {}).get("journal")).items():
+            if e.get("date") != il_y_a or e.get("approx"):
+                continue
+            m = (self.tmdb.meta(e["cle"]) or {}).get("m") or {}
+            ou = e.get("ou") or {}
+            lieu = f" au {ou.get('cinema')}" if ou.get("type") == "cinema" and ou.get("cinema") else ""
+            self.ajouter(f"unan:{jid}", "souvenir", "Il y a un an", f"Tu voyais {m.get('t') or 'un film'}{lieu}"
+                         + (f", noté {str(e['note']).replace('.', ',')}" if e.get("note") is not None else ""),
+                         "#/titre/" + e["cle"], m.get("fd"))
 
     def _sorties(self):
         auj = time.strftime("%Y-%m-%d")

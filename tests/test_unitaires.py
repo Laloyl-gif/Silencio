@@ -530,5 +530,22 @@ sc.jour = faux_jour
 r = sc.derniere_semaine({"m:1": {"t": "Le comte de Monte Cristo", "o": "", "a": 2026}, "m:2": {"t": "Autre film", "a": 2026}})
 verifier(list(r) == ["m:1"] and r["m:1"][0]["jusqua"] == fin.isoformat(), ("dernière semaine repérée (titre sans accents ni tirets)", r))
 
+# ---- v22 : sauvegarde automatique et restauration (qui gagne aussi sur les autres appareils)
+import sauvegarde  # noqa: E402
+sv = Stock(os.path.join(DOSSIER, "_sauve"))
+sv.choisir_profil("sv", "Sv")
+sv.appareil["compte"] = {"id": "sv", "cle": "cle:" + "ab" * 32}
+sv.action("noter", {"cle": "m:603", "note": 9})
+nom = sauvegarde.faire(sv, forcer=True)
+verifier(nom and "chiffre" in __import__("gzip").open(os.path.join(sauvegarde.DOSSIER, nom), "rt").read(), "sauvegarde chiffrée avec la clé du compte")
+verifier(sauvegarde.faire(sv) is None, "pas plus d'une sauvegarde par semaine")
+sv.action("noter", {"cle": "m:603", "note": 3})
+sv.action("noter", {"cle": "m:238", "note": 8})
+autre = json.loads(json.dumps(sv.doc))                         # un autre appareil, à jour avant la restauration
+sauvegarde.restaurer(sv, nom)
+verifier(sv.doc["titres"]["m:603"]["note"] == 9 and sv.doc["titres"]["m:238"].get("x"), "restauration : retour à l'état sauvegardé")
+f = fusionner(autre, sv.doc)
+verifier(f["titres"]["m:603"]["note"] == 9 and f["titres"]["m:238"].get("x"), "la restauration gagne sur les autres appareils")
+
 print(f"{OK} vérifications réussies")
 shutil.rmtree(DOSSIER, ignore_errors=True)

@@ -21,11 +21,11 @@ import config
 
 FORMAT = 1
 SECTIONS = ("titres", "journal", "watchlist", "listes", "classements", "favoris", "series", "graphiques", "annees",
-            "miroirs", "abonnements", "duels")
+            "miroirs", "abonnements", "duels", "objectifs")
 PRIVEES = ("miroirs", "abonnements", "duels")          # sections jamais montrées aux amis (pas même leurs clés)
 # miroirs : ce que Silencio sait avoir déjà envoyé sur Letterboxd, IMDb et Refract (« lb|note|m:603 » → valeur).
 # Toujours dans la partie privée : rien de tout ça n'est montré aux amis.
-CHAMPS_TITRE = {"note", "coeur", "vu", "etiquettes", "citations", "detail", "collection", "prive"}
+CHAMPS_TITRE = {"note", "coeur", "vu", "etiquettes", "citations", "detail", "collection", "prive", "affiche", "fond"}
 CHAMPS_JOURNAL = {"cle", "date", "note", "revision", "critique", "critique_privee", "ou", "prix", "avec", "version",
                   "prive", "coeur", "approx", "imax"}
 CHAMPS_PROFIL = {"nom", "bio", "banniere", "reglages", "accueil", "couleur"}
@@ -616,6 +616,17 @@ class Stock:
                                                 "debut": str(a.get("debut") or "")[:7], "fin": str(a.get("fin") or "")[:7],
                                                 "sauf": [m for m in a.get("sauf") or [] if isinstance(m, str)][:240]})
         return "Abonnement enregistré"
+
+    def _a_objectif(self, trace, tmdb, d):
+        """Une filmographie à finir avant la fin d'une année (cinéaste ou acteur)."""
+        oid = str(d.get("id") or f"p{int(d['pid'])}")
+        if d.get("suppr"):
+            self._supprimer(trace, "objectifs", oid)
+            return "Objectif retiré"
+        self._poser(trace, "objectifs", oid, {"pid": int(d["pid"]), "nom": str(d.get("nom") or "")[:120], "photo": d.get("photo"),
+                                              "role": d.get("role") or "real", "annee": int(d.get("annee") or time.strftime("%Y")),
+                                              "tout": bool(d.get("tout")), "cree": time.strftime("%Y-%m-%d")})
+        return f"Filmographie de {d.get('nom') or ''} à finir en {d.get('annee')}"
 
     def _a_duels(self, trace, tmdb, d):
         """Progression du classement par duels d'une liste (comparaisons faites), reprise à tout moment."""

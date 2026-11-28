@@ -104,3 +104,34 @@ def prix_film(cle):
     gagnes = {p["prix"] for p in res["gagnes"]}
     res["nominations"] = [p for p in res["nominations"] if p["prix"] not in gagnes]
     return res
+
+
+def prix_personnes_film(cle):
+    """{id TMDB de la personne: {gagnes: [...], nominations: [...]}} : qui a été primé ou nommé POUR ce film
+    (Wikidata : prix reçu P166 / nomination P1411, avec le qualificatif « pour l'œuvre » P1686)."""
+    import re as _re
+    prop = "P4947" if cle.startswith("m:") else "P4983"
+    q = f"""SELECT ?type ?pid ?prixFr ?prixEn ?annee WHERE {{
+  ?f wdt:{prop} "{int(cle[2:])}" .
+  {{ ?p p:P166 ?st . ?st ps:P166 ?prix ; pq:P1686 ?f . BIND("gagne" AS ?type) }}
+  UNION {{ ?p p:P1411 ?st . ?st ps:P1411 ?prix ; pq:P1686 ?f . BIND("nomme" AS ?type) }}
+  ?p wdt:P4985 ?pid .
+  OPTIONAL {{ ?st pq:P585 ?date . BIND(YEAR(?date) AS ?annee) }}
+  OPTIONAL {{ ?prix rdfs:label ?prixFr . FILTER(LANG(?prixFr) = "fr") }}
+  OPTIONAL {{ ?prix rdfs:label ?prixEn . FILTER(LANG(?prixEn) = "en") }}
+}}"""
+    r = {}
+    for l in _sparql(q):
+        en = l.get("prixEn") or l.get("prixFr") or ""
+        cer = next((nom for motif, nom in CEREMONIES if _re.search(motif, en, _re.I)), None)
+        if not cer or not (l.get("pid") or "").isdigit():
+            continue
+        e = r.setdefault(l["pid"], {"gagnes": [], "nominations": []})
+        p = {"prix": l.get("prixFr") or en, "ceremonie": cer, "annee": int(l["annee"]) if l.get("annee") else None}
+        liste = e["gagnes" if l["type"] == "gagne" else "nominations"]
+        if p not in liste:
+            liste.append(p)
+    for e in r.values():
+        g = {p["prix"] for p in e["gagnes"]}
+        e["nominations"] = [p for p in e["nominations"] if p["prix"] not in g]
+    return r

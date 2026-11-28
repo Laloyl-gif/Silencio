@@ -10,7 +10,69 @@ S.ficheEnrichie = (vue, cle, d, m, equipe, o) => {
   bandeOriginale($("[data-bo]", vue), d, m, equipe);
   anecdotes($("[data-anecdotes]", vue), cle);
   similaires($("[data-similaires]", vue), cle, equipe, o.tv);
-  const p = $("[data-partager]", vue); if (p) p.onclick = () => S.partagerFilm(cle, d, m, o);
+  const aff = $(".ff-affiche", vue); if (aff) { aff.title = "Choisir une autre affiche"; aff.style.cursor = "pointer"; aff.onclick = () => choisirAffiche(cle); }
+};
+
+// ------------------------------------------------------------------ choisir l'affiche (et le fond) d'un film
+S.choisirAffiche = cle => choisirAffiche(cle);
+async function choisirAffiche(cle) {
+  const m = S.ouvrirModale({ titre: "Choisir l'affiche", large: true, corps: S.chargement() });
+  const corps = m.querySelector(".corps-m");
+  let r; try { r = await S.api(`/api/images?cle=${encodeURIComponent(cle)}`); } catch { corps.innerHTML = S.vide("Indisponible hors ligne"); return; }
+  const t = S.monTitre(cle);
+  const peindre = onglet => {
+    const l = onglet === "fonds" ? r.fonds : r.affiches;
+    const choisi = onglet === "fonds" ? t.fond : t.affiche;
+    corps.innerHTML = `<div class="segments" data-o style="margin-bottom:12px"><button data-v="affiches" class="${onglet === "affiches" ? "actif" : ""}">Affiches (${r.affiches.length})</button><button data-v="fonds" class="${onglet === "fonds" ? "actif" : ""}">Fonds (${r.fonds.length})</button></div>
+      <div class="choix-images ${onglet}">${l.map(p => `<button data-p="${esc(p)}" class="${p === choisi ? "actif" : ""}"><img loading="lazy" src="${S.img(p, onglet === "fonds" ? "w300" : "w185")}" alt=""></button>`).join("") || `<p class="mini discret">Aucune autre image.</p>`}</div>
+      ${choisi ? `<button class="lien" data-origine style="margin-top:12px">Revenir à l'image d'origine</button>` : ""}`;
+    $$("[data-o] button", corps).forEach(b => b.onclick = () => peindre(b.dataset.v));
+    $$("[data-p]", corps).forEach(b => b.onclick = async () => { await S.agir("titre", { cle, champs: { [onglet === "fonds" ? "fond" : "affiche"]: b.dataset.p } }, { toast: "Image choisie" }); S.fermerModale(); });
+    const o = $("[data-origine]", corps); if (o) o.onclick = async () => { await S.agir("titre", { cle, champs: { [onglet === "fonds" ? "fond" : "affiche"]: null } }, { toast: "Image d'origine" }); S.fermerModale(); };
+  };
+  peindre("affiches");
+}
+
+// ------------------------------------------------------------------ prix : résumé, palmarès, statuettes
+const COURT = [[/palme d.or/i, "Palme d'or", "Palmes d'or"], [/lion d.or|golden lion/i, "Lion d'or", "Lions d'or"], [/ours d.or|golden bear/i, "Ours d'or", "Ours d'or"]];
+S.resumePrix = gagnes => {
+  const r = [], parCer = {};
+  for (const p of gagnes) {
+    const special = COURT.find(([re]) => re.test(p.prix));
+    const k = special ? special[1] : p.ceremonie;
+    (parCer[k] = parCer[k] || { n: 0, special }).n++;
+  }
+  const NOMS = { Oscars: ["Oscar", "Oscars"], "César": ["César", "César"], "Golden Globes": ["Golden Globe", "Golden Globes"], BAFTA: ["BAFTA", "BAFTA"],
+    Cannes: ["prix à Cannes", "prix à Cannes"], Venise: ["prix à Venise", "prix à Venise"], Berlin: ["prix à Berlin", "prix à Berlin"] };
+  for (const [k, { n, special }] of Object.entries(parCer)) {
+    const [un, plusieurs] = special ? [special[1], special[2]] : (NOMS[k] || [k, k]);
+    r.push(n > 1 ? `${n} ${plusieurs}` : special ? un : `1 ${un}`);
+  }
+  return r;
+};
+S.palmaresFilm = r => {
+  const groupe = l => { const g = {}; for (const p of l) (g[p.ceremonie] = g[p.ceremonie] || []).push(p); return g; };
+  const bloc = (titre, l) => !l.length ? "" : `<h3 class="palm-t">${titre}</h3>${Object.entries(groupe(l)).map(([c, ps]) => `<div class="palm-c"><b>${esc(c)}</b>${ps.map(p => `<div>${esc(p.prix)}${p.annee ? ` <em>${p.annee}</em>` : ""}</div>`).join("")}</div>`).join("")}`;
+  const pers = Object.entries(r.personnes || {});
+  return bloc("Récompenses", r.gagnes) + bloc("Nominations", r.nominations) + (pers.length ? `<h3 class="palm-t">Pour ce film</h3>${pers.map(([id, e]) => {
+    const p = S.base?.pers?.[id]; const nom = p?.n || document.querySelector(`.ff a[href="#/personne/${id}"] b, .ff a[href="#/personne/${id}"]`)?.textContent || "?";
+    return `<div class="palm-c"><b><a href="#/personne/${id}">${esc(nom)}</a></b>${e.gagnes.map(x => `<div>${S.ICONE_STATUETTE("gagne")} ${esc(x.prix)}${x.annee ? ` <em>${x.annee}</em>` : ""}</div>`).join("")}${e.nominations.map(x => `<div>${S.ICONE_STATUETTE("nomme")} nommé : ${esc(x.prix)}${x.annee ? ` <em>${x.annee}</em>` : ""}</div>`).join("")}</div>`;
+  }).join("")}` : "");
+};
+S.ICONE_STATUETTE = etat => `<svg class="statuette ${etat}" viewBox="0 0 12 24" aria-hidden="true"><circle cx="6" cy="3" r="2.4"/><path d="M4 6h4l-.6 7h-.8l.4 6H5l.4-6h-.8z"/><rect x="2.5" y="19.5" width="7" height="3" rx=".5"/></svg>`;
+// une statuette sur les personnes du casting et de l'équipe primées (dorée) ou nommées (contour) pour ce film
+S.statuettes = (vue, personnes) => {
+  for (const [id, e] of Object.entries(personnes)) {
+    const etat = e.gagnes.length ? "gagne" : e.nominations.length ? "nomme" : ""; if (!etat) continue;
+    const texte = [...e.gagnes.map(x => `${x.prix}${x.annee ? " " + x.annee : ""}`), ...e.nominations.map(x => `Nommé : ${x.prix}${x.annee ? " " + x.annee : ""}`)].join("\n");
+    for (const a of $$(`.ff-cast a[href="#/personne/${id}"], .ff-equipe a[href="#/personne/${id}"]`, vue)) {
+      if (a.querySelector(".statuette-b")) continue;
+      const b = document.createElement("span");
+      b.className = "statuette-b"; b.title = texte; b.innerHTML = S.ICONE_STATUETTE(etat);
+      b.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); S.toast(texte.replace(/\n/g, " · ")); };
+      (a.querySelector(".tete-acteur") || a).append(b);
+    }
+  }
 };
 
 // ------------------------------------------------------------------ séances
@@ -127,10 +189,10 @@ async function dessinerCarte(cv, x) {
   const ctx = cv.getContext("2d"), W = cv.width, H = cv.height;
   const police = getComputedStyle(document.documentElement).getPropertyValue("--titre").trim() || "system-ui, sans-serif";
   ctx.fillStyle = "#121212"; ctx.fillRect(0, 0, W, H);
-  const fond = await chargerImage(x.d.backdrop_path ? S.img(x.d.backdrop_path, "w780") : null);
+  const fond = await chargerImage((x.t.fond || x.d.backdrop_path) ? S.img(x.t.fond || x.d.backdrop_path, "w780") : null);
   if (fond) { ctx.globalAlpha = .28; const h = W * fond.height / fond.width; ctx.drawImage(fond, 0, 0, W, h); ctx.globalAlpha = 1;
     const g = ctx.createLinearGradient(0, h * .3, 0, h); g.addColorStop(0, "rgba(18,18,18,0)"); g.addColorStop(1, "#121212"); ctx.fillStyle = g; ctx.fillRect(0, 0, W, h); }
-  const aff = await chargerImage(x.d.poster_path ? S.img(x.d.poster_path, "w500") : null);
+  const aff = await chargerImage((x.t.affiche || x.d.poster_path) ? S.img(x.t.affiche || x.d.poster_path, "w500") : null);
   const ax = 72, ay = 120, aw = 400, ah = 600;
   if (aff) ctx.drawImage(aff, ax, ay, aw, ah); else { ctx.fillStyle = "#2a2a2a"; ctx.fillRect(ax, ay, aw, ah); }
   ctx.strokeStyle = "rgba(255,255,255,.12)"; ctx.lineWidth = 2; ctx.strokeRect(ax, ay, aw, ah);

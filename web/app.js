@@ -113,7 +113,8 @@ S.agir = async (type, donnees = {}, opts = {}) => {
 // ------------------------------------------------------------------ composants
 S.affiche = (m, o = {}) => {
   const t = S.nomTitre(m);
-  const src = m && m.af ? S.img(m.af, o.taille || "w342") : "";
+  const perso = m && m.k && S.moi?.titres?.[m.k]?.affiche;           // l'affiche que tu as choisie pour ce film
+  const src = perso || (m && m.af) ? S.img(perso || m.af, o.taille || "w342") : "";
   const marques = [];
   return `<div class="affiche"${o.vt ? ` style="view-transition-name:${o.vt}"` : ""}>${src ? `<img loading="lazy" src="${src}" alt="" onload="this.classList.add('ok')" onerror="this.remove()">` : ""}<div class="sans"${src ? ' style="z-index:-1"' : ""}>${esc(t)}</div>${o.vu ? `<span class="vu-coin">Vu</span>` : ""}${marques.length ? `<div class="marques">${marques.join("")}</div>` : ""}</div>`;
 };

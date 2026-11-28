@@ -13,6 +13,8 @@
   let vitesse = 1;                         // 1 en vrai ; les tests accélèrent
   const pause = ms => new Promise(r => setTimeout(r, ms * vitesse));
   const hasard = (a, b) => a + Math.random() * (b - a);
+  // entre deux actions : 20 à 45 s, et environ une fois sur huit une « respiration » d'une à deux minutes
+  const rythme = () => hasard(20000, 45000) + (Math.random() < 0.125 ? hasard(60000, 120000) : 0);
   class Bloque extends Error {}
 
   let csrf = "", pseudo = "", cache = {}, adresses = {}, essais = {};
@@ -338,7 +340,7 @@
         if (e instanceof Bloque) { bloque = e.message; break; }
         resultats.push({ ...base, etat: "echec", erreur: String(e.message || e).slice(0, 200) });
       }
-      await pause(aBlanc ? 300 : hasard(5000, 13000));
+      await pause(aBlanc ? 300 : rythme());
     }
     return { resultats, cache, bloque, adresses, essais };
   }
@@ -380,7 +382,7 @@
     let stop = "";
     const faire = async (texte, op) => {
       if (stop) { E("saute", texte, "test arrêté : " + stop); return null; }
-      const r = await executer([{ ...base, ...op }], { ...ctx, csrf, cache, adresses, essais, vitesse: 0.2 }, false);
+      const r = await executer([{ ...base, ...op }], { ...ctx, csrf, cache, adresses, essais, vitesse: 0.12 }, false);
       cache = r.cache || cache; adresses = r.adresses || adresses; essais = r.essais || essais;
       if (r.bloque) { stop = r.bloque; E("erreur", texte, r.bloque); return null; }
       const x = (r.resultats || [])[0] || {};

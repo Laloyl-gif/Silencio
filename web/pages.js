@@ -305,7 +305,7 @@ P.titre = async (vue, args) => {
 
 function rendreTitre(vue, cle, data) {
   const d = data.d, meta = data.meta || {}, tv = cle[0] === "t";
-  const m = Object.assign({}, S.info(cle) || {}, meta, { t: d.title || d.name, o: d.original_title || d.original_name, af: d.poster_path, fd: d.backdrop_path });
+  const m = Object.assign({}, S.info(cle) || {}, meta, { k: cle, t: d.title || d.name, o: d.original_title || d.original_name, af: d.poster_path, fd: d.backdrop_path });
   if (!S.base?.titres?.[cle]) S.infos[cle] = Object.assign(S.infos[cle] || {}, m);
   const t = S.monTitre(cle), journal = S.journalDe(cle), wl = S.dansWatchlist(cle);
   const date = d.release_date || d.first_air_date || "";
@@ -370,8 +370,7 @@ function rendreTitre(vue, cle, data) {
     <button class="bouton principal" data-vu>${vuDeja ? "Revu" : "J'ai vu"}</button>
     <button class="texte-action ${wl ? "actif" : ""}" data-wl>${wl ? "Dans ta watchlist" : "Watchlist"}</button>
     <button class="texte-action" data-liste>Liste</button>
-    <button class="texte-action" data-partager>Partager</button>
-    ${!tv ? `<button class="texte-action ${t.collection ? "actif" : ""}" data-collection>Collection</button>` : ""}
+    <button class="texte-action" data-plus-film>Plus</button>
   </nav>`;
   document.body.classList.add("avec-barre-film");
   if (d.poster_path) S.couleursAffiche(S.img(d.poster_path, "w92")).then(c => {
@@ -386,7 +385,21 @@ function rendreTitre(vue, cle, data) {
   $("[data-vu]", vue).onclick = () => S.ouvrirAjout(cle);
   $("[data-wl]", vue).onclick = () => S.agir("watchlist", { cle, val: !wl }, { toast: wl ? "Retiré de ta watchlist" : "Ajouté à ta watchlist" });
   $("[data-liste]", vue).onclick = () => S.choisirListe(cle);
-  const col = $("[data-collection]", vue); if (col) col.onclick = () => collection(cle);
+  // les actions moins courantes, dans « Plus » : la barre reste lisible sur téléphone
+  $("[data-plus-film]", vue).onclick = () => {
+    const mm = S.ouvrirModale({ titre: S.nomTitre(m), corps: `<nav class="menu-tel">
+      <a href="#" data-a="partager">Partager une image</a>${!tv ? `<a href="#" data-a="collection">${t.collection ? "Dans ta collection : modifier" : "Ajouter à ta collection"}</a>` : ""}
+      <a href="#" data-a="affiche">Choisir l'affiche</a><a href="#" data-a="filmo">Finir la filmo du réalisateur</a></nav>` });
+    $$("[data-a]", mm).forEach(a => a.onclick = ev => {
+      ev.preventDefault(); const k = a.dataset.a; S.fermerModale();
+      setTimeout(() => {
+        if (k === "partager") S.partagerFilm(cle, d, m, { journal, date, tv });
+        else if (k === "collection") collection(cle);
+        else if (k === "affiche") S.choisirAffiche(cle);
+        else if (k === "filmo" && reals[0]) S.objectifFilmo({ pid: reals[0].id, nom: reals[0].name, photo: reals[0].profile_path, role: "real" });
+      }, 350);
+    });
+  };
   $("[data-synopsis]", vue).onclick = () => S.ouvrirModale({ titre: "Synopsis", corps: `${d.tagline ? `<p class="ff-accroche">${esc(d.tagline)}</p>` : ""}<p class="ff-synopsis">${esc(d.overview || d.overview_en || "Pas de synopsis.")}</p>` });
   $("[data-infos]", vue).onclick = () => S.ouvrirModale({ titre: "Infos", corps: `<dl class="tableau-infos">
     ${date ? `<dt>${tv ? "Première diffusion" : "Sortie"}</dt><dd>${S.fmtDate(date)}</dd>` : ""}${sortieFR && sortieFR !== date ? `<dt>En France</dt><dd>${S.fmtDate(sortieFR)}</dd>` : ""}
@@ -405,9 +418,11 @@ function rendreTitre(vue, cle, data) {
   if (S.ficheEnrichie) S.ficheEnrichie(vue, cle, d, m, equipe, { date, sortieFR, tv, t, journal });
   const pz = $("[data-prix]", vue);
   const peindrePrix = r => {
-    if (!r || (!r.gagnes.length && !r.nominations.length)) return;
-    pz.innerHTML = `${r.gagnes.map(p => `<span>${esc(p.prix)}${p.annee ? ` <em>${p.annee}</em>` : ""}</span>`).join("")}${r.nominations.length ? `<button class="nomination" data-nom>et ${S.pluriel(r.nominations.length, "nomination")}</button><div class="nominations cache">${r.nominations.map(p => `<div>${esc(p.prix)}${p.annee ? `, ${p.annee}` : ""}</div>`).join("")}</div>` : ""}`;
-    const b = $("[data-nom]", pz); if (b) b.onclick = () => { $(".nominations", pz).classList.toggle("cache"); b.remove(); };
+    if (!r || (!r.gagnes.length && !r.nominations.length && !Object.keys(r.personnes || {}).length)) return;
+    // en résumé : « 2 Oscars », « Palme d'or »… ; tout le palmarès s'ouvre d'un clic
+    pz.innerHTML = `${S.resumePrix(r.gagnes).map(t => `<span>${esc(t)}</span>`).join("")}${r.nominations.length ? `<span class="nomination">${S.pluriel(r.nominations.length, "nomination")}</span>` : ""}${r.gagnes.length || r.nominations.length ? `<button class="lien" data-palmares>Palmarès</button>` : ""}`;
+    const b = $("[data-palmares]", pz); if (b) b.onclick = () => S.ouvrirModale({ titre: "Palmarès", corps: S.palmaresFilm(r) });
+    S.statuettes(vue, r.personnes || {});
   };
   if (S.memo["prix:" + cle]) peindrePrix(S.memo["prix:" + cle]);
   else S.api("/api/prix/titre/" + cle).then(r => { S.memo["prix:" + cle] = r; if (location.hash.includes(cle)) peindrePrix(r); }).catch(() => {});
@@ -567,7 +582,7 @@ P.personne = async (vue, args) => {
         <div class="pers-sous">${[DEPT[d.known_for_department] || d.known_for_department || "", d.birthday ? (d.deathday ? d.birthday.slice(0, 4) + "–" + d.deathday.slice(0, 4) : age(d.birthday)) : ""].filter(Boolean).join(", ")}</div></div>
     </header>
     <section class="panneau pers-panneau">
-      <div class="pan-etats deux"><button data-fav class="${fav ? "actif" : ""}" style="--c:#f0505f">Favori</button><div class="pan-moy"><span>Ta moyenne</span><b>${moyP == null ? "–" : S.fmtNote(moyP)}</b></div></div>
+      <div class="pan-etats deux"><button data-fav class="${fav ? "actif" : ""}" style="--c:#f0505f">Favori</button><button data-objectif class="${S.vivants(S.moi.objectifs || {})["p" + pid] ? "actif" : ""}" style="--c:#e3b341">Finir sa filmo</button><div class="pan-moy"><span>Ta moyenne</span><b>${moyP == null ? "–" : S.fmtNote(moyP)}</b></div></div>
       ${totN ? `<dl class="pers-compte"><dt>Vus</dt><dd><b>${vusN}</b> sur ${totN}</dd>${ligneCompte("Longs métrages", cLong)}${ligneCompte("Courts métrages", cCourt)}${ligneCompte("Documentaires", cDocu)}${ligneCompte("Séries", cSerie)}</dl>` : ""}
     </section>
     ${d.biography ? `<p class="prog-synopsis" data-bio>${esc(d.biography)}</p>` : ""}
@@ -599,6 +614,7 @@ P.personne = async (vue, args) => {
   $$("[data-vu] button", vue).forEach(b => b.onclick = () => { st.vu = b.dataset.v; remplirFilmo(); });
   $$("[data-dept]", vue).forEach(b => b.onclick = () => { st.dept = b.dataset.dept; S.rafraichir(true); });
   remplirFilmo();
+  $("[data-objectif]", vue).onclick = () => S.objectifFilmo({ pid, nom: d.name, photo: d.profile_path, role: d.known_for_department === "Acting" ? "acteur" : "real" });
   $("[data-fav]", vue).onclick = () => S.agir("favori", { personne: { id: pid, nom: d.name, photo: d.profile_path, metier: { Directing: "real", Acting: "acteur", Camera: "image", Sound: "musique", Writing: "scen", Editing: "montage" }[d.known_for_department] || "" }, val: !fav }, { toast: fav ? "Retiré des favoris" : `${d.name} ajouté à tes favoris` });
   const lab = $("[data-labo]", vue); if (lab) lab.onclick = () => { S.filtresMemo.labo = { mode: "personnes", vue: "courbe", dim: "annee", mes: "moy_note", series: "aucune", profils: [""], personnes: [{ id: pid, nom: d.name }], role: st.dept === "Acting" ? "acteur" : st.dept === "Directing" ? "real" : "tous", x: "annee", y: "note", imdb: true, filtres: {}, top: 15 }; S.filtresMemo.laboId = null; };
   montrerP(ongletP);
